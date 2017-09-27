@@ -10,6 +10,7 @@ The model consists of two files:
 How to edit/run:
 
 - Install the [TLA Toolbox](http://research.microsoft.com/en-us/um/people/lamport/tla/toolbox.html)
+  - If on Mac OS, [move the downloaded app to the Applications folder first](https://groups.google.com/forum/#!topic/tlaplus/bL04c6BiYxo)
 - Read some [documentation](http://research.microsoft.com/en-us/um/people/lamport/tla/book.html)
 
 How to run the model checker in headless mode:
