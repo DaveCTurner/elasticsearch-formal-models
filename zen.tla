@@ -107,6 +107,8 @@ SendPingRequest(n) ==
       \* TODO shouldn't be able to unilaterally disrupt a master, it should require a quorum. However,
       \* if a master sees a Ping request with a greater term then it should itself start a yet-higher term
       \* or else there'll be a node that can't accept any of the master's AppendEntries requests.
+      \* Not sure this can actually happen - we don't increment our term until we've received a quorum
+      \* of Join responses, so if we exceed the master term then it's already dead.
      IN
        /\ messages' = messages \cup pings
        /\ UNCHANGED <<nextUUID, discoState, appliedState, term, discoPhase>>
