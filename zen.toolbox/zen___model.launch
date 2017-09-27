@@ -3,10 +3,10 @@
 <stringAttribute key="TLCCmdLineParameters" value=""/>
 <intAttribute key="autoLockTime" value="15"/>
 <stringAttribute key="configurationName" value="model"/>
-<intAttribute key="dfidDepth" value="100"/>
-<booleanAttribute key="dfidMode" value="false"/>
+<intAttribute key="dfidDepth" value="15"/>
+<booleanAttribute key="dfidMode" value="true"/>
 <intAttribute key="distributedFPSetCount" value="0"/>
-<stringAttribute key="distributedNetworkInterface" value="192.168.178.34"/>
+<stringAttribute key="distributedNetworkInterface" value="192.168.1.13"/>
 <intAttribute key="distributedNodesCount" value="1"/>
 <stringAttribute key="distributedTLC" value="off"/>
 <stringAttribute key="distributedTLCVMArgs" value=""/>
@@ -19,7 +19,7 @@
 <stringAttribute key="modelBehaviorNext" value="Next"/>
 <stringAttribute key="modelBehaviorSpec" value=""/>
 <intAttribute key="modelBehaviorSpecType" value="2"/>
-<stringAttribute key="modelBehaviorVars" value="nextClientValue, messages, discoState, publishedState, appliedState, term"/>
+<stringAttribute key="modelBehaviorVars" value="messages, discoState, appliedState, term, discoPhase, nextUUID"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
 <listAttribute key="modelCorrectnessInvariants">
@@ -41,8 +41,8 @@
 <listEntry value="Pinging;;Pinging;1;0"/>
 <listEntry value="Join;;Join;1;0"/>
 <listEntry value="Become_Master;;Become_Master;1;0"/>
-<listEntry value="Unicast;;Unicast;1;0"/>
 <listEntry value="Become_Follower;;Become_Follower;1;0"/>
+<listEntry value="Ping;;Ping;1;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value="StateConstraint"/>
 <listAttribute key="modelParameterDefinitions"/>
