@@ -14,7 +14,7 @@ EXTENDS Naturals, FiniteSets, Sequences, TLC
 \* values that are fixed.
 
 \* Set of node ids (all master-eligible nodes)
-CONSTANTS Nodes
+CONSTANTS Nodes \* TODO need to model this not being a fixed set.
 
 \* The constant "Nil" denotes a place-holder for a non-existing value
 CONSTANTS Nil
@@ -53,12 +53,20 @@ VARIABLE discoPhase \* map from Nodes to {Pinging, Become_Follower, Follower, Be
   cluster state: record containing the following fields:
     nodes: subset of nodes that are part of cluster,
     master: the current master of the cluster (either a node id or Nil)
-    term: the term with which this CS was published
+    term: the term with which this CS was published - TODO not sure this is
+          well-defined. If a master fails having partially published a CS then
+          the new master will publish the same CS in a later term.
     version: the version of the CS, incremented on each update
     data: the content of the cluster state (sequence of client events, which is just a unique number assigned on each new client request) 
 *)
 VARIABLE discoState \* persisted cluster state, used by disco module, persisted whenever updated
 VARIABLE term \* used by disco module, persisted
+(* TODO ISTR it's useful to split this up as it is a bit overloaded - it's
+useful to have multiple term variables to capture all the different meanings.
+For instance I count 5 different per-node term variables in the ZCP impl -
+they're mostly either unused or equal, but they can deviate in interesting ways
+when things are going wrong. *)
+
 VARIABLE appliedState \* state visible to the other modules on the node
 
 ----
@@ -96,6 +104,9 @@ SendPingRequest(n) ==
                    source  |-> n,
                    dest    |-> on,
                    term    |-> term[n]]) : on \in (Nodes \ {n})} \* broadcast term so that we can disrupt a master/follower with a lower term
+      \* TODO shouldn't be able to unilaterally disrupt a master, it should require a quorum. However,
+      \* if a master sees a Ping request with a greater term then it should itself start a yet-higher term
+      \* or else there'll be a node that can't accept any of the master's AppendEntries requests.
      IN
        /\ messages' = messages \cup pings
        /\ UNCHANGED <<nextUUID, discoState, appliedState, term, discoPhase>>
@@ -129,6 +140,8 @@ HandlePingResponses(n) ==
   /\ discoPhase[n] = Pinging
   /\ LET
        pingResponses == { ms \in messages : ms.method = Ping /\ ms.request = FALSE /\ ms.dest = n }
+          \* `messages` is the set of _sent_ messages, but here they're being treated as _received_ ones.
+          \* This is ok, however, because of the `DropResponse` action which models dropped messages.
        activeMastersWithAcceptableTerm == { pr \in pingResponses : pr.master \notin {Nil, n} /\ pr.term >= term[n] }
        masterCandidates == pingResponses \cup
                            {[source |-> n,
