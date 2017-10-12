@@ -116,7 +116,7 @@ fun isReconfiguration :: "Value \<Rightarrow> bool"
 
 fun newConfiguration :: "Value \<Rightarrow> Node set set"
   where "newConfiguration (Reconfigure conf) = Rep_Configuration conf"
-  | "newConfiguration _ = Rep_Configuration (SOME _. False)"
+  | "newConfiguration _                      = Rep_Configuration (SOME _. False)"
 
 locale oneSlot =
   fixes Q :: "Term \<Rightarrow> Node set set"
@@ -221,6 +221,7 @@ lemma (in oneSlot) consistent:
   by (metis Q_nonempty accepted all_not_in_conv assms committed le_term_def p2b term_not_le_lt)
 
 locale zen =
+  fixes Q\<^sub>0        :: "Node set set"
   fixes v         :: "nat \<Rightarrow> Term \<Rightarrow> Value"
 
 fixes promised\<^sub>m :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
@@ -229,7 +230,6 @@ fixes promised\<^sub>b :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarro
 fixes proposed  :: "nat \<Rightarrow> Term \<Rightarrow> bool"
 fixes accepted  :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
 fixes committed :: "nat \<Rightarrow> Term \<Rightarrow> bool"
-fixes Q\<^sub>0        :: "Node set set"
 
 fixes isCommitted :: "nat \<Rightarrow> bool"
 defines "isCommitted i == \<exists> t. committed i t"
@@ -377,3 +377,49 @@ lemma (in zen) consistent:
   shows "v i t\<^sub>1 = v i t\<^sub>2"
   using assms
   by (intro oneSlot.consistent [OF projects_to_oneSlot], auto simp add: isCommitted_def)
+
+lemma Collect_pair_False[simp]:  "{(i, t). False} = {}" by auto
+
+lemma
+  assumes "Q\<^sub>0 \<frown> Q\<^sub>0"
+  shows zen_initial_state:
+    "zen Q\<^sub>0 v (\<lambda> _ _ _. False) (\<lambda> _ _ _. False) (\<lambda> _ _ _ _. False) (\<lambda> _ _. False)
+             (\<lambda> _ _ _. False) (\<lambda> _ _. False)"
+  using assms by (unfold_locales, auto)
+
+lemma (in zen)
+  fixes promised\<^sub>m' promised\<^sub>f' promised\<^sub>b'
+
+fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+defines "promised' i n t == ((\<exists> j \<le> i. promised\<^sub>m' j n t)
+                            \<or> promised\<^sub>f' i n t)
+                            \<or> (\<exists> t'. promised\<^sub>b' i n t t')"
+
+fixes prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+defines "prevAccepted' i t ns == {t'. \<exists> n \<in> ns. promised\<^sub>b' i n t t'}"
+
+assumes "\<And>i j n t t'. \<lbrakk> promised\<^sub>m' i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted' j n t'"
+
+assumes "\<And>i n t t'. \<lbrakk> promised\<^sub>f' i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t'"
+
+assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> t' \<prec> t"
+assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> accepted' i n t'"
+assumes  "\<And>i n t t' t''. \<lbrakk> promised\<^sub>b' i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t''"
+
+assumes "\<And>i n t. promised' i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committedTo j"
+
+assumes "\<And>i t. proposed' i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised' i n t)
+                                                 \<and> (prevAccepted' i t q = {}
+                                                     \<or> v i t = v i (maxTerm (prevAccepted' i t q)))"
+
+assumes "finite {(i, t). proposed' i t}"
+
+assumes "\<And>i n t. accepted' i n t \<Longrightarrow> proposed' i t"
+
+assumes "\<And>i t. committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted' i n t"
+
+shows zenI_simple:
+  "zen Q\<^sub>0 v promised\<^sub>m' promised\<^sub>f' promised\<^sub>b' proposed' accepted' committed"
+  using assms Q\<^sub>0_intersects committed_era committed_in_order
+  by (unfold_locales, fold promised'_def prevAccepted'_def era\<^sub>i_def isCommitted_def committedTo_def v\<^sub>c_def, fold committedTo_def era\<^sub>i_def, fold Q_def)
+
