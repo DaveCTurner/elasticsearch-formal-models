@@ -101,8 +101,16 @@ definition intersects :: "'a set set \<Rightarrow> 'a set set \<Rightarrow> bool
 
 datatype Value
   = NoOp
-  | Reconfigure "Node set"
+  | Reconfigure "Node set set"
   | SetClusterState ClusterState
+
+fun isReconfiguration :: "Value \<Rightarrow> bool"
+  where "isReconfiguration (Reconfigure _) = True"
+  | "isReconfiguration _ = False"
+
+fun newConfiguration :: "Value \<Rightarrow> Node set set"
+  where "newConfiguration (Reconfigure nss) = nss"
+  | "newConfiguration _ = (SOME _. False)"
 
 locale oneSlot =
   fixes Q :: "Term \<Rightarrow> Node set set"
@@ -206,4 +214,66 @@ lemma (in oneSlot) consistent:
   shows "v t\<^sub>1 = v t\<^sub>2"
   by (metis Q_nonempty accepted all_not_in_conv assms committed le_term_def p2b term_not_le_lt)
 
+locale zen =
+  fixes v         :: "nat \<Rightarrow> Term \<Rightarrow> Value"
 
+fixes promised\<^sub>m :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+fixes promised\<^sub>f :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+fixes promised\<^sub>b :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> Term \<Rightarrow> bool"
+fixes proposed  :: "nat \<Rightarrow> Term \<Rightarrow> bool"
+fixes accepted  :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+fixes committed :: "nat \<Rightarrow> Term \<Rightarrow> bool"
+fixes Q\<^sub>0        :: "Node set set"
+
+fixes isCommitted :: "nat \<Rightarrow> bool"
+defines "isCommitted i == \<exists> t. committed i t"
+
+fixes committedTo :: "nat \<Rightarrow> bool"
+defines "committedTo i == \<forall> j < i. isCommitted j" 
+
+fixes v\<^sub>c :: "nat \<Rightarrow> Value"
+defines "v\<^sub>c i == v i (SOME t. committed i t)"
+
+fixes era\<^sub>i :: "nat \<Rightarrow> nat"
+defines "era\<^sub>i i == card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
+
+fixes Q :: "nat \<Rightarrow> Node set set"
+defines "Q e == if e = 0 then Q\<^sub>0
+                else newConfiguration (v\<^sub>c (THE i. isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e-1))"
+
+fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+defines "promised i n t == (\<exists> j \<le> i. promised\<^sub>m j n t)
+                            \<or> promised\<^sub>f i n t
+                            \<or> (\<exists> t'. promised\<^sub>b i n t t')"
+
+fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+defines "prevAccepted i t ns == {t'. \<exists> n \<in> ns. promised\<^sub>b i n t t'}"
+
+assumes Q\<^sub>0_intersects: "Q\<^sub>0 \<frown> Q\<^sub>0"
+assumes Q\<^sub>_intersects:  "\<lbrakk> proposed i t; isReconfiguration (v i t) \<rbrakk>
+  \<Longrightarrow> newConfiguration (v i t) \<frown> newConfiguration (v i t)"
+
+assumes Q\<^sub>0_nonempty: "q \<in> Q\<^sub>0 \<Longrightarrow> q \<noteq> {}"
+assumes Q_nonempty: "\<lbrakk> proposed i t; isReconfiguration (v i t); q \<in> newConfiguration (v i t) \<rbrakk> \<Longrightarrow> q \<noteq> {}"
+
+assumes promised\<^sub>m: "\<lbrakk> promised\<^sub>m i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted j n t'"
+
+assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t'"
+
+assumes promised\<^sub>b_lt:       "promised\<^sub>b i n t t' \<Longrightarrow> t' \<prec> t"
+assumes promised\<^sub>b_accepted: "promised\<^sub>b i n t t' \<Longrightarrow> accepted i n t'"
+assumes promised\<^sub>b_max:    "\<lbrakk> promised\<^sub>b i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t''"
+
+assumes promised_era: "promised i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committedTo j"
+
+assumes proposed: "proposed i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised i n t)
+                                           \<and> (prevAccepted i t q = {}
+                                                \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+
+assumes proposed_finite: "finite {(i, t). proposed i t}"
+
+assumes accepted: "accepted i n t \<Longrightarrow> proposed i t"
+
+assumes committed:          "committed i t \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>i i). \<forall> n \<in> q. accepted i n t"
+assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i \<le> era t"
+assumes committed_in_order: "committed i t \<Longrightarrow> committedTo i"
