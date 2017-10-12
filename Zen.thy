@@ -99,9 +99,15 @@ datatype ClusterState = ClusterState nat
 definition intersects :: "'a set set \<Rightarrow> 'a set set \<Rightarrow> bool" (infixl "\<frown>" 50)
   where "A \<frown> B == \<forall> a \<in> A. \<forall> b \<in> B. a \<inter> b \<noteq> {}"
 
+typedef Configuration = "{Q :: Node set set. Q \<frown> Q}"
+proof (intro exI CollectI)
+  show "{} \<frown> {}"
+    by (simp add: intersects_def)
+qed
+
 datatype Value
   = NoOp
-  | Reconfigure "Node set set"
+  | Reconfigure Configuration
   | SetClusterState ClusterState
 
 fun isReconfiguration :: "Value \<Rightarrow> bool"
@@ -109,8 +115,8 @@ fun isReconfiguration :: "Value \<Rightarrow> bool"
   | "isReconfiguration _ = False"
 
 fun newConfiguration :: "Value \<Rightarrow> Node set set"
-  where "newConfiguration (Reconfigure nss) = nss"
-  | "newConfiguration _ = (SOME _. False)"
+  where "newConfiguration (Reconfigure conf) = Rep_Configuration conf"
+  | "newConfiguration _ = Rep_Configuration (SOME _. False)"
 
 locale oneSlot =
   fixes Q :: "Term \<Rightarrow> Node set set"
@@ -128,7 +134,7 @@ defines "promised n t == promised\<^sub>f n t \<or> (\<exists> t'. promised\<^su
 fixes prevAccepted :: "Term \<Rightarrow> Node set \<Rightarrow> Term set"
 defines "prevAccepted t ns == {t'. \<exists> n \<in> ns. promised\<^sub>b n t t'}"
 
-assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; chosen t\<^sub>2 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
+assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; committed t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>1 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
 assumes Q_nonempty: "q \<in> Q t \<Longrightarrow> q \<noteq> {}"
 
 assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t'"
@@ -175,7 +181,7 @@ proof (induct t\<^sub>1 rule: term_induct)
     using committed by force
 
   have "q\<^sub>1 \<inter> q\<^sub>2 \<noteq> {}"
-    by (meson Q_intersects intersects_def less.prems(1) q\<^sub>1_quorum q\<^sub>2_quorum)
+    by (meson intersects_def less.prems(1) less.prems(2) less.prems(3) oneSlot.Q_intersects oneSlot_axioms q\<^sub>1_quorum q\<^sub>2_quorum term_lt_le)
 
   then obtain n where n\<^sub>1: "n \<in> q\<^sub>1" and n\<^sub>2: "n \<in> q\<^sub>2" by auto
 
@@ -242,19 +248,14 @@ defines "Q e == if e = 0 then Q\<^sub>0
                 else newConfiguration (v\<^sub>c (THE i. isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e-1))"
 
 fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-defines "promised i n t == (\<exists> j \<le> i. promised\<^sub>m j n t)
-                            \<or> promised\<^sub>f i n t
+defines "promised i n t == ((\<exists> j \<le> i. promised\<^sub>m j n t)
+                            \<or> promised\<^sub>f i n t)
                             \<or> (\<exists> t'. promised\<^sub>b i n t t')"
 
 fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
 defines "prevAccepted i t ns == {t'. \<exists> n \<in> ns. promised\<^sub>b i n t t'}"
 
 assumes Q\<^sub>0_intersects: "Q\<^sub>0 \<frown> Q\<^sub>0"
-assumes Q\<^sub>_intersects:  "\<lbrakk> proposed i t; isReconfiguration (v i t) \<rbrakk>
-  \<Longrightarrow> newConfiguration (v i t) \<frown> newConfiguration (v i t)"
-
-assumes Q\<^sub>0_nonempty: "q \<in> Q\<^sub>0 \<Longrightarrow> q \<noteq> {}"
-assumes Q_nonempty: "\<lbrakk> proposed i t; isReconfiguration (v i t); q \<in> newConfiguration (v i t) \<rbrakk> \<Longrightarrow> q \<noteq> {}"
 
 assumes promised\<^sub>m: "\<lbrakk> promised\<^sub>m i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted j n t'"
 
@@ -274,6 +275,105 @@ assumes proposed_finite: "finite {(i, t). proposed i t}"
 
 assumes accepted: "accepted i n t \<Longrightarrow> proposed i t"
 
-assumes committed:          "committed i t \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>i i). \<forall> n \<in> q. accepted i n t"
-assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i \<le> era t"
+assumes committed:          "committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted i n t"
+assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i = era t"
 assumes committed_in_order: "committed i t \<Longrightarrow> committedTo i"
+
+lemma (in zen)
+  shows Q_intersects: "Q e \<frown> Q e"
+proof (cases "e = 0")
+  case True thus ?thesis by (simp add: Q\<^sub>0_intersects Q_def)
+next
+  case False
+
+  from Rep_Configuration
+  have [simp]: "\<And>ns. Rep_Configuration ns \<frown> Rep_Configuration ns"
+    by simp
+
+  hence [simp]: "\<And>va. newConfiguration va \<frown> newConfiguration va"
+  proof -
+    fix va
+    show "?thesis va"
+      by (cases va, simp_all)
+  qed
+
+  show ?thesis by (simp add: False Q_def)
+qed
+
+lemma (in zen)
+  assumes "isCommitted i"
+  shows projects_to_oneSlot:
+    "oneSlot (Q o era) (v i) (\<lambda> n t. (\<exists>j \<le> i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t)
+      (promised\<^sub>b i) (proposed i) (accepted i) (committed i)"
+proof (unfold_locales, fold promised_def prevAccepted_def)
+  fix n t assume "accepted i n t" thus "proposed i t" by (intro accepted)
+next
+  show "finite {t. proposed i t}"
+  proof (intro finite_subset [OF _ finite_imageI [OF proposed_finite, of snd]] subsetI image_eqI)
+    fix t assume "t \<in> { t. proposed i t }" hence t: "proposed i t" by simp
+    thus "t = snd (i, t)" and "(i, t) \<in> {(i, t). proposed i t}" by simp_all
+  qed
+next
+  fix n t t'
+  assume p: "promised\<^sub>b i n t t'"
+  from promised\<^sub>b_lt p show "t' \<prec> t" .
+  from promised\<^sub>b_accepted p show "accepted i n t'" .
+
+  fix t''
+  assume "t' \<prec> t''" "t'' \<prec> t"
+  with p promised\<^sub>b_max show "\<not>accepted i n t''" by simp
+next
+  fix n t t'
+  assume t't: "t' \<prec> t"
+  assume "(\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t"
+  thus "\<not> accepted i n t'"
+  proof (elim disjE)
+    from promised\<^sub>f t't
+    show "promised\<^sub>f i n t \<Longrightarrow> \<not> accepted i n t'" by simp
+    from promised\<^sub>m t't
+    show "\<exists>j\<le>i. promised\<^sub>m j n t \<Longrightarrow> \<not> accepted i n t'" by auto
+  qed
+next
+  fix t
+  assume "proposed i t"
+  from proposed [OF this]
+  show "\<exists>q\<in>(Q \<circ> era) t. (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))" by simp
+next
+  fix q t
+  assume "q \<in> (Q \<circ> era) t"
+  with Q_intersects [of "era t"]
+  show "q \<noteq> {}" by (auto simp add: intersects_def)
+next
+  fix t\<^sub>2
+  assume t2: "committed i t\<^sub>2"
+  from committed [OF this]
+  show "\<exists>q\<in>(Q \<circ> era) t\<^sub>2. \<forall>n\<in>q. accepted i n t\<^sub>2" by simp
+
+  fix t\<^sub>1
+  assume t1: "proposed i t\<^sub>1" and t21: "t\<^sub>2 \<preceq> t\<^sub>1"
+  hence "era t\<^sub>2 \<le> era t\<^sub>1" using era_mono by blast
+
+  moreover from proposed [OF t1]
+  obtain q\<^sub>1 where q\<^sub>1: "q\<^sub>1 \<in> Q (era t\<^sub>1)" "\<And> n. n \<in> q\<^sub>1 \<Longrightarrow> promised i n t\<^sub>1" by auto
+  with Q_intersects [of "era t\<^sub>1"] obtain n where "n \<in> q\<^sub>1"
+    by (meson IntE all_not_in_conv intersects_def)
+
+  with q\<^sub>1 have "promised i n t\<^sub>1" by simp
+  from promised_era [OF this]
+  obtain j where ji: "j \<le> i" and "era t\<^sub>1 \<le> era\<^sub>i j" by auto
+
+  moreover
+  from ji have "era\<^sub>i j \<le> era\<^sub>i i"
+    by (unfold era\<^sub>i_def, intro card_mono, auto)
+
+  moreover from t2 committed_era have "era\<^sub>i i = era t\<^sub>2" by simp
+
+  ultimately show "(Q \<circ> era) t\<^sub>1 \<frown> (Q \<circ> era) t\<^sub>2"
+    using Q_intersects order_trans by fastforce
+qed
+
+lemma (in zen) consistent:
+  assumes "committed i t\<^sub>1" "committed i t\<^sub>2"
+  shows "v i t\<^sub>1 = v i t\<^sub>2"
+  using assms
+  by (intro oneSlot.consistent [OF projects_to_oneSlot], auto simp add: isCommitted_def)
