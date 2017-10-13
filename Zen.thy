@@ -489,8 +489,59 @@ next
   assume "proposed i t"
   from proposed [OF this]
   obtain q where q: "q\<in>Q (era t)" "\<forall>n\<in>q. promised i n t" "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by auto
-
-  from q
-  show "\<exists>q\<in>Q (era t). (\<forall>n\<in>q. ((\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f' i n t) \<or> (\<exists>t'. promised\<^sub>b i n t t')) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+  thus "\<exists>q\<in>Q (era t). (\<forall>n\<in>q. ((\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f' i n t) \<or> (\<exists>t'. promised\<^sub>b i n t t')) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
     by (intro bexI [of _ q], auto simp add: q promised\<^sub>f'_def promised_def)
+qed
+
+lemma (in zen)
+  assumes earlier_term: "t\<^sub>0' \<prec> t\<^sub>0"
+  assumes accepted\<^sub>0: "accepted i\<^sub>0 n\<^sub>0 t\<^sub>0'"
+  assumes max_accepted: "\<And>t\<^sub>0''. accepted i\<^sub>0 n\<^sub>0 t\<^sub>0'' \<Longrightarrow> t\<^sub>0'' \<preceq> t\<^sub>0'"
+  assumes era: "\<exists> j \<le> i\<^sub>0. era t\<^sub>0 \<le> era\<^sub>i j \<and> committedTo j"
+  defines "promised\<^sub>b' i n t t' == promised\<^sub>b i n t t' \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0')"
+  shows add_promised\<^sub>b: "zen Q\<^sub>0 v promised\<^sub>m promised\<^sub>f promised\<^sub>b' proposed accepted committed"
+  using promised\<^sub>m promised\<^sub>f proposed_finite accepted committed
+proof (intro zenI_simple)
+  fix i n t t'
+  assume p: "promised\<^sub>b' i n t t'"
+  from p earlier_term promised\<^sub>b_lt show "t' \<prec> t"
+    using promised\<^sub>b'_def by auto
+
+  from p accepted\<^sub>0 promised\<^sub>b_accepted show "accepted i n t'"
+    using promised\<^sub>b'_def by auto
+
+  fix t'' assume "t' \<prec> t''" "t'' \<prec> t"
+  with p promised\<^sub>b_max max_accepted show "\<not> accepted i n t''"
+    using promised\<^sub>b'_def
+    by (metis prod.inject term_not_le_lt)
+
+next
+  fix i n t
+  assume "((\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t) \<or> (\<exists>t'. promised\<^sub>b' i n t t')"
+  hence "promised i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
+    using promised\<^sub>b'_def promised_def by auto
+  thus "\<exists>j\<le>i. era t \<le> era\<^sub>i j \<and> committedTo j"
+    using era promised_era by auto
+
+next
+  have promised\<^sub>b_func: "\<And>t'. promised\<^sub>b i\<^sub>0 n\<^sub>0 t\<^sub>0 t' \<Longrightarrow> t' = t\<^sub>0'"
+    using accepted\<^sub>0 earlier_term le_term_def max_accepted promised\<^sub>b_accepted promised\<^sub>b_max by blast
+
+  have promised_imp: "promised i\<^sub>0 n\<^sub>0 t\<^sub>0 \<Longrightarrow> promised\<^sub>b i\<^sub>0 n\<^sub>0 t\<^sub>0 t\<^sub>0'"
+    using promised_def accepted\<^sub>0 earlier_term promised\<^sub>b_func promised\<^sub>f promised\<^sub>m by blast
+
+  fix i t
+  assume "proposed i t"
+  from proposed [OF this]
+  obtain q where q: "q\<in>Q (era t)" "\<forall>n\<in>q. promised i n t" "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by auto
+
+  have [simp]: "{t'. \<exists>n\<in>q. promised\<^sub>b' i n t t'} = prevAccepted i t q"
+    using prevAccepted_def promised\<^sub>b'_def promised_imp q(2) by auto
+
+  from q show "\<exists>q\<in>Q (era t). (\<forall>n\<in>q. ((\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t) \<or> (\<exists>t'. promised\<^sub>b' i n t t')) \<and> ({t'. \<exists>n\<in>q. promised\<^sub>b' i n t t'} = {} \<or> v i t = v i (maxTerm {t'. \<exists>n\<in>q. promised\<^sub>b' i n t t'}))"
+  proof (intro bexI [of _ q] conjI)
+    from q show
+      "\<forall>n\<in>q. ((\<exists>j\<le>i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t) \<or> (\<exists>t'. promised\<^sub>b' i n t t')"
+      by (auto simp add: promised\<^sub>b'_def promised_def)
+  qed simp
 qed
