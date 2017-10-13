@@ -725,22 +725,24 @@ proof -
     qed
   qed
 
-  have "zen Q\<^sub>0 v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
+  have v_prevAccepted_eq: "\<And>i t q. prevAccepted i t q \<noteq> {} \<Longrightarrow> v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
+  proof -
+    fix i t q
+    assume bound: "prevAccepted i t q \<noteq> {}"
+
+    have "maxTerm (prevAccepted i t q) \<in> prevAccepted i t q"
+      by (intro maxTerm_mem `prevAccepted i t q \<noteq> {}` finite_prevAccepted)
+
+    then obtain n where "promised\<^sub>b i n t (maxTerm (prevAccepted i t q))" by (auto simp add: prevAccepted_def)
+    hence "accepted i n (maxTerm (prevAccepted i t q))" using promised\<^sub>b_accepted by auto
+    hence "proposed i   (maxTerm (prevAccepted i t q))" using accepted by auto
+
+    thus "?thesis i t q" using not_already_proposed v'_def by auto
+  qed
+
+  from Q\<^sub>0_intersects proposed_finite accepted promised\<^sub>m promised\<^sub>f promised\<^sub>b_lt promised\<^sub>b_accepted promised\<^sub>b_max
+  have update_value: "zen Q\<^sub>0 v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
   proof (unfold_locales, fold promised_def isCommitted_def v\<^sub>c'_def prevAccepted_def, fold committedTo_def era\<^sub>i'_def, fold Q'_def)
-    from Q\<^sub>0_intersects show "Q\<^sub>0 \<frown> Q\<^sub>0" .
-    from proposed_finite show "finite {(i, t). proposed i t}" .
-    fix i n t assume "accepted i n t" with accepted show "proposed i t" .
-  next
-    fix i n t t' j assume "promised\<^sub>m i n t" "t' \<prec> t" "i \<le> j" with promised\<^sub>m show "\<not> accepted j n t'" .
-  next
-    fix i n t t' assume "promised\<^sub>f i n t" "t' \<prec> t" with promised\<^sub>f show "\<not> accepted i n t'" .
-  next
-    fix i n t t' assume p: "promised\<^sub>b i n t t'" 
-    from promised\<^sub>b_lt p show "t' \<prec> t" .
-    from promised\<^sub>b_accepted p show "accepted i n t'" .
-    fix t'' assume "t' \<prec> t''" "t'' \<prec> t"
-    from promised\<^sub>b_max p this show "\<not> accepted i n t''".
-  next
     fix i t assume "committed i t" with committed_in_order show "committedTo i" .
 
     from `committed i t` have [simp]: "v\<^sub>c' i = v\<^sub>c i"
@@ -783,16 +785,8 @@ proof -
       show "q \<in> Q' (era t)" by simp
 
       assume bound: "prevAccepted i t q \<noteq> {}"
-
-      have "maxTerm (prevAccepted i t q) \<in> prevAccepted i t q"
-        by (intro maxTerm_mem `prevAccepted i t q \<noteq> {}` finite_prevAccepted)
-
-      then obtain n where "promised\<^sub>b i n t (maxTerm (prevAccepted i t q))" by (auto simp add: prevAccepted_def)
-      hence "accepted i n (maxTerm (prevAccepted i t q))" using promised\<^sub>b_accepted by auto
-      hence "proposed i   (maxTerm (prevAccepted i t q))" using accepted by auto
- 
       hence [simp]: "v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
-        using not_already_proposed v'_def by auto
+        by (simp add: v_prevAccepted_eq)
 
       have [simp]: "v' i t = v i t"
         using \<open>proposed i t\<close> not_already_proposed v'_def by auto
@@ -802,3 +796,73 @@ proof -
     qed
   qed
 
+  from promised\<^sub>m promised\<^sub>f promised\<^sub>b_lt promised\<^sub>b_accepted promised\<^sub>b_max
+  show ?thesis
+  proof (intro zen.zenI_simple [OF update_value],
+      fold prevAccepted_def promised_def isCommitted_def, fold committedTo_def v\<^sub>c'_def,
+      fold era\<^sub>i'_def, fold Q'_def)
+
+    fix i n t
+    assume "promised i n t"
+    from promised_era [OF this] obtain j where j: "j \<le> i" "era t \<le> era\<^sub>i j" "committedTo j" by auto
+    have [simp]: "era\<^sub>i' j = era\<^sub>i j" by (simp add: era\<^sub>i_eq j)
+
+    from j show "\<exists>j\<le>i. era t \<le> era\<^sub>i' j \<and> committedTo j" by auto
+
+  next
+    have "{(i, t). proposed' i t} = {(i, t). proposed i t} \<union> { (i\<^sub>0, t\<^sub>0) }"
+      by (auto simp add: proposed'_def)
+    with proposed_finite
+    show "finite {(i, t). proposed' i t}" by auto
+
+  next
+    fix i n t assume "accepted i n t" thus "proposed' i t"
+      using accepted proposed'_def by blast
+
+  next
+    fix i t assume "committed i t"
+
+    have "Q' (era t) = Q (era t)"
+      using Q_eq \<open>committed i t\<close> committed_era committed_in_order by fastforce
+
+    with `committed i t` committed
+    show "\<exists>q\<in>Q' (era t). \<forall>n\<in>q. accepted i n t" by auto
+
+  next
+    fix i t assume "proposed' i t"
+
+    hence "proposed i t \<or> (i, t) = (i\<^sub>0, t\<^sub>0)" by (auto simp add: proposed'_def)
+    thus "\<exists>q\<in>Q' (era t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
+    proof (elim disjE)
+      assume p: "proposed i t"
+      hence Q_eq: "Q' (era t) = Q (era t)"
+        by (metis IntE Q_eq Q_intersects equals0I intersects_def promised_era proposed)
+
+      from p have v_eq: "v' i t = v i t"
+        using not_already_proposed v'_def by auto
+
+      from p have v_eq2: "\<And>q. prevAccepted i t q = {} \<or> v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
+        using v_prevAccepted_eq by auto
+
+      from Q_eq v_eq v_eq2 proposed [OF `proposed i t`] show ?thesis by metis
+
+    next
+      assume "(i, t) = (i\<^sub>0, t\<^sub>0)"
+      hence [simp]: "i = i\<^sub>0" "t = t\<^sub>0" by simp_all
+
+      from q_quorum have "q \<noteq> {}"
+        by (meson Int_emptyI Q_intersects equals0D intersects_def)
+      then obtain n where "n \<in> q" by auto
+
+      with q_promised have "promised i\<^sub>0 n t\<^sub>0" .
+      from promised_era [OF this]
+      obtain j where "j\<le>i\<^sub>0" "era t\<^sub>0 \<le> era\<^sub>i j" "committedTo j" by auto
+
+      have Q_eq: "Q' (era t\<^sub>0) = Q (era t\<^sub>0)"
+        using Q_eq \<open>committedTo j\<close> \<open>era t\<^sub>0 \<le> era\<^sub>i j\<close> by blast
+
+      show ?thesis
+        by (intro bexI [of _ q] conjI ballI, simp_all add: assms Q_eq)
+    qed
+  qed
+qed
