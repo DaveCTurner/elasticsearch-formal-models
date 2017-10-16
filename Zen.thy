@@ -4,6 +4,8 @@ begin
 
 section \<open>Preliminaries\<close>
 
+subsection \<open>Terms\<close>
+
 datatype Term = Term nat nat
 
 fun era :: "Term \<Rightarrow> nat" where "era (Term e _) = e"
@@ -95,8 +97,9 @@ proof -
   with t show "maxTerm S \<in> S" "\<And>t'. t' \<in> S \<Longrightarrow> t' \<preceq> maxTerm S" by simp_all
 qed auto
 
+subsection \<open>Nodes and quorums\<close>
+
 datatype Node = Node nat
-datatype ClusterState = ClusterState nat
 
 definition intersects :: "'a set set \<Rightarrow> 'a set set \<Rightarrow> bool" (infixl "\<frown>" 50)
   where "A \<frown> B \<equiv> \<forall> a \<in> A. \<forall> b \<in> B. a \<inter> b \<noteq> {}"
@@ -112,6 +115,10 @@ definition Q\<^sub>0 :: "Node set set" where "Q\<^sub>0 \<equiv> SOME Q. Q \<fro
 lemma Q\<^sub>0_intersects: "Q\<^sub>0 \<frown> Q\<^sub>0"
   by (metis Collect_empty_eq Q\<^sub>0_def Rep_Configuration empty_iff some_eq_ex)
 
+subsection \<open>Values\<close>
+
+datatype ClusterState = ClusterState nat
+
 datatype Value
   = NoOp
   | Reconfigure Configuration
@@ -125,40 +132,51 @@ fun getConf :: "Value \<Rightarrow> Node set set"
   where "getConf (Reconfigure conf) = Rep_Configuration conf"
   | "getConf _                      = Rep_Configuration (SOME _. False)"
 
+definition reconfigure :: "Node set set \<Rightarrow> Value"
+  where "reconfigure Q = Reconfigure (Abs_Configuration Q)"
+
+lemma getConf_reconfigure: "Q \<frown> Q \<Longrightarrow> getConf (reconfigure Q) = Q"
+  by (simp add: Abs_Configuration_inverse reconfigure_def)
+
+lemma reconfigure_isReconfiguration: "isReconfiguration (reconfigure Q)"
+  by (simp add: reconfigure_def)
+
+subsection \<open>One-slot consistency\<close>
+
 locale oneSlot =
   fixes Q :: "Term \<Rightarrow> Node set set"
   fixes v :: "Term \<Rightarrow> Value"
-
-fixes promised\<^sub>f :: "Node \<Rightarrow> Term \<Rightarrow> bool"
-fixes promised\<^sub>b :: "Node \<Rightarrow> Term \<Rightarrow> Term \<Rightarrow> bool"
-fixes proposed :: "Term \<Rightarrow> bool"
-fixes accepted :: "Node \<Rightarrow> Term \<Rightarrow> bool"
-fixes committed :: "Term \<Rightarrow> bool"
-
-fixes promised :: "Node \<Rightarrow> Term \<Rightarrow> bool"
-defines "promised n t \<equiv> promised\<^sub>f n t \<or> (\<exists> t'. promised\<^sub>b n t t')"
-
-fixes prevAccepted :: "Term \<Rightarrow> Node set \<Rightarrow> Term set"
-defines "prevAccepted t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b n t t'}"
-
-assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; committed t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>1 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
-assumes Q_nonempty: "q \<in> Q t \<Longrightarrow> q \<noteq> {}"
-
-assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t'"
-
-assumes promised\<^sub>b_lt:       "promised\<^sub>b n t t' \<Longrightarrow> t' \<prec> t"
-assumes promised\<^sub>b_accepted: "promised\<^sub>b n t t' \<Longrightarrow> accepted n t'"
-assumes promised\<^sub>b_max:    "\<lbrakk> promised\<^sub>b n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t''"
-
-assumes proposed: "proposed t \<Longrightarrow> \<exists> q \<in> Q t. (\<forall> n \<in> q. promised n t)
-                                           \<and> (prevAccepted t q = {}
-                                                \<or> v t = v (maxTerm (prevAccepted t q)))"
-
-assumes proposed_finite: "finite {t. proposed t}"
-
-assumes accepted: "accepted n t \<Longrightarrow> proposed t"
-
-assumes committed: "committed t \<Longrightarrow> \<exists> q \<in> Q t. \<forall> n \<in> q. accepted n t"
+  
+  fixes promised\<^sub>f :: "Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes promised\<^sub>b :: "Node \<Rightarrow> Term \<Rightarrow> Term \<Rightarrow> bool"
+  fixes proposed :: "Term \<Rightarrow> bool"
+  fixes accepted :: "Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes committed :: "Term \<Rightarrow> bool"
+  
+  fixes promised :: "Node \<Rightarrow> Term \<Rightarrow> bool"
+  defines "promised n t \<equiv> promised\<^sub>f n t \<or> (\<exists> t'. promised\<^sub>b n t t')"
+  
+  fixes prevAccepted :: "Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  defines "prevAccepted t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b n t t'}"
+  
+  assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; committed t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>1 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
+  assumes Q_nonempty: "q \<in> Q t \<Longrightarrow> q \<noteq> {}"
+  
+  assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t'"
+  
+  assumes promised\<^sub>b_lt:       "promised\<^sub>b n t t' \<Longrightarrow> t' \<prec> t"
+  assumes promised\<^sub>b_accepted: "promised\<^sub>b n t t' \<Longrightarrow> accepted n t'"
+  assumes promised\<^sub>b_max:    "\<lbrakk> promised\<^sub>b n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t''"
+  
+  assumes proposed: "proposed t \<Longrightarrow> \<exists> q \<in> Q t. (\<forall> n \<in> q. promised n t)
+                                             \<and> (prevAccepted t q = {}
+                                                  \<or> v t = v (maxTerm (prevAccepted t q)))"
+  
+  assumes proposed_finite: "finite {t. proposed t}"
+  
+  assumes accepted: "accepted n t \<Longrightarrow> proposed t"
+  
+  assumes committed: "committed t \<Longrightarrow> \<exists> q \<in> Q t. \<forall> n \<in> q. accepted n t"
 
 lemma (in oneSlot) prevAccepted_proposed: "prevAccepted t ns \<subseteq> {t. proposed t}"
   using accepted prevAccepted_def promised\<^sub>b_accepted by fastforce
@@ -167,7 +185,7 @@ lemma (in oneSlot) prevAccepted_finite: "finite (prevAccepted p ns)"
   using prevAccepted_proposed proposed_finite by (meson rev_finite_subset)
 
 lemma (in oneSlot) p2b:
-  assumes "proposed t\<^sub>1" "committed t\<^sub>2" "t\<^sub>2 \<prec> t\<^sub>1"
+  assumes "proposed t\<^sub>1" and "committed t\<^sub>2" and "t\<^sub>2 \<prec> t\<^sub>1"
   shows "v t\<^sub>1 = v t\<^sub>2"
   using assms
 proof (induct t\<^sub>1 rule: term_induct)
@@ -223,7 +241,7 @@ proof (induct t\<^sub>1 rule: term_induct)
 qed
 
 lemma (in oneSlot) consistent:
-  assumes "committed t\<^sub>1" "committed t\<^sub>2"
+  assumes "committed t\<^sub>1" and "committed t\<^sub>2"
   shows "v t\<^sub>1 = v t\<^sub>2"
   by (metis Q_nonempty accepted all_not_in_conv assms committed le_term_def p2b term_not_le_lt)
 
@@ -235,63 +253,65 @@ lemma (in oneSlot) commit:
   shows "oneSlot Q v promised\<^sub>f promised\<^sub>b proposed accepted committed'"
   by (smt committed'_def intersects oneSlot_axioms oneSlot_def q_accepted q_quorum)
 
+subsection \<open>Zen: multi-slot consistency\<close>
+
 locale zen =
   fixes v         :: "nat \<Rightarrow> Term \<Rightarrow> Value"
-
-fixes promised\<^sub>m :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-fixes promised\<^sub>f :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-fixes promised\<^sub>b :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> Term \<Rightarrow> bool"
-fixes proposed  :: "nat \<Rightarrow> Term \<Rightarrow> bool"
-fixes accepted  :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-fixes committed :: "nat \<Rightarrow> Term \<Rightarrow> bool"
-
-fixes isCommitted :: "nat \<Rightarrow> bool"
-defines "isCommitted i \<equiv> \<exists> t. committed i t"
-
-fixes committedTo :: "nat \<Rightarrow> bool" ("committed\<^sub><")
-defines "committed\<^sub>< i \<equiv> \<forall> j < i. isCommitted j" 
-
-fixes v\<^sub>c :: "nat \<Rightarrow> Value"
-defines "v\<^sub>c i \<equiv> v i (SOME t. committed i t)"
-
-fixes era\<^sub>i :: "nat \<Rightarrow> nat"
-defines "era\<^sub>i i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
-
-fixes reconfig :: "nat \<Rightarrow> nat"
-defines "reconfig e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
-
-fixes Q :: "nat \<Rightarrow> Node set set"
-defines "Q e \<equiv> if e = 0 then Q\<^sub>0 else getConf (v\<^sub>c (reconfig (e-1)))"
-
-fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-defines "promised i n t \<equiv> ((\<exists> j \<le> i. promised\<^sub>m j n t)
-                            \<or> promised\<^sub>f i n t)
-                            \<or> (\<exists> t'. promised\<^sub>b i n t t')"
-
-fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
-defines "prevAccepted i t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b i n t t'}"
-
-assumes promised\<^sub>m: "\<lbrakk> promised\<^sub>m i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted j n t'"
-
-assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t'"
-
-assumes promised\<^sub>b_lt:       "promised\<^sub>b i n t t' \<Longrightarrow> t' \<prec> t"
-assumes promised\<^sub>b_accepted: "promised\<^sub>b i n t t' \<Longrightarrow> accepted i n t'"
-assumes promised\<^sub>b_max:    "\<lbrakk> promised\<^sub>b i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t''"
-
-assumes promised_era: "promised i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committed\<^sub>< j"
-
-assumes proposed: "proposed i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised i n t)
-                                           \<and> (prevAccepted i t q = {}
-                                                \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
-
-assumes proposed_finite: "finite {(i, t). proposed i t}"
-
-assumes accepted: "accepted i n t \<Longrightarrow> proposed i t"
-
-assumes committed:          "committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted i n t"
-assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i = era t"
-assumes committed_in_order: "committed i t \<Longrightarrow> committed\<^sub>< i"
+  
+  fixes promised\<^sub>m :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes promised\<^sub>f :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes promised\<^sub>b :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> Term \<Rightarrow> bool"
+  fixes proposed  :: "nat \<Rightarrow> Term \<Rightarrow> bool"
+  fixes accepted  :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes committed :: "nat \<Rightarrow> Term \<Rightarrow> bool"
+  
+  fixes isCommitted :: "nat \<Rightarrow> bool"
+  defines "isCommitted i \<equiv> \<exists> t. committed i t"
+  
+  fixes committedTo :: "nat \<Rightarrow> bool" ("committed\<^sub><")
+  defines "committed\<^sub>< i \<equiv> \<forall> j < i. isCommitted j" 
+  
+  fixes v\<^sub>c :: "nat \<Rightarrow> Value"
+  defines "v\<^sub>c i \<equiv> v i (SOME t. committed i t)"
+  
+  fixes era\<^sub>i :: "nat \<Rightarrow> nat"
+  defines "era\<^sub>i i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
+  
+  fixes reconfig :: "nat \<Rightarrow> nat"
+  defines "reconfig e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
+  
+  fixes Q :: "nat \<Rightarrow> Node set set"
+  defines "Q e \<equiv> if e = 0 then Q\<^sub>0 else getConf (v\<^sub>c (reconfig (e-1)))"
+  
+  fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  defines "promised i n t \<equiv> ((\<exists> j \<le> i. promised\<^sub>m j n t)
+                              \<or> promised\<^sub>f i n t)
+                              \<or> (\<exists> t'. promised\<^sub>b i n t t')"
+  
+  fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  defines "prevAccepted i t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b i n t t'}"
+  
+  assumes promised\<^sub>m: "\<lbrakk> promised\<^sub>m i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted j n t'"
+  
+  assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t'"
+  
+  assumes promised\<^sub>b_lt:       "promised\<^sub>b i n t t' \<Longrightarrow> t' \<prec> t"
+  assumes promised\<^sub>b_accepted: "promised\<^sub>b i n t t' \<Longrightarrow> accepted i n t'"
+  assumes promised\<^sub>b_max:    "\<lbrakk> promised\<^sub>b i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted i n t''"
+  
+  assumes promised_era: "promised i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committed\<^sub>< j"
+  
+  assumes proposed: "proposed i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised i n t)
+                                             \<and> (prevAccepted i t q = {}
+                                                  \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+  
+  assumes proposed_finite: "finite {(i, t). proposed i t}"
+  
+  assumes accepted: "accepted i n t \<Longrightarrow> proposed i t"
+  
+  assumes committed:          "committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted i n t"
+  assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i = era t"
+  assumes committed_in_order: "committed i t \<Longrightarrow> committed\<^sub>< i"
 
 lemma (in zen)
   shows Q_intersects: "Q e \<frown> Q e"
@@ -390,37 +410,37 @@ lemma Collect_pair_False[simp]:  "{(i, t). False} = {}" by auto
 
 lemma (in zen)
   fixes promised\<^sub>m' promised\<^sub>f' promised\<^sub>b'
-
-fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-defines "promised' i n t \<equiv> ((\<exists> j \<le> i. promised\<^sub>m' j n t)
-                            \<or> promised\<^sub>f' i n t)
-                            \<or> (\<exists> t'. promised\<^sub>b' i n t t')"
-
-fixes prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
-defines "prevAccepted' i t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b' i n t t'}"
-
-assumes "\<And>i j n t t'. \<lbrakk> promised\<^sub>m' i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted' j n t'"
-
-assumes "\<And>i n t t'. \<lbrakk> promised\<^sub>f' i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t'"
-
-assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> t' \<prec> t"
-assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> accepted' i n t'"
-assumes  "\<And>i n t t' t''. \<lbrakk> promised\<^sub>b' i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t''"
-
-assumes "\<And>i n t. promised' i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committed\<^sub>< j"
-
-assumes "\<And>i t. proposed' i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised' i n t)
-                                                 \<and> (prevAccepted' i t q = {}
-                                                     \<or> v i t = v i (maxTerm (prevAccepted' i t q)))"
-
-assumes "finite {(i, t). proposed' i t}"
-
-assumes "\<And>i n t. accepted' i n t \<Longrightarrow> proposed' i t"
-
-assumes "\<And>i t. committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted' i n t"
-
-shows zenI_simple:
-  "zen v promised\<^sub>m' promised\<^sub>f' promised\<^sub>b' proposed' accepted' committed"
+  
+  fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  defines "promised' i n t \<equiv> ((\<exists> j \<le> i. promised\<^sub>m' j n t)
+                              \<or> promised\<^sub>f' i n t)
+                              \<or> (\<exists> t'. promised\<^sub>b' i n t t')"
+  
+  fixes prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  defines "prevAccepted' i t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b' i n t t'}"
+  
+  assumes "\<And>i j n t t'. \<lbrakk> promised\<^sub>m' i n t; t' \<prec> t; i \<le> j \<rbrakk> \<Longrightarrow> \<not> accepted' j n t'"
+  
+  assumes "\<And>i n t t'. \<lbrakk> promised\<^sub>f' i n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t'"
+  
+  assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> t' \<prec> t"
+  assumes  "\<And>i n t t'. promised\<^sub>b' i n t t' \<Longrightarrow> accepted' i n t'"
+  assumes  "\<And>i n t t' t''. \<lbrakk> promised\<^sub>b' i n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted' i n t''"
+  
+  assumes "\<And>i n t. promised' i n t \<Longrightarrow> \<exists> j \<le> i. era t \<le> era\<^sub>i j \<and> committed\<^sub>< j"
+  
+  assumes "\<And>i t. proposed' i t \<Longrightarrow> \<exists> q \<in> Q (era t). (\<forall> n \<in> q. promised' i n t)
+                                                   \<and> (prevAccepted' i t q = {}
+                                                       \<or> v i t = v i (maxTerm (prevAccepted' i t q)))"
+  
+  assumes "finite {(i, t). proposed' i t}"
+  
+  assumes "\<And>i n t. accepted' i n t \<Longrightarrow> proposed' i t"
+  
+  assumes "\<And>i t. committed i t \<Longrightarrow> \<exists> q \<in> Q (era t). \<forall> n \<in> q. accepted' i n t"
+  
+  shows zenI_simple:
+    "zen v promised\<^sub>m' promised\<^sub>f' promised\<^sub>b' proposed' accepted' committed"
   using assms committed_era committed_in_order
   by (unfold_locales, fold promised'_def prevAccepted'_def era\<^sub>i_def isCommitted_def v\<^sub>c_def, fold committedTo_def era\<^sub>i_def reconfig_def, fold Q_def)
 
@@ -467,7 +487,7 @@ lemma (in zen) era\<^sub>i_mono:
   by (induct i, simp, metis era\<^sub>i_Suc_Suc era\<^sub>i_Suc_eq le_SucE le_SucI order_refl)
 
 lemma (in zen)
-  assumes "j < i" "isReconfiguration (v\<^sub>c j)" "isCommitted i"
+  assumes "j < i" and "isReconfiguration (v\<^sub>c j)" and "isCommitted i"
   shows era_increases_on_reconfiguration: "era\<^sub>i j < era\<^sub>i i"
   using assms
   by (metis Suc_le_eq era\<^sub>i_Suc_Suc era\<^sub>i_mono)
@@ -524,10 +544,7 @@ proof -
 qed
 
 lemma (in zen)
-  assumes "committed\<^sub>< i"
-  assumes "e < era\<^sub>i i"
-  assumes "isReconfiguration (v\<^sub>c j)"
-  assumes "era\<^sub>i j = e"
+  assumes "committed\<^sub>< i" and "e < era\<^sub>i i" and "isReconfiguration (v\<^sub>c j)" and "era\<^sub>i j = e"
   shows reconfig_eq: "j = reconfig e"
   by (metis Suc_leI assms era\<^sub>i_Suc_Suc era\<^sub>i_mono leD lessI nat_neq_iff reconfig_era reconfig_isReconfiguration)
 
@@ -545,49 +562,49 @@ section \<open>Important facts\<close>
 
 subsection \<open>Definitions\<close>
 
+text \<open>The @{term promised} predicate means any of the three kinds of promises has been sent:\<close>
+
 lemma (in zen) "promised i n t \<equiv>
                                  (\<exists>j\<le>i. promised\<^sub>m j n t)
                                   \<or> promised\<^sub>f i n t
                                   \<or> (\<exists>t'. promised\<^sub>b i n t t')"
   by (auto simp add: promised_def)
 
+text \<open>The @{term prevAccepted} function gives the set of previously-accepted terms from received @{term promised\<^sub>b} messages:\<close>
+
 lemma (in zen) "prevAccepted i t q \<equiv> {t'. \<exists> n \<in> q. promised\<^sub>b i n t t'}"
   using prevAccepted_def by simp
 
+text \<open>The @{term maxTerm} function finds the largest term in a set:\<close>
+
 lemma "maxTerm S \<equiv> THE t. t \<in> S \<and> (\<forall>t' \<in> S. t' \<preceq> t)" using maxTerm_def by simp
+
+text \<open>This predicate says that all strictly-earlier slots are committed:\<close>
 
 lemma (in zen) "committed\<^sub>< i \<equiv> \<forall> j < i. \<exists> t. committed j t"
   by (simp add: committedTo_def isCommitted_def)
 
+text \<open>The @{term v\<^sub>c} function gives the value committed in each slot (and is arbitrary for uncommitted slots):\<close>
+
 lemma (in zen) "committed i t \<Longrightarrow> v\<^sub>c i = v i t"
   by (metis (mono_tags, lifting) isCommitted_def oneSlot.consistent projects_to_oneSlot someI_ex v\<^sub>c_def)
+
+text \<open>The era of a slot is the number of reconfigurations committed in earlier slots:\<close>
 
 lemma (in zen) "era\<^sub>i i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
   using era\<^sub>i_def by simp
 
+text \<open>The configuration of the first era is the constant @{term Q\<^sub>0}:\<close>
+
 lemma (in zen) "Q 0 = Q\<^sub>0" by (simp add: Q_def)
 
-lemma (in zen)
-  assumes "0 < era\<^sub>i i" and "committed\<^sub>< i"
-  shows "Q (era\<^sub>i i) \<equiv>
-     getConf (v\<^sub>c (GREATEST j. j < i \<and> isReconfiguration (v\<^sub>c j)))" 
-proof -
-  have "(GREATEST j. j < i \<and> isReconfiguration (v\<^sub>c j)) = reconfig (era\<^sub>i i - 1)"
-  proof (intro Greatest_equality conjI)
-    show "reconfig (era\<^sub>i i - 1) < i"
-      by (simp add: assms reconfig_lt)
-    show "isReconfiguration (v\<^sub>c (reconfig (era\<^sub>i i - 1)))"
-      using assms reconfig_isReconfiguration by auto
+text \<open>Each committed reconfiguration defines the configuration of the next era:\<close>
 
-    fix j assume "j < i \<and> isReconfiguration (v\<^sub>c j)"
-    hence "j < i" "isReconfiguration (v\<^sub>c j)" by simp_all
-    with assms show "j \<le> reconfig (era\<^sub>i i - 1)"
-      apply (induct i arbitrary: j, blast)
-      by (metis committedTo_def diff_Suc_1 era\<^sub>i_Suc less_Suc_eq less_Suc_eq_le reconfig_eq)
-  qed
-  with assms show "Q (era\<^sub>i i) \<equiv> getConf (v\<^sub>c (GREATEST j. j < i \<and> isReconfiguration (v\<^sub>c j)))"
-    by (simp add: Q_def)
-qed
+lemma (in zen)
+  assumes "committed i t" and "v\<^sub>c i = reconfigure Q'" and "Q' \<frown> Q'"
+  shows "era\<^sub>i (i + 1) \<equiv> (era\<^sub>i i) + 1" and "Q (era\<^sub>i i + 1) \<equiv> Q'"
+   apply (simp add: assms(2) era\<^sub>i_Suc_Suc reconfigure_isReconfiguration)
+  by (smt Q_def Suc_eq_plus1 add_diff_cancel_right' assms committed_committedTo_Suc era\<^sub>i_Suc_Suc getConf_reconfigure isCommitted_def le_add2 less_add_one not_one_le_zero reconfig_eq reconfigure_isReconfiguration)
 
 subsection \<open>Safety\<close>
 
@@ -599,6 +616,10 @@ lemma (in zen) consistent:
 
 subsection \<open>Preserving invariants\<close>
 
+subsubsection \<open>Starting point\<close>
+
+text \<open>If no messages have been sent then the invariants hold:\<close>
+
 lemma
   assumes "\<And>i n t. \<not> promised\<^sub>m i n t"
   assumes "\<And>i n t. \<not> promised\<^sub>f i n t"
@@ -608,6 +629,11 @@ lemma
   assumes "\<And>i t. \<not> committed i t"
   shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
   using assms by (unfold_locales, auto)
+
+subsubsection \<open>Promises\<close>
+
+text \<open>A @{term promised\<^sub>m} message can be sent if nothing has been accepted for this slot and for any
+later slot, and the configuration of the era of its term is known:\<close>
 
 lemma (in zen)
   assumes "\<And>t j. i\<^sub>0 \<le> j \<Longrightarrow> \<not> accepted j n\<^sub>0 t"
@@ -650,6 +676,9 @@ next
     by (intro bexI [of _ q], auto simp add: q promised\<^sub>m'_def promised_def)
 qed
 
+text \<open>A @{term promised\<^sub>f} message can be sent if nothing has been accepted for this slot,
+and the configuration of the era of its term is known:\<close>
+
 lemma (in zen)
   assumes "\<And>t. \<not> accepted i\<^sub>0 n\<^sub>0 t"
   assumes "\<exists> j \<le> i\<^sub>0. era t\<^sub>0 \<le> era\<^sub>i j \<and> committed\<^sub>< j"
@@ -679,10 +708,14 @@ next
     by (intro bexI [of _ q], auto simp add: q promised\<^sub>f'_def promised_def)
 qed
 
+text \<open>A @{term promised\<^sub>b} message can be sent if something has been accepted for this slot, and the
+configuration of the era of its term is known. The message must include the greatest term for which
+an @{term accepted} message has been sent:\<close>
+
 lemma (in zen)
   assumes "t\<^sub>0' \<prec> t\<^sub>0"
   assumes "accepted i\<^sub>0 n\<^sub>0 t\<^sub>0'"
-  assumes "\<And>t\<^sub>0''. accepted i\<^sub>0 n\<^sub>0 t\<^sub>0'' \<Longrightarrow> t\<^sub>0'' \<preceq> t\<^sub>0'"
+  assumes "\<And>t''. accepted i\<^sub>0 n\<^sub>0 t'' \<Longrightarrow> t'' \<preceq> t\<^sub>0'"
   assumes "\<exists> j \<le> i\<^sub>0. era t\<^sub>0 \<le> era\<^sub>i j \<and> committed\<^sub>< j"
   defines "promised\<^sub>b' i n t t' \<equiv> promised\<^sub>b i n t t' \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0')"
   shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b' proposed accepted committed"
@@ -732,10 +765,17 @@ next
   qed simp
 qed
 
+subsubsection \<open>Proposals\<close>
+
+text \<open>A @{term proposed} message can be sent if it has not previously been sent and a quorum
+of suitable promises has been received. If any promise received was a @{term promised\<^sub>b} message
+then this determines the value proposed:\<close>
+
 lemma (in zen)
   assumes "\<not> proposed i\<^sub>0 t\<^sub>0"
   assumes "\<And>n. n \<in> q \<Longrightarrow> promised i\<^sub>0 n t\<^sub>0"
   assumes "q \<in> Q (era t\<^sub>0)"
+
   fixes v\<^sub>0
   defines "v' i t \<equiv> if (i, t) = (i\<^sub>0, t\<^sub>0)
                         then if prevAccepted i\<^sub>0 t\<^sub>0 q = {}
@@ -921,6 +961,10 @@ proof -
   qed
 qed
 
+subsubsection \<open>Acceptances\<close>
+
+text \<open>A proposal can be accepted as long as it is compatible with all previously-made promises:\<close>
+
 lemma (in zen)
   assumes "proposed i\<^sub>0 t\<^sub>0"
   assumes "\<And>t. promised i\<^sub>0 n\<^sub>0 t \<Longrightarrow> t \<preceq> t\<^sub>0"
@@ -945,6 +989,11 @@ proof (intro zenI_simple)
   show "\<And>i t. committed i t \<Longrightarrow> \<exists>q\<in>Q (era t). \<forall>n\<in>q. accepted' i n t"
     by (meson accepted'_def committed)
 qed
+
+subsubsection \<open>Commits\<close>
+
+text \<open>A proposal can be committed on receipt of a quorum of acceptances, as long as all previous
+slots are committed and this slot's era matches the era of the term of the proposal:\<close>
 
 lemma (in zen)
   assumes "committed\<^sub>< i\<^sub>0"
