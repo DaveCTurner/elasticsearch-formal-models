@@ -6,9 +6,72 @@ section \<open>Preliminaries\<close>
 
 subsection \<open>Terms\<close>
 
-datatype Term = Term nat nat
+datatype Era = e\<^sub>0 | nextEra Era
 
-fun era\<^sub>t :: "Term \<Rightarrow> nat" where "era\<^sub>t (Term e _) = e"
+instantiation Era :: linorder
+begin
+
+fun less_Era :: "Era \<Rightarrow> Era \<Rightarrow> bool" where
+    "less_Era    _ e\<^sub>0 = False"
+  | "less_Era    e\<^sub>0 _ = True" 
+  | "less_Era    (nextEra e\<^sub>1) (nextEra e\<^sub>2) = less_Era e\<^sub>1 e\<^sub>2"
+definition less_eq_Era :: "Era \<Rightarrow> Era \<Rightarrow> bool" where
+  "less_eq_Era e\<^sub>1 e\<^sub>2 == e\<^sub>1 < e\<^sub>2 \<or> e\<^sub>1 = e\<^sub>2"
+
+instance proof
+  fix e\<^sub>1 :: Era
+  show "e\<^sub>1 \<le> e\<^sub>1" by (induct e\<^sub>1, auto simp add: less_eq_Era_def)
+
+  fix e\<^sub>2
+  show "(e\<^sub>1 < e\<^sub>2) = (e\<^sub>1 \<le> e\<^sub>2 \<and> \<not> e\<^sub>2 \<le> e\<^sub>1)"
+    apply (induct e\<^sub>1 arbitrary: e\<^sub>2) 
+    using less_eq_Era_def apply auto[1]
+    by (metis less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
+
+  show "e\<^sub>1 \<le> e\<^sub>2 \<or> e\<^sub>2 \<le> e\<^sub>1"
+    apply (induct e\<^sub>1 arbitrary: e\<^sub>2)
+    using less_Era.elims(3) less_eq_Era_def apply auto[1]
+    by (metis less_Era.elims(3) less_Era.simps(3) less_eq_Era_def)
+
+  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>1 \<Longrightarrow> e\<^sub>1 = e\<^sub>2"
+    apply (induct e\<^sub>1 arbitrary: e\<^sub>2)
+     apply (simp add: less_eq_Era_def)
+    by (metis less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
+
+  fix e\<^sub>3
+  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>3 \<Longrightarrow> e\<^sub>1 \<le> e\<^sub>3"
+    apply (induct e\<^sub>1 arbitrary: e\<^sub>2 e\<^sub>3) 
+    using less_Era.elims(3) less_eq_Era_def apply auto[1]
+    by (smt Era.exhaust less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
+qed
+end
+
+fun natOfEra :: "Era \<Rightarrow> nat" where
+  "natOfEra e\<^sub>0 = 0" | "natOfEra (nextEra e) = Suc (natOfEra e)"
+
+lemma natOfEra_le[simp]: "(natOfEra e\<^sub>1 \<le> natOfEra e\<^sub>2) = (e\<^sub>1 \<le> e\<^sub>2)"
+  apply (induct e\<^sub>1 arbitrary: e\<^sub>2, simp add: leI)
+  by (metis (no_types, lifting) Suc_le_mono less_Era.elims(3) less_Era.simps(3) less_irrefl natOfEra.simps(1) natOfEra.simps(2) not_less zero_less_Suc)
+
+lemma natOfEra_eq[simp]: "(natOfEra e\<^sub>1 = natOfEra e\<^sub>2) = (e\<^sub>1 = e\<^sub>2)"
+  by (simp add: eq_iff)
+
+lemma natOfEra_lt[simp]: "(natOfEra e\<^sub>1 < natOfEra e\<^sub>2) = (e\<^sub>1 < e\<^sub>2)"
+  by (meson natOfEra_le not_less)
+
+fun eraOfNat :: "nat \<Rightarrow> Era" where
+  "eraOfNat 0 = e\<^sub>0" | "eraOfNat (Suc n) = nextEra (eraOfNat n)"
+
+lemma eraOfNat_inv[simp]: "eraOfNat (natOfEra e) = e" by (induct e, simp_all)
+lemma natOfEra_inv[simp]: "natOfEra (eraOfNat n) = n" by (induct n, simp_all)
+
+lemma eraOfNat_le[simp]: "(eraOfNat n\<^sub>1 \<le> eraOfNat n\<^sub>2) = (n\<^sub>1 \<le> n\<^sub>2)" by (metis natOfEra_inv natOfEra_le)
+lemma eraOfNat_lt[simp]: "(eraOfNat n\<^sub>1 < eraOfNat n\<^sub>2) = (n\<^sub>1 < n\<^sub>2)" by (metis natOfEra_inv natOfEra_lt)
+lemma eraOfNat_eq[simp]: "(eraOfNat n\<^sub>1 = eraOfNat n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis natOfEra_inv)
+
+datatype Term = Term Era nat
+
+fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _) = e"
 fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n) = n"
 
 definition lt_term :: "Term \<Rightarrow> Term \<Rightarrow> bool" (infixl "\<prec>" 50)
@@ -33,11 +96,11 @@ lemma era\<^sub>t_mono: "t\<^sub>1 \<preceq> t\<^sub>2 \<Longrightarrow> era\<^s
 lemma term_lt_le: "t\<^sub>1 \<prec> t\<^sub>2 \<Longrightarrow> t\<^sub>1 \<preceq> t\<^sub>2" using le_term_def by auto
 
 lemma term_not_le_lt[simp]: "(\<not> (t\<^sub>1 \<preceq> t\<^sub>2)) = (t\<^sub>2 \<prec> t\<^sub>1)"
-  by (metis era\<^sub>t.simps le_term_def lt_term_def nat_neq_iff termInEra.cases termInEra.simps term_le_lt_trans)
+  by (metis Term.exhaust era\<^sub>t.simps le_term_def lt_term_def not_less_iff_gr_or_eq termInEra.simps)
 
 lemma term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 }"
 proof -
-  have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [era\<^sub>t, termInEra]"
+  have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra]"
     by (simp add: measures_def inv_image_def lt_term_def)
   thus ?thesis by simp
 qed
@@ -274,14 +337,14 @@ locale zen =
   fixes v\<^sub>c :: "nat \<Rightarrow> Value"
   defines "v\<^sub>c i \<equiv> v i (SOME t. committed i t)"
   
-  fixes era\<^sub>i :: "nat \<Rightarrow> nat"
-  defines "era\<^sub>i i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
+  fixes era\<^sub>i :: "nat \<Rightarrow> Era"
+  defines "era\<^sub>i i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c j) })"
   
-  fixes reconfig :: "nat \<Rightarrow> nat"
+  fixes reconfig :: "Era \<Rightarrow> nat"
   defines "reconfig e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
   
-  fixes Q :: "nat \<Rightarrow> Node set set"
-  defines "Q e \<equiv> if e = 0 then Q\<^sub>0 else getConf (v\<^sub>c (reconfig (e-1)))"
+  fixes Q :: "Era \<Rightarrow> Node set set"
+  defines "Q e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
   
   fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
   defines "promised i n t \<equiv> ((\<exists> j \<le> i. promised\<^sub>m j n t)
@@ -315,23 +378,19 @@ locale zen =
 
 lemma (in zen)
   shows Q_intersects: "Q e \<frown> Q e"
-proof (cases "e = 0")
-  case True thus ?thesis by (simp add: Q\<^sub>0_intersects Q_def)
+proof (cases e)
+  case e\<^sub>0 thus ?thesis by (simp add: Q\<^sub>0_intersects Q_def)
 next
-  case False
+  case nextEra
 
   from Rep_Configuration
   have [simp]: "\<And>ns. Rep_Configuration ns \<frown> Rep_Configuration ns"
     by simp
 
   hence [simp]: "\<And>va. getConf va \<frown> getConf va"
-  proof -
-    fix va
-    show "?thesis va"
-      by (cases va, simp_all)
-  qed
+    by (metis getConf.elims)
 
-  show ?thesis by (simp add: False Q_def)
+  show ?thesis by (simp add: nextEra Q_def)
 qed
 
 lemma (in zen)
@@ -398,7 +457,7 @@ next
 
   moreover
   from ji have "era\<^sub>i j \<le> era\<^sub>i i"
-    by (unfold era\<^sub>i_def, intro card_mono, auto)
+    by (unfold era\<^sub>i_def, simp, intro card_mono, auto)
 
   moreover from t2 committed_era have "era\<^sub>i i = era\<^sub>t t\<^sub>2" by simp
 
@@ -471,7 +530,7 @@ lemma (in zen) era\<^sub>i_Suc_eq:
 
 lemma (in zen) era\<^sub>i_Suc_Suc:
   assumes "isReconfiguration (v\<^sub>c i)"
-  shows "era\<^sub>i (Suc i) = Suc (era\<^sub>i i)"
+  shows "era\<^sub>i (Suc i) = nextEra (era\<^sub>i i)"
 proof -
   have "{j. j < Suc i \<and> isReconfiguration (v\<^sub>c j)} = insert i {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
     using assms by auto
@@ -479,18 +538,18 @@ proof -
 qed
 
 lemma (in zen) era\<^sub>i_Suc:
-  shows "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then Suc (era\<^sub>i i) else era\<^sub>i i)"
+  shows "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
   by (simp add: era\<^sub>i_Suc_Suc era\<^sub>i_Suc_eq)
 
 lemma (in zen) era\<^sub>i_mono:
   shows "j \<le> i \<Longrightarrow> era\<^sub>i j \<le> era\<^sub>i i"
-  by (induct i, simp, metis era\<^sub>i_Suc_Suc era\<^sub>i_Suc_eq le_SucE le_SucI order_refl)
+  by (induct i, simp, metis era\<^sub>i_Suc le_SucE le_SucI natOfEra.simps(2) natOfEra_le order_refl)
 
 lemma (in zen)
   assumes "j < i" and "isReconfiguration (v\<^sub>c j)" and "isCommitted i"
   shows era_increases_on_reconfiguration: "era\<^sub>i j < era\<^sub>i i"
   using assms
-  by (metis Suc_le_eq era\<^sub>i_Suc_Suc era\<^sub>i_mono)
+  by (metis Suc_leI Suc_le_lessD era\<^sub>i_Suc era\<^sub>i_mono natOfEra.simps(2) natOfEra_le natOfEra_lt)
 
 lemma (in zen)
   assumes "era\<^sub>i i = era\<^sub>i j"
@@ -499,7 +558,8 @@ lemma (in zen)
   assumes "isReconfiguration (v\<^sub>c i)"
   assumes "isReconfiguration (v\<^sub>c j)"
   shows unique_reconfiguration_in_era: "i = j"
-  by (metis assms era_increases_on_reconfiguration nat_neq_iff)
+  using assms
+  by (metis era_increases_on_reconfiguration less_irrefl nat_neq_iff)
 
 lemma (in zen) committedTo_mono: "j \<le> i \<Longrightarrow> committed\<^sub>< i \<Longrightarrow> committed\<^sub>< j"
   using committedTo_def by auto
@@ -522,7 +582,7 @@ proof -
   have "\<exists> j. isCommitted j \<and> isReconfiguration (v\<^sub>c j) \<and> era\<^sub>i j = e"
   proof (induct i arbitrary: e)
     case Suc thus ?case
-      by (metis committedTo_def committed_committedTo era\<^sub>i_Suc_Suc era\<^sub>i_Suc_eq lessI less_antisym)
+      by (metis committedTo_def committed_committedTo eraOfNat_inv era\<^sub>i_Suc lessI less_antisym natOfEra.simps(2) natOfEra_lt)
   qed (simp add: era\<^sub>i_def)
   then obtain j where j: "isCommitted j" "isReconfiguration (v\<^sub>c j)" "era\<^sub>i j = e" by auto
 
@@ -546,7 +606,8 @@ qed
 lemma (in zen)
   assumes "committed\<^sub>< i" and "e < era\<^sub>i i" and "isReconfiguration (v\<^sub>c j)" and "era\<^sub>i j = e"
   shows reconfig_eq: "j = reconfig e"
-  by (metis Suc_leI assms era\<^sub>i_Suc_Suc era\<^sub>i_mono leD lessI nat_neq_iff reconfig_era reconfig_isReconfiguration)
+  using assms
+  by (metis committedTo_def era\<^sub>i_mono leD leI reconfig_era reconfig_isReconfiguration unique_reconfiguration_in_era)
 
 lemma (in zen)
   finite_prevAccepted: "finite (prevAccepted i t q)"
@@ -589,23 +650,26 @@ text \<open>The @{term v\<^sub>c} function gives the value committed in each slo
 lemma (in zen) "committed i t \<Longrightarrow> v\<^sub>c i = v i t"
   by (metis (mono_tags, lifting) isCommitted_def oneSlot.consistent projects_to_oneSlot someI_ex v\<^sub>c_def)
 
-text \<open>The era of a slot is the number of reconfigurations committed in earlier slots:\<close>
-
-lemma (in zen) "era\<^sub>i i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
-  using era\<^sub>i_def by simp
-
 text \<open>The configuration of the first era is the constant @{term Q\<^sub>0}:\<close>
 
-lemma (in zen) "Q 0 = Q\<^sub>0" by (simp add: Q_def)
+lemma (in zen) "era\<^sub>i 0 = e\<^sub>0" and "Q e\<^sub>0 = Q\<^sub>0" by (simp_all add: Q_def era\<^sub>i_def)
 
 text \<open>Each committed reconfiguration defines the configuration of the next slot and therefore all other slots in the same era:\<close>
 
 lemma (in zen)
   assumes "committed i t" and "v\<^sub>c i = reconfigure Q'" and "Q' \<frown> Q'"
-  shows "era\<^sub>i (i + 1) \<equiv> (era\<^sub>i i) + 1" and "Q (era\<^sub>i i + 1) \<equiv> Q'"
-   apply (simp add: assms(2) era\<^sub>i_Suc_Suc reconfigure_isReconfiguration)
-  by (smt Q_def Suc_eq_plus1 add_diff_cancel_right' assms committed_committedTo_Suc era\<^sub>i_Suc_Suc getConf_reconfigure isCommitted_def le_add2 less_add_one not_one_le_zero reconfig_eq reconfigure_isReconfiguration)
+  shows "era\<^sub>i (i + 1) \<equiv> nextEra (era\<^sub>i i)" and "Q (era\<^sub>i (i + 1)) \<equiv> Q'"
+proof -
+  show h1: "era\<^sub>i (i + 1) \<equiv> nextEra (era\<^sub>i i)"
+    by (simp add: assms(2) era\<^sub>i_Suc_Suc reconfigure_isReconfiguration)
 
+  hence "Q (era\<^sub>i (i + 1)) = getConf (v\<^sub>c (reconfig (era\<^sub>i i)))"
+    by (simp add: Q_def)
+  also from h1 assms have "... = Q'"
+    by (metis Suc_eq_plus1_left add.commute committed_committedTo_Suc getConf_reconfigure isCommitted_def lessI natOfEra.simps(2) natOfEra_lt reconfig_eq reconfigure_isReconfiguration)
+  finally show "Q (era\<^sub>i (i + 1)) \<equiv> Q'" by simp
+qed
+ 
 subsection \<open>Safety\<close>
 
 lemma (in zen) consistent:
@@ -786,9 +850,9 @@ lemma (in zen)
   shows "zen v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed' accepted committed"
 proof -
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. committed i t)"
-  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)}"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
-  define Q' where "\<And>e. Q' e \<equiv> if e = 0 then Q\<^sub>0 else getConf (v\<^sub>c' (reconfig' (e-1)))"
+  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
 
   have v\<^sub>c_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
     using committed_proposed isCommitted_def assms tfl_some v'_def v\<^sub>c'_def v\<^sub>c_def by auto
@@ -817,7 +881,12 @@ proof -
   qed
 
   have Q_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> \<forall> e \<le> era\<^sub>i i. Q' e = Q e"
-    by (simp add: Q'_def Q_def reconfig_committed reconfig_eq v\<^sub>c_eq)
+  proof (intro allI impI)
+    fix i e assume "committed\<^sub>< i" "e \<le> era\<^sub>i i"
+    thus "Q' e = Q e"
+      apply (cases e, simp_all add: Q'_def Q_def reconfig_committed reconfig_eq v\<^sub>c_eq)
+      by (metis less_eq_Suc_le natOfEra.simps(2) natOfEra_le natOfEra_lt reconfig_committed reconfig_eq v\<^sub>c_eq)
+  qed
 
   have v_prevAccepted_eq: "\<And>i t q. prevAccepted i t q \<noteq> {} \<Longrightarrow> v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
   proof -
@@ -1009,9 +1078,9 @@ proof -
   define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. committed' i t"
   define committedTo' ("committed\<^sub><' _") where "\<And>i. committed\<^sub><' i \<equiv> \<forall>j < i. isCommitted' j"
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v i (SOME t. committed' i t)"
-  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)}"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
-  define Q' where "\<And>e. Q' e \<equiv> if e = 0 then Q\<^sub>0 else getConf (v\<^sub>c' (reconfig' (e-1)))"
+  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
 
   have isCommitted'_simp: "\<And>i. isCommitted' i = (isCommitted i \<or> i = i\<^sub>0)"
     using committed'_def isCommitted'_def isCommitted_def by auto
@@ -1076,7 +1145,12 @@ proof -
   qed
 
   have Q'_eq: "\<And>e i. committed\<^sub>< i \<Longrightarrow> e \<le> era\<^sub>i i \<Longrightarrow> Q' e = Q e"
-    using Q'_def Q_def reconfig'_eq reconfig_committed v\<^sub>c'_eq by auto
+  proof -
+    fix e i assume "committed\<^sub>< i" "e \<le> era\<^sub>i i"
+    thus "Q' e = Q e" 
+      apply (cases e, simp add: Q_def Q'_def)
+      by (metis Era.simps(5) Q_def Suc_le_eq Q'_def natOfEra.simps(2) natOfEra_le natOfEra_lt reconfig'_eq reconfig_committed v\<^sub>c'_eq)
+  qed
 
   show ?thesis
     apply (unfold_locales)
