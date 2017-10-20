@@ -318,6 +318,12 @@ lemma (in oneSlot) commit:
 
 subsection \<open>Zen: multi-slot consistency\<close>
 
+datatype Message
+  = JoinResponse  nat Node Term "Term option"
+  | ApplyRequest  nat      Term Value
+  | ApplyResponse nat Node Term
+  | ApplyCommit   nat      Term
+
 locale zen =
   fixes v         :: "nat \<Rightarrow> Term \<Rightarrow> Value"
   
