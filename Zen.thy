@@ -1280,6 +1280,16 @@ lemma (in zen) ApplyCommit_ApplyRequest:
   shows "ApplyRequest i t (v i t) \<in> messages"
   by (metis ApplyCommit_ApplyResponse ApplyResponse_ApplyRequest assms the_equality v_def ApplyRequest_function)
 
+lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
+proof -
+  fix t\<^sub>0
+  define f where "f \<equiv> \<lambda> m. case m of JoinResponse i n t (Some t') \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
+  have "prevAccepted i t ns \<subseteq> f ` messages"
+    apply (simp add: prevAccepted_def f_def, intro subsetI)
+    using image_iff by fastforce
+  with finite_messages show ?thesis using finite_surj by auto
+qed
+
 lemma (in zen) era\<^sub>i_step:
   "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
 proof (cases "isReconfiguration (v\<^sub>c i)")
@@ -1310,6 +1320,19 @@ proof (induct i)
     finally show ?thesis .
   qed simp
 qed simp
+
+lemma (in zen) era\<^sub>i_contiguous:
+  assumes "e \<le> era\<^sub>i i"
+  shows "\<exists> i' \<le> i. era\<^sub>i i' = e"
+  using assms
+proof (induct i)
+  case 0
+  then show ?case by (auto simp add: era\<^sub>i_def)
+next
+  case (Suc i)
+  then show ?case
+    by (metis era\<^sub>i_step le_SucI less_Suc_eq_le less_eq_Era_def natOfEra.simps(2) natOfEra_le natOfEra_lt order_refl)
+qed
 
 lemma (in zen) reconfig_props:
   assumes "committed\<^sub>< i" "e < era\<^sub>i i"
@@ -1726,7 +1749,7 @@ proof -
       apply (auto simp add: committedTo_def isCommitted_def)
       using era\<^sub>i'_eq isCommitted_committedTo isCommitted_def by fastforce
 
-    show " \<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
+    show "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
       using JoinResponse_era era\<^sub>i'_eq by force
 
   next
@@ -1739,7 +1762,41 @@ proof -
     moreover note ApplyCommit_quorum [OF a]
     ultimately show "\<exists>q\<in>Q' (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages" by simp
   next
+    fix i t x
+    assume "ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)"
+    thus "\<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
+    proof (elim disjE)
+      assume a: "ApplyRequest i t x \<in> messages"
 
+      from ApplyRequest_quorum [OF this]
+      obtain q where q: "q \<in> Q (era\<^sub>t t)" "\<forall> n \<in> q. promised i n t"
+        and disj: "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by blast
 
+      from q obtain n where n: "n \<in> q" "promised i n t" using Q_member_member by blast
+      from n obtain i' mt' where mt: "i' \<le> i" "JoinResponse i' n t mt' \<in> messages" by (auto simp add: promised_def)
+      with JoinResponse_era obtain i'' where i'': "i'' \<le> i'" "committed\<^sub>< i''" "era\<^sub>t t \<le> era\<^sub>i i''" by blast
+      with era\<^sub>i_contiguous obtain i''' where i''': "i''' \<le> i''" "era\<^sub>i i''' = era\<^sub>t t" by blast
+      hence era_eq: "era\<^sub>t t = era\<^sub>i i'''" by auto
+
+      have Q_eq: "Q' (era\<^sub>t t) = Q (era\<^sub>t t)"
+        using i'' i'''
+        by (unfold era_eq, intro Q'_eq, auto simp add: committedTo_def)
+
+      have v_eq1: "v' i t = v i t" using a assms v'_eq by auto
+
+      show ?thesis
+      proof (cases "prevAccepted i t q = {}")
+        case True with q show ?thesis by (intro bexI [of _ q], simp_all add: Q_eq v_eq1)
+      next
+        case False
+        have "maxTerm (prevAccepted i t q) \<in> prevAccepted i t q"
+          by (intro maxTerm_mem finite_prevAccepted False)
+        hence v_eq2: "v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
+          apply (unfold v'_eq, simp)
+          by (smt assms(1) mem_Collect_eq prevAccepted_def zen.ApplyResponse_ApplyRequest zen.JoinResponse_Some_ApplyResponse zen_axioms)
+        from q disj show ?thesis
+          by (intro bexI [of _ q], simp_all add: Q_eq v_eq1 v_eq2)
+      qed
+    next
 
 end
