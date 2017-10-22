@@ -1408,11 +1408,14 @@ lemma (in zen) JoinResponse_func:
    apply blast
   by (metis le_term_def term_not_le_lt JoinResponse_Some_max)
 
+lemma (in zen) shows finite_messages_insert: "finite (insert m messages)"
+  using finite_messages by auto
+
 lemma shows zen_initial_state: "zen {}" by (unfold_locales, auto)
 
 lemma (in zen) send_JoinResponse_None:
   assumes "\<forall> i \<ge> i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
-  assumes "\<forall> i < i\<^sub>0. \<exists> t'. ApplyCommit i t' \<in> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   shows   "zen (insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None) messages)" (is "zen ?messages'")
 proof -
@@ -1437,7 +1440,7 @@ proof -
                 apply (fold Q_def promised'_def)
     using ApplyResponse_ApplyRequest ApplyCommit_era ApplyCommit_quorum ApplyRequest_function
       ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
-      JoinResponse_Some_max
+      JoinResponse_Some_max finite_messages_insert
   proof -
     fix i i' n t t' mt
     assume "JoinResponse i n t mt \<in> insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None) messages" "i < i'" "t' \<prec> t"
@@ -1467,12 +1470,141 @@ proof -
     from q
     show "\<exists>q\<in>Q (era\<^sub>t t). (\<forall>n\<in>q. promised' i n t) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
       by (intro bexI [where x = q] conjI ballI promised'I, auto)
-  next
-    from finite_messages show "finite ?messages'" by auto
   qed
 qed
 
 
+lemma (in zen) send_JoinResponse_Some:
+  assumes "\<forall> i > i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
+  assumes "ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0' \<in> messages"
+  assumes "t\<^sub>0' \<prec> t\<^sub>0"
+  assumes "\<forall> t'. ApplyResponse i\<^sub>0 n\<^sub>0 t' \<in> messages \<longrightarrow> t' \<preceq> t\<^sub>0'"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
+  shows   "zen (insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0')) messages)" (is "zen ?messages'")
+proof -
+  define promised' where "\<And>i n t. promised' i n t \<equiv> \<exists>i'\<le>i. \<exists>mt'. JoinResponse i' n t mt' \<in> ?messages'"
+  have promised'I: "\<And>i n t. promised i n t \<Longrightarrow> promised' i n t" using promised'_def promised_def by auto
+
+  define prevAccepted' where "\<And>i t ns. prevAccepted' i t ns \<equiv> {t'. \<exists> n \<in> ns. JoinResponse i n t (Some t') \<in> ?messages'}"
+
+  have messages_simps:
+    "\<And>i n t. (JoinResponse i n t None \<in> ?messages') = (JoinResponse i n t None \<in> messages)"
+    "\<And>i n t t'. (JoinResponse i n t (Some t') \<in> ?messages') = (JoinResponse i n t (Some t') \<in> messages \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0'))"
+    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
+    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    by auto
+
+  show ?thesis
+    apply (unfold_locales)
+                apply (fold prevAccepted'_def)
+                apply (unfold messages_simps)
+                apply (fold isCommitted_def v_def)
+                apply (fold v\<^sub>c_def committedTo_def)
+                apply (fold era\<^sub>i_def)
+                apply (fold reconfig_def)
+                apply (fold Q_def promised'_def)
+    using JoinResponse_None  ApplyRequest_committedTo ApplyRequest_function finite_messages_insert ApplyResponse_ApplyRequest ApplyCommit_era  ApplyCommit_quorum 
+  proof -
+
+    from assms JoinResponse_future
+    show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0')) messages
+      \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" by auto
+
+    from assms JoinResponse_era
+    show "\<And>i n t mt. JoinResponse i n t mt \<in> insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0')) messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
+      by (auto simp add: committedTo_def isCommitted_def)
+
+    from assms JoinResponse_Some_lt
+    show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0') \<Longrightarrow> t' \<prec> t" by auto
+
+    from assms JoinResponse_Some_ApplyResponse
+    show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0') \<Longrightarrow> ApplyResponse i n t' \<in> messages" by auto
+
+    from assms JoinResponse_Some_max
+    show "\<And>i n t t' t''. JoinResponse i n t (Some t') \<in> messages \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0') \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
+      by (metis Pair_inject term_not_le_lt)
+
+  next
+
+    fix i t x assume "ApplyRequest i t x \<in> messages"
+    from ApplyRequest_quorum [OF this]
+    obtain q
+      where q: "q\<in>Q (era\<^sub>t t)" "\<forall>n\<in>q. promised i n t"
+        "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by blast
+
+    {
+      assume p: "n\<^sub>0 \<in> q" "i = i\<^sub>0" "t = t\<^sub>0" with q have "promised i\<^sub>0 n\<^sub>0 t\<^sub>0" by auto
+      then obtain i' mt where r: "JoinResponse i' n\<^sub>0 t\<^sub>0 mt \<in> messages" "i' \<le> i\<^sub>0"
+        by (auto simp add: promised_def)
+
+      from r assms have "i' = i\<^sub>0" 
+        using JoinResponse_future order.not_eq_order_implies_strict by blast
+
+      moreover with r assms have "mt = Some t\<^sub>0'"
+        by (metis JoinResponse_None JoinResponse_Some_ApplyResponse JoinResponse_Some_max le_term_def option.exhaust)
+
+      moreover note p r
+      ultimately have "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0') \<in> messages" by auto
+    }
+
+    hence prevAccepted_eq: "prevAccepted' i t q = prevAccepted i t q"
+      by (auto simp add: prevAccepted_def prevAccepted'_def)
+
+    from q
+    show "\<exists>q\<in>Q (era\<^sub>t t). (\<forall>n\<in>q. promised' i n t) \<and> (prevAccepted' i t q = {} \<or> v i t = v i (maxTerm (prevAccepted' i t q)))"
+      by (intro bexI [where x = q] conjI ballI promised'I, simp_all add: prevAccepted_eq)
+  qed
+qed
+
+lemma (in zen) send_ApplyRequest:
+  assumes "\<forall> x. ApplyRequest i\<^sub>0 t\<^sub>0 x \<notin> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
+  assumes "\<forall> n \<in> q. promised i\<^sub>0 n t\<^sub>0"
+  assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {} \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
+  shows "zen (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" (is "zen ?messages'")
+proof -
+
+  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
+  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
+  define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
+  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+
+  have messages_simps:
+    "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
+    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0))"
+    "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
+    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    by auto
+
+  show ?thesis
+    apply (unfold_locales)
+                apply (fold v'_def)
+                apply (fold v\<^sub>c'_def)
+                apply (unfold messages_simps)
+                apply (fold isCommitted_def)
+                apply (fold committedTo_def)
+                apply (fold era\<^sub>i'_def)
+                apply (fold reconfig'_def)
+                apply (fold Q'_def promised_def)
+  proof -
+    from JoinResponse_future show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" .
+    from JoinResponse_None show "\<And>i n t t'. JoinResponse i n t None \<in> messages \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i n t' \<notin> messages" .
+    from JoinResponse_Some_lt show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t" .
+    from JoinResponse_Some_ApplyResponse show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> ApplyResponse i n t' \<in> messages" .
+    from JoinResponse_Some_max show "\<And>i n t t' t''. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages" .
+    from finite_messages_insert show "finite (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" .
+
+    from assms ApplyRequest_committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
+      by (auto simp add: committedTo_def isCommitted_def)
+
+    from assms ApplyRequest_function show "\<And>i t x x'. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> ApplyRequest i t x' \<in> messages \<or> (i, t, x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> x = x'"
+      by auto
+
+    from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
 
 
 
