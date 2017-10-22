@@ -1311,6 +1311,43 @@ proof (induct i)
   qed simp
 qed simp
 
+lemma (in zen) reconfig_props:
+  assumes "committed\<^sub>< i" "e < era\<^sub>i i"
+  shows reconfig_isCommitted: "isCommitted (reconfig e)"
+    and reconfig_isReconfiguration: "isReconfiguration (v\<^sub>c (reconfig e))"
+    and reconfig_era: "era\<^sub>i (reconfig e) = e"
+proof -
+  have p: "\<And>e. e < era\<^sub>i i \<Longrightarrow> committed\<^sub>< i \<Longrightarrow> isCommitted (reconfig e) \<and> isReconfiguration (v\<^sub>c (reconfig e)) \<and> (era\<^sub>i (reconfig e) = e)"
+  proof (induct i)
+    case 0 thus ?case by (auto simp add: era\<^sub>i_def)
+  next
+    case (Suc i e)
+    have "e < era\<^sub>i i \<or> (e = era\<^sub>i i \<and> isReconfiguration (v\<^sub>c i))"
+      by (metis Suc.prems(1) era\<^sub>i_step less_antisym natOfEra.simps(2) natOfEra_lt neq_iff)
+    thus ?case
+    proof (elim disjE conjE)
+      assume a: "e < era\<^sub>i i"
+      from Suc.prems have "committed\<^sub>< i" by (auto simp add: committedTo_def)
+      with a Suc.hyps show ?thesis by simp
+    next
+      assume a: "e = era\<^sub>i i" "isReconfiguration (v\<^sub>c i)"
+
+      define P where "\<And>i. P i \<equiv> isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
+      have p: "reconfig e = (THE i. P i)" by (simp add: reconfig_def P_def)
+
+      have "P (reconfig e)"
+        using Suc.prems a
+      proof (unfold p, intro theI [of P])
+        show "\<And>x. P x \<Longrightarrow> x = i"
+          by (metis P_def Suc.prems(1) Suc_inject a(1) era\<^sub>i_mono era\<^sub>i_step leD le_Suc_eq not_less_eq_eq)
+      qed (auto simp add: committedTo_def P_def)
+      thus ?thesis by (simp add: P_def)
+    qed
+  qed
+
+  from p assms show "isCommitted (reconfig e)" "isReconfiguration (v\<^sub>c (reconfig e))" "era\<^sub>i (reconfig e) = e" by auto
+qed
+
 lemma (in zen) zen_is_oneSlot:
   fixes i
   shows "oneSlot (Q \<circ> era\<^sub>t) (v i)
@@ -1631,6 +1668,34 @@ proof -
     thus "?thesis e" by (simp add: reconfig'_def reconfig_def)
   qed
 
+  have Q'_eq: "\<And> i. committed\<^sub>< i \<Longrightarrow> Q' (era\<^sub>i i) = Q (era\<^sub>i i)"
+  proof -
+    fix i assume "committed\<^sub>< i" thus "?thesis i"
+    proof (induct i)
+      case 0 thus ?case by (simp add: Q_def era\<^sub>i_def Q'_def)
+    next
+      case (Suc i)
+      from Suc.prems
+      have eq: "Q' (era\<^sub>i i) = Q (era\<^sub>i i)" by (intro Suc.hyps, auto simp add: committedTo_def)
+      show ?case
+      proof (cases "isReconfiguration (v\<^sub>c i)")
+        case False
+        with eq era\<^sub>i_step show ?thesis by simp
+      next
+        case True
+        with era\<^sub>i_step have nextEra: "era\<^sub>i (Suc i) = nextEra (era\<^sub>i i)" by simp
+
+        show ?thesis
+        proof (unfold nextEra, simp add: Q_def Q'_def reconfig'_eq,
+            intro cong [OF refl, where f = getConf] v\<^sub>c'_eq reconfig_isCommitted)
+          show "era\<^sub>i i < era\<^sub>i (Suc i)"
+            using natOfEra_lt nextEra by fastforce
+          from Suc.prems show "committed\<^sub>< (Suc i)" .
+        qed
+      qed
+    qed
+  qed
+
   show ?thesis
     apply (unfold_locales)
                 apply (fold v'_def)
@@ -1640,7 +1705,7 @@ proof -
                 apply (fold committedTo_def)
                 apply (fold era\<^sub>i'_def)
                 apply (fold reconfig'_def)
-                apply (fold Q'_def promised_def)
+                apply (fold Q'_def promised_def prevAccepted_def)
   proof -
     from JoinResponse_future show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" .
     from JoinResponse_None show "\<And>i n t t'. JoinResponse i n t None \<in> messages \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i n t' \<notin> messages" .
@@ -1660,6 +1725,20 @@ proof -
     from ApplyCommit_era era\<^sub>i'_eq show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       apply (auto simp add: committedTo_def isCommitted_def)
       using era\<^sub>i'_eq isCommitted_committedTo isCommitted_def by fastforce
+
+    show " \<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
+      using JoinResponse_era era\<^sub>i'_eq by force
+
+  next
+    fix i t
+    assume a: "ApplyCommit i t \<in> messages"
+    hence "committed\<^sub>< i" using ApplyCommit_ApplyRequest ApplyRequest_committedTo by blast
+    hence "Q' (era\<^sub>i i) = Q (era\<^sub>i i)" by (simp add: Q'_eq)
+    moreover from a have "era\<^sub>t t = era\<^sub>i i"
+      using ApplyCommit_era by auto
+    moreover note ApplyCommit_quorum [OF a]
+    ultimately show "\<exists>q\<in>Q' (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages" by simp
+  next
 
 
 
