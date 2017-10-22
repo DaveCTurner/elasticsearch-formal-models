@@ -69,6 +69,10 @@ lemma eraOfNat_le[simp]: "(eraOfNat n\<^sub>1 \<le> eraOfNat n\<^sub>2) = (n\<^s
 lemma eraOfNat_lt[simp]: "(eraOfNat n\<^sub>1 < eraOfNat n\<^sub>2) = (n\<^sub>1 < n\<^sub>2)" by (metis natOfEra_inv natOfEra_lt)
 lemma eraOfNat_eq[simp]: "(eraOfNat n\<^sub>1 = eraOfNat n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis natOfEra_inv)
 
+lemma e0_le[simp]: "e\<^sub>0 \<le> e" by (simp add: leI)
+lemma le_e0[simp]: "e \<le> e\<^sub>0 = (e = e\<^sub>0)" by (simp add: eq_iff)
+
+
 datatype Term = Term Era nat
 
 fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _) = e"
@@ -195,6 +199,9 @@ fun getConf :: "Value \<Rightarrow> Node set set"
   where "getConf (Reconfigure conf) = Rep_Configuration conf"
   | "getConf _                      = Rep_Configuration (SOME _. False)"
 
+lemma getConf_intersects: "getConf v \<frown> getConf v"
+  by (metis (no_types, lifting) Rep_Configuration getConf.elims mem_Collect_eq)
+
 definition reconfigure :: "Node set set \<Rightarrow> Value"
   where "reconfigure Q = Reconfigure (Abs_Configuration Q)"
 
@@ -316,15 +323,9 @@ lemma (in oneSlot) commit:
   shows "oneSlot Q v promised\<^sub>f promised\<^sub>b proposed accepted committed'"
   by (smt committed'_def intersects oneSlot_axioms oneSlot_def q_accepted q_quorum)
 
-subsection \<open>Zen: multi-slot consistency\<close>
+subsection \<open>Paxos: multi-slot consistency\<close>
 
-datatype Message
-  = JoinResponse  nat Node Term "Term option"
-  | ApplyRequest  nat      Term Value
-  | ApplyResponse nat Node Term
-  | ApplyCommit   nat      Term
-
-locale zen =
+locale paxos =
   fixes v         :: "nat \<Rightarrow> Term \<Rightarrow> Value"
   
   fixes promised\<^sub>m :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
@@ -382,7 +383,7 @@ locale zen =
   assumes committed_era:      "committed i t \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
   assumes committed_in_order: "committed i t \<Longrightarrow> committed\<^sub>< i"
 
-lemma (in zen)
+lemma (in paxos)
   shows Q_intersects: "Q e \<frown> Q e"
 proof (cases e)
   case e\<^sub>0 thus ?thesis by (simp add: Q\<^sub>0_intersects Q_def)
@@ -399,7 +400,7 @@ next
   show ?thesis by (simp add: nextEra Q_def)
 qed
 
-lemma (in zen)
+lemma (in paxos)
   assumes "isCommitted i"
   shows projects_to_oneSlot:
     "oneSlot (Q o era\<^sub>t) (v i) (\<lambda> n t. (\<exists>j \<le> i. promised\<^sub>m j n t) \<or> promised\<^sub>f i n t)
@@ -473,7 +474,7 @@ qed
 
 lemma Collect_pair_False[simp]:  "{(i, t). False} = {}" by auto
 
-lemma (in zen)
+lemma (in paxos)
   fixes promised\<^sub>m' promised\<^sub>f' promised\<^sub>b'
   
   fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
@@ -504,37 +505,37 @@ lemma (in zen)
   
   assumes "\<And>i t. committed i t \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> n \<in> q. accepted' i n t"
   
-  shows zenI_simple:
-    "zen v promised\<^sub>m' promised\<^sub>f' promised\<^sub>b' proposed' accepted' committed"
+  shows paxosI_simple:
+    "paxos v promised\<^sub>m' promised\<^sub>f' promised\<^sub>b' proposed' accepted' committed"
   using assms committed_era committed_in_order
   by (unfold_locales, fold promised'_def prevAccepted'_def era\<^sub>i_def isCommitted_def v\<^sub>c_def, fold committedTo_def era\<^sub>i_def reconfig_def, fold Q_def)
 
-lemma (in zen) committed_accepted:
+lemma (in paxos) committed_accepted:
   assumes "committed i t"
   obtains n where "accepted i n t"
   using assms committed isCommitted_def oneSlot.Q_nonempty projects_to_oneSlot by fastforce
 
-lemma (in zen)
+lemma (in paxos)
   assumes "committed i t"
   shows committed_proposed: "proposed i t"
   by (meson Int_emptyI Q_intersects accepted assms committed intersects_def)
 
-lemma (in zen) proposed_promised:
+lemma (in paxos) proposed_promised:
   assumes "proposed i t"
   obtains n where "promised i n t"
   by (meson Int_emptyI Q_intersects assms intersects_def proposed)
 
-lemma (in zen) committed_promised:
+lemma (in paxos) committed_promised:
   assumes "committed i t"
   obtains n where "promised i n t"
   using assms committed_proposed proposed_promised by blast
 
-lemma (in zen) era\<^sub>i_Suc_eq:
+lemma (in paxos) era\<^sub>i_Suc_eq:
   assumes "\<not> isReconfiguration (v\<^sub>c i)"
   shows "era\<^sub>i (Suc i) = era\<^sub>i i"
   by (metis (no_types, lifting) Collect_cong assms era\<^sub>i_def less_Suc_eq)
 
-lemma (in zen) era\<^sub>i_Suc_Suc:
+lemma (in paxos) era\<^sub>i_Suc_Suc:
   assumes "isReconfiguration (v\<^sub>c i)"
   shows "era\<^sub>i (Suc i) = nextEra (era\<^sub>i i)"
 proof -
@@ -543,21 +544,21 @@ proof -
   thus ?thesis by (simp add: era\<^sub>i_def)
 qed
 
-lemma (in zen) era\<^sub>i_Suc:
+lemma (in paxos) era\<^sub>i_Suc:
   shows "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
   by (simp add: era\<^sub>i_Suc_Suc era\<^sub>i_Suc_eq)
 
-lemma (in zen) era\<^sub>i_mono:
+lemma (in paxos) era\<^sub>i_mono:
   shows "j \<le> i \<Longrightarrow> era\<^sub>i j \<le> era\<^sub>i i"
   by (induct i, simp, metis era\<^sub>i_Suc le_SucE le_SucI natOfEra.simps(2) natOfEra_le order_refl)
 
-lemma (in zen)
+lemma (in paxos)
   assumes "j < i" and "isReconfiguration (v\<^sub>c j)" and "isCommitted i"
   shows era_increases_on_reconfiguration: "era\<^sub>i j < era\<^sub>i i"
   using assms
   by (metis Suc_leI Suc_le_lessD era\<^sub>i_Suc era\<^sub>i_mono natOfEra.simps(2) natOfEra_le natOfEra_lt)
 
-lemma (in zen)
+lemma (in paxos)
   assumes "era\<^sub>i i = era\<^sub>i j"
   assumes "isCommitted i"
   assumes "isCommitted j"
@@ -567,16 +568,16 @@ lemma (in zen)
   using assms
   by (metis era_increases_on_reconfiguration less_irrefl nat_neq_iff)
 
-lemma (in zen) committedTo_mono: "j \<le> i \<Longrightarrow> committed\<^sub>< i \<Longrightarrow> committed\<^sub>< j"
+lemma (in paxos) committedTo_mono: "j \<le> i \<Longrightarrow> committed\<^sub>< i \<Longrightarrow> committed\<^sub>< j"
   using committedTo_def by auto
 
-lemma (in zen) committed_committedTo_Suc: "isCommitted i \<Longrightarrow> committed\<^sub>< (Suc i)"
+lemma (in paxos) committed_committedTo_Suc: "isCommitted i \<Longrightarrow> committed\<^sub>< (Suc i)"
   using committedTo_def committed_in_order isCommitted_def less_Suc_eq by auto
 
-lemma (in zen) committed_committedTo: "isCommitted i \<Longrightarrow> committed\<^sub>< i"
+lemma (in paxos) committed_committedTo: "isCommitted i \<Longrightarrow> committed\<^sub>< i"
   using committed_in_order isCommitted_def by auto
 
-lemma (in zen)
+lemma (in paxos)
   assumes "committed\<^sub>< i"
   assumes "e < era\<^sub>i i"
   shows reconfig_lt: "reconfig e < i"
@@ -609,13 +610,13 @@ proof -
   thus "reconfig e < i" using assms by (metis era\<^sub>i_mono not_less)
 qed
 
-lemma (in zen)
+lemma (in paxos)
   assumes "committed\<^sub>< i" and "e < era\<^sub>i i" and "isReconfiguration (v\<^sub>c j)" and "era\<^sub>i j = e"
   shows reconfig_eq: "j = reconfig e"
   using assms
   by (metis committedTo_def era\<^sub>i_mono leD leI reconfig_era reconfig_isReconfiguration unique_reconfiguration_in_era)
 
-lemma (in zen)
+lemma (in paxos)
   finite_prevAccepted: "finite (prevAccepted i t q)"
 proof -
   have "prevAccepted i t q \<subseteq> { t'. \<exists> n. \<exists> i. promised\<^sub>b i n t t' }" using prevAccepted_def by auto
@@ -631,7 +632,7 @@ subsection \<open>Definitions\<close>
 
 text \<open>The @{term promised} predicate means any of the three kinds of promises has been sent:\<close>
 
-lemma (in zen) "promised i n t \<equiv>
+lemma (in paxos) "promised i n t \<equiv>
                                  (\<exists>j\<le>i. promised\<^sub>m j n t)
                                   \<or> promised\<^sub>f i n t
                                   \<or> (\<exists>t'. promised\<^sub>b i n t t')"
@@ -639,7 +640,7 @@ lemma (in zen) "promised i n t \<equiv>
 
 text \<open>The @{term prevAccepted} function gives the set of previously-accepted terms from received @{term promised\<^sub>b} messages:\<close>
 
-lemma (in zen) "prevAccepted i t q \<equiv> {t'. \<exists> n \<in> q. promised\<^sub>b i n t t'}"
+lemma (in paxos) "prevAccepted i t q \<equiv> {t'. \<exists> n \<in> q. promised\<^sub>b i n t t'}"
   using prevAccepted_def by simp
 
 text \<open>The @{term maxTerm} function finds the largest term in a set:\<close>
@@ -648,21 +649,21 @@ lemma "maxTerm S \<equiv> THE t. t \<in> S \<and> (\<forall>t' \<in> S. t' \<pre
 
 text \<open>This predicate says that all strictly-earlier slots are committed:\<close>
 
-lemma (in zen) "committed\<^sub>< i \<equiv> \<forall> j < i. \<exists> t. committed j t"
+lemma (in paxos) "committed\<^sub>< i \<equiv> \<forall> j < i. \<exists> t. committed j t"
   by (simp add: committedTo_def isCommitted_def)
 
 text \<open>The @{term v\<^sub>c} function gives the value committed in each slot (and is arbitrary for uncommitted slots):\<close>
 
-lemma (in zen) "committed i t \<Longrightarrow> v\<^sub>c i = v i t"
+lemma (in paxos) "committed i t \<Longrightarrow> v\<^sub>c i = v i t"
   by (metis (mono_tags, lifting) isCommitted_def oneSlot.consistent projects_to_oneSlot someI_ex v\<^sub>c_def)
 
 text \<open>The configuration of the first era is the constant @{term Q\<^sub>0}:\<close>
 
-lemma (in zen) "era\<^sub>i 0 = e\<^sub>0" and "Q e\<^sub>0 = Q\<^sub>0" by (simp_all add: Q_def era\<^sub>i_def)
+lemma (in paxos) "era\<^sub>i 0 = e\<^sub>0" and "Q e\<^sub>0 = Q\<^sub>0" by (simp_all add: Q_def era\<^sub>i_def)
 
 text \<open>Each committed reconfiguration defines the configuration of the next slot and therefore all other slots in the same era:\<close>
 
-lemma (in zen)
+lemma (in paxos)
   assumes "committed i t" and "v\<^sub>c i = reconfigure Q'" and "Q' \<frown> Q'"
   shows "era\<^sub>i (i + 1) \<equiv> nextEra (era\<^sub>i i)" and "Q (era\<^sub>i (i + 1)) \<equiv> Q'"
 proof -
@@ -678,7 +679,7 @@ qed
  
 subsection \<open>Safety\<close>
 
-lemma (in zen) consistent:
+lemma (in paxos) consistent:
   assumes "committed i t\<^sub>1" and "committed i t\<^sub>2"
   shows "v i t\<^sub>1 = v i t\<^sub>2"
   using assms
@@ -697,7 +698,7 @@ lemma
   assumes "\<And>i t. \<not> proposed i t"
   assumes "\<And>i n t. \<not> accepted i n t"
   assumes "\<And>i t. \<not> committed i t"
-  shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
+  shows "paxos v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
   using assms by (unfold_locales, auto)
 
 subsubsection \<open>Promises\<close>
@@ -705,13 +706,13 @@ subsubsection \<open>Promises\<close>
 text \<open>A @{term promised\<^sub>m} message can be sent if nothing has been accepted for this slot and for any
 later slot, and the configuration of the era of its term is known:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_promised\<^sub>m:
   assumes "\<And>t j. i\<^sub>0 \<le> j \<Longrightarrow> \<not> accepted j n\<^sub>0 t"
   assumes "\<exists> j \<le> i\<^sub>0. era\<^sub>t t\<^sub>0 \<le> era\<^sub>i j \<and> committed\<^sub>< j"
   defines "promised\<^sub>m' i n t \<equiv> promised\<^sub>m i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
-  shows "zen v promised\<^sub>m' promised\<^sub>f promised\<^sub>b proposed accepted committed"
+  shows "paxos v promised\<^sub>m' promised\<^sub>f promised\<^sub>b proposed accepted committed"
   using promised\<^sub>f promised\<^sub>b_accepted promised\<^sub>b_lt promised\<^sub>b_max proposed_finite accepted committed
-proof (intro zenI_simple, fold prevAccepted_def)
+proof (intro paxosI_simple, fold prevAccepted_def)
   fix i j n t t'
   assume p: "promised\<^sub>m' i n t" "t' \<prec> t" "i \<le> j"
   hence "promised\<^sub>m i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
@@ -749,13 +750,13 @@ qed
 text \<open>A @{term promised\<^sub>f} message can be sent if nothing has been accepted for this slot,
 and the configuration of the era of its term is known:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_promised\<^sub>f:
   assumes "\<And>t. \<not> accepted i\<^sub>0 n\<^sub>0 t"
   assumes "\<exists> j \<le> i\<^sub>0. era\<^sub>t t\<^sub>0 \<le> era\<^sub>i j \<and> committed\<^sub>< j"
   defines "promised\<^sub>f' i n t \<equiv> promised\<^sub>f i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
-  shows "zen v promised\<^sub>m promised\<^sub>f' promised\<^sub>b proposed accepted committed"
+  shows "paxos v promised\<^sub>m promised\<^sub>f' promised\<^sub>b proposed accepted committed"
   using promised\<^sub>m promised\<^sub>b_accepted promised\<^sub>b_lt promised\<^sub>b_max proposed_finite accepted committed
-proof (intro zenI_simple, fold prevAccepted_def)
+proof (intro paxosI_simple, fold prevAccepted_def)
   fix i n t t'
   assume "promised\<^sub>f' i n t" "t' \<prec> t"
   hence "promised\<^sub>f i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)" by (auto simp add: promised\<^sub>f'_def)
@@ -782,15 +783,15 @@ text \<open>A @{term promised\<^sub>b} message can be sent if something has been
 configuration of the era of its term is known. The message must include the greatest term for which
 an @{term accepted} message has been sent:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_promised\<^sub>b:
   assumes "t\<^sub>0' \<prec> t\<^sub>0"
   assumes "accepted i\<^sub>0 n\<^sub>0 t\<^sub>0'"
   assumes "\<And>t''. accepted i\<^sub>0 n\<^sub>0 t'' \<Longrightarrow> t'' \<preceq> t\<^sub>0'"
   assumes "\<exists> j \<le> i\<^sub>0. era\<^sub>t t\<^sub>0 \<le> era\<^sub>i j \<and> committed\<^sub>< j"
   defines "promised\<^sub>b' i n t t' \<equiv> promised\<^sub>b i n t t' \<or> (i, n, t, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0')"
-  shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b' proposed accepted committed"
+  shows "paxos v promised\<^sub>m promised\<^sub>f promised\<^sub>b' proposed accepted committed"
   using promised\<^sub>m promised\<^sub>f proposed_finite accepted committed
-proof (intro zenI_simple)
+proof (intro paxosI_simple)
   fix i n t t'
   assume p: "promised\<^sub>b' i n t t'"
   from p assms promised\<^sub>b_lt show "t' \<prec> t"
@@ -841,7 +842,7 @@ text \<open>A @{term proposed} message can be sent if it has not previously been
 of suitable promises has been received. If any promise received was a @{term promised\<^sub>b} message
 then this determines the value proposed:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_proposed:
   assumes "\<not> proposed i\<^sub>0 t\<^sub>0"
   assumes "\<And>n. n \<in> q \<Longrightarrow> promised i\<^sub>0 n t\<^sub>0"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
@@ -853,7 +854,7 @@ lemma (in zen)
                                 else v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))
                         else v i t"
   defines "proposed' i t \<equiv> proposed i t \<or> (i, t) = (i\<^sub>0, t\<^sub>0)"
-  shows "zen v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed' accepted committed"
+  shows "paxos v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed' accepted committed"
 proof -
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. committed i t)"
   define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
@@ -910,7 +911,7 @@ proof -
   qed
 
   from proposed_finite accepted promised\<^sub>m promised\<^sub>f promised\<^sub>b_lt promised\<^sub>b_accepted promised\<^sub>b_max
-  have update_value: "zen v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
+  have update_value: "paxos v' promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed"
   proof (unfold_locales, fold promised_def isCommitted_def v\<^sub>c'_def prevAccepted_def, fold committedTo_def era\<^sub>i'_def reconfig'_def, fold Q'_def)
     fix i t assume "committed i t" with committed_in_order show "committed\<^sub>< i" .
 
@@ -967,7 +968,7 @@ proof -
 
   from promised\<^sub>m promised\<^sub>f promised\<^sub>b_lt promised\<^sub>b_accepted promised\<^sub>b_max
   show ?thesis
-  proof (intro zen.zenI_simple [OF update_value],
+  proof (intro paxos.paxosI_simple [OF update_value],
       fold prevAccepted_def promised_def isCommitted_def, fold committedTo_def v\<^sub>c'_def,
       fold era\<^sub>i'_def reconfig'_def, fold Q'_def)
 
@@ -1040,13 +1041,13 @@ subsubsection \<open>Acceptances\<close>
 
 text \<open>A proposal can be accepted as long as it is compatible with all previously-made promises:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_accepted:
   assumes "proposed i\<^sub>0 t\<^sub>0"
   assumes "\<And>t. promised i\<^sub>0 n\<^sub>0 t \<Longrightarrow> t \<preceq> t\<^sub>0"
   defines "accepted' i n t \<equiv> accepted i n t \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
-  shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted' committed"
+  shows "paxos v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted' committed"
   using promised\<^sub>b_lt proposed_finite proposed
-proof (intro zenI_simple)
+proof (intro paxosI_simple)
   show "\<And>i j n t t'. promised\<^sub>m i n t \<Longrightarrow> t' \<prec> t \<Longrightarrow> i \<le> j \<Longrightarrow> \<not> accepted' j n t'"
     by (metis Pair_inject accepted'_def assms(2) promised\<^sub>m promised_def term_not_le_lt)
   show "\<And>i n t t'. promised\<^sub>f i n t \<Longrightarrow> t' \<prec> t \<Longrightarrow> \<not> accepted' i n t'"
@@ -1070,13 +1071,13 @@ subsubsection \<open>Commits\<close>
 text \<open>A proposal can be committed on receipt of a quorum of acceptances, as long as all previous
 slots are committed and this slot's era matches the era of the term of the proposal:\<close>
 
-lemma (in zen)
+lemma (in paxos) send_committed:
   assumes "committed\<^sub>< i\<^sub>0"
   assumes "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
   assumes "\<And>n. n \<in> q \<Longrightarrow> accepted i\<^sub>0 n t\<^sub>0"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   defines "committed' i t \<equiv> committed i t \<or> (i, t) = (i\<^sub>0, t\<^sub>0)"
-  shows "zen v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed'"
+  shows "paxos v promised\<^sub>m promised\<^sub>f promised\<^sub>b proposed accepted committed'"
 proof -
 
   from assms have committedTo: "committed\<^sub>< i\<^sub>0" by metis
@@ -1183,5 +1184,296 @@ proof -
       by (metis Q'_eq promised_era proposed proposed_promised)
   qed
 qed
+
+subsection \<open>Zen\<close>
+
+text \<open>Zen does not support pipelining so there is only ever at most one active (i.e. proposed-but-not-committed) slot.\<close>
+
+datatype Message
+  = JoinResponse  nat Node Term "Term option"
+  | ApplyRequest  nat      Term Value
+  | ApplyResponse nat Node Term
+  | ApplyCommit   nat      Term
+
+locale zen =
+  fixes messages :: "Message set"
+    (* value proposed in a slot & a term *)
+  fixes v :: "nat \<Rightarrow> Term \<Rightarrow> Value"
+  defines "v i t \<equiv> THE x. ApplyRequest i t x \<in> messages"
+    (* whether a slot is committed *)
+  fixes isCommitted :: "nat \<Rightarrow> bool"
+  defines "isCommitted i \<equiv> \<exists> t. ApplyCommit i t \<in> messages"
+    (* whether all preceding slots are committed *)
+  fixes committedTo :: "nat \<Rightarrow> bool" ("committed\<^sub><")
+  defines "committed\<^sub>< i \<equiv> \<forall> j < i. isCommitted j" 
+    (* the committed value in a slot *)
+  fixes v\<^sub>c :: "nat \<Rightarrow> Value"
+  defines "v\<^sub>c i \<equiv> v i (SOME t. ApplyCommit i t \<in> messages)"
+    (* the era of a slot *)
+  fixes era\<^sub>i :: "nat \<Rightarrow> Era"
+  defines "era\<^sub>i i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c j) })"
+    (* the (unique) slot in an era containing a reconfiguration *)
+  fixes reconfig :: "Era \<Rightarrow> nat"
+  defines "reconfig e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
+    (* the configuration of an era *)
+  fixes Q :: "Era \<Rightarrow> Node set set"
+  defines "Q e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
+    (* predicate to say whether an applicable JoinResponse has been sent *)
+  fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  defines "promised i n t \<equiv> \<exists> i' \<le> i. \<exists> mt'. JoinResponse i' n t mt' \<in> messages"
+    (* set of previously-accepted terms *)
+  fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  defines "prevAccepted i t ns \<equiv> {t'. \<exists> n \<in> ns. JoinResponse i n t (Some t') \<in> messages}"
+    (* ASSUMPTIONS *)
+  assumes JoinResponse_future:
+    "\<And>i i' n t t' mt. \<lbrakk> JoinResponse i n t mt \<in> messages; i < i'; t' \<prec> t \<rbrakk>
+                        \<Longrightarrow> ApplyResponse i' n t' \<notin> messages"
+  assumes JoinResponse_None:
+    "\<And>i n t t'. \<lbrakk> JoinResponse i n t None \<in> messages; t' \<prec> t \<rbrakk>
+                        \<Longrightarrow> ApplyResponse i n t' \<notin> messages"
+  assumes JoinResponse_Some_lt:
+    "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t"
+  assumes JoinResponse_Some_ApplyResponse:
+    "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> ApplyResponse i n t' \<in> messages"
+  assumes JoinResponse_Some_max:
+    "\<And>i n t t' t''. \<lbrakk> JoinResponse i n t (Some t') \<in> messages; t' \<prec> t''; t'' \<prec> t \<rbrakk>
+                        \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
+  assumes JoinResponse_era:
+    "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists> i' \<le> i. committedTo i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
+  assumes ApplyRequest_committedTo:
+    "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committedTo i"
+  assumes ApplyRequest_quorum:
+    "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). (\<forall> n \<in> q. promised i n t) \<and>
+            (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+  assumes ApplyRequest_function:
+    "\<And>i t x x'. \<lbrakk> ApplyRequest i t x \<in> messages; ApplyRequest i t x' \<in> messages \<rbrakk> \<Longrightarrow> x = x'"
+  assumes finite_messages:
+    "finite messages"
+  assumes ApplyResponse_ApplyRequest:
+    "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists> x. ApplyRequest i t x \<in> messages"
+  assumes ApplyCommit_era:
+    "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
+  assumes ApplyCommit_quorum:
+    "\<And>i t. ApplyCommit i t \<in> messages
+                        \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> n \<in> q. ApplyResponse i n t \<in> messages"
+
+lemma (in zen) promised_long_def: "promised i n t \<equiv> (JoinResponse i n t None \<in> messages \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages)) \<or> (\<exists>t'. JoinResponse i n t (Some t') \<in> messages)"
+  using option.exhaust by (smt nat_less_le not_le promised_def)
+
+lemma (in zen) Q_intersects: "Q e \<frown> Q e"
+  by (cases e, simp_all add: Q_def Q\<^sub>0_intersects getConf_intersects)
+
+lemma (in zen) Q_members_nonempty: assumes "q \<in> Q e" shows "q \<noteq> {}"
+  using assms Q_intersects 
+  by (auto simp add: intersects_def)
+
+lemma (in zen) Q_member_member: assumes "q \<in> Q e" obtains n where "n \<in> q"
+  using Q_members_nonempty assms by fastforce
+
+lemma (in zen) ApplyCommit_ApplyResponse:
+  assumes "ApplyCommit i t \<in> messages"
+  obtains n where "ApplyResponse i n t \<in> messages"
+  by (meson ApplyCommit_quorum Q_member_member assms)
+
+lemma (in zen) ApplyCommit_ApplyRequest:
+  assumes "ApplyCommit i t \<in> messages"
+  shows "ApplyRequest i t (v i t) \<in> messages"
+  by (metis ApplyCommit_ApplyResponse ApplyResponse_ApplyRequest assms the_equality v_def ApplyRequest_function)
+
+lemma (in zen) era\<^sub>i_step:
+  "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
+proof (cases "isReconfiguration (v\<^sub>c i)")
+  case True
+  hence "{j. j < Suc i \<and> isReconfiguration (v\<^sub>c j)}
+                = insert i {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
+    using True by auto
+  thus ?thesis by (simp add: era\<^sub>i_def True)
+next
+  case False
+  with less_Suc_eq show ?thesis
+    by (simp add: era\<^sub>i_def, smt Collect_cong less_or_eq_imp_le)
+qed
+
+lemma (in zen) era\<^sub>i_mono:
+  assumes "i' \<le> i"
+  shows "era\<^sub>i i' \<le> era\<^sub>i i"
+  using assms
+proof (induct i)
+  case (Suc i)
+  from Suc.prems have disj1: "i' \<le> i \<or> i' = Suc i" by auto
+  thus ?case
+  proof (elim disjE)
+    assume "i' \<le> i"
+    with Suc.hyps have "era\<^sub>i i' \<le> era\<^sub>i i" .
+    also have "... \<le> era\<^sub>i (Suc i)"
+      by (metis Suc_leD eq_iff era\<^sub>i_step natOfEra.simps(2) natOfEra_le)
+    finally show ?thesis .
+  qed simp
+qed simp
+
+lemma (in zen) zen_is_oneSlot:
+  fixes i
+  shows "oneSlot (Q \<circ> era\<^sub>t) (v i)
+    (\<lambda> n t. JoinResponse i n t None \<in> messages
+        \<or> (\<exists> i' < i. \<exists> mt'. JoinResponse i' n t mt' \<in> messages))
+    (\<lambda> n t t'. JoinResponse i n t (Some t') \<in> messages)
+    (\<lambda> t. \<exists> x. ApplyRequest i t x \<in> messages)
+    (\<lambda> n t. ApplyResponse i n t \<in> messages)
+    (\<lambda> t. ApplyCommit i t \<in> messages)"
+proof (unfold_locales, fold prevAccepted_def promised_long_def)
+  fix t\<^sub>1 t\<^sub>2
+  assume "\<exists>x. ApplyRequest i t\<^sub>1 x \<in> messages"
+  then obtain x where t\<^sub>1: "ApplyRequest i t\<^sub>1 x \<in> messages" ..
+  assume t\<^sub>2: "ApplyCommit i t\<^sub>2 \<in> messages"
+  assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<preceq> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
+    by (simp add: era\<^sub>t_mono)
+
+  from t\<^sub>1 obtain i' n mt' where "JoinResponse i' n t\<^sub>1 mt' \<in> messages" "i' \<le> i"
+    by (meson ApplyRequest_quorum Q_member_member promised_def)
+  with JoinResponse_era obtain i'' where "i'' \<le> i'" "era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i''" by blast
+
+  note `era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i''`
+  also from `i'' \<le> i'` have "era\<^sub>i i'' \<le> era\<^sub>i i'" using era\<^sub>i_mono by blast
+  also from `i' \<le> i` have "era\<^sub>i i' \<le> era\<^sub>i i" using era\<^sub>i_mono by blast
+  also from t\<^sub>2 have "... = era\<^sub>t t\<^sub>2" using ApplyCommit_era by auto
+  finally have "era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" .
+
+  with `era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1` have "era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2" by simp
+  thus "(Q \<circ> era\<^sub>t) t\<^sub>1 \<frown> (Q \<circ> era\<^sub>t) t\<^sub>2" by (simp add: Q_intersects)
+next
+  fix q t assume "q \<in> (Q \<circ> era\<^sub>t) t" thus "q \<noteq> {}" by (simp add: Q_members_nonempty)
+next
+  fix n t t'
+  assume "t' \<prec> t" "JoinResponse i n t None \<in> messages \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages)"
+  thus "ApplyResponse i n t' \<notin> messages"
+    using JoinResponse_None JoinResponse_future by blast
+next
+  fix n t t'
+  assume j: "JoinResponse i n t (Some t') \<in> messages"
+  from j show "t' \<prec> t" using JoinResponse_Some_lt by blast
+  from j show "ApplyResponse i n t' \<in> messages" using JoinResponse_Some_ApplyResponse by blast
+
+  fix t'' assume "t' \<prec> t''" "t'' \<prec> t"
+  with j show "ApplyResponse i n t'' \<notin> messages" using JoinResponse_Some_max by blast
+next
+  fix t
+  assume "\<exists>x. ApplyRequest i t x \<in> messages"
+  thus "\<exists>q\<in>(Q \<circ> era\<^sub>t) t. (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+    using ApplyRequest_quorum by auto
+next
+  fix n t assume "ApplyResponse i n t \<in> messages"
+  thus "\<exists>x. ApplyRequest i t x \<in> messages"
+    by (simp add: ApplyResponse_ApplyRequest)
+next
+  fix t assume "ApplyCommit i t \<in> messages"
+  thus "\<exists>q\<in>(Q \<circ> era\<^sub>t) t. \<forall>n\<in>q. ApplyResponse i n t \<in> messages"
+    by (simp add: ApplyCommit_quorum)
+next
+  fix t\<^sub>0
+  define f where "f \<equiv> \<lambda> m. case m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
+
+  have "{t. \<exists>x. ApplyRequest i t x \<in> messages} \<subseteq> f ` messages"
+    using f_def image_iff by fastforce
+
+  moreover have "finite (f ` messages)"
+    by (simp add: finite_messages)
+
+  ultimately show "finite {t. \<exists>x. ApplyRequest i t x \<in> messages}"
+    using finite_subset by blast
+qed
+
+lemma (in zen) consistent:
+  assumes "ApplyCommit  i t\<^sub>1 \<in> messages"
+  assumes "ApplyCommit  i t\<^sub>2 \<in> messages"
+  assumes "ApplyRequest i t\<^sub>1 v\<^sub>1 \<in> messages"
+  assumes "ApplyRequest i t\<^sub>2 v\<^sub>2 \<in> messages"
+  shows "v\<^sub>1 = v\<^sub>2"
+proof -
+  from oneSlot.consistent [OF zen_is_oneSlot] assms
+  have "v i t\<^sub>1 = v i t\<^sub>2" by blast
+  moreover have "v\<^sub>1 = v i t\<^sub>1" using ApplyCommit_ApplyRequest assms ApplyRequest_function by blast
+  moreover have "v\<^sub>2 = v i t\<^sub>2" using ApplyCommit_ApplyRequest assms ApplyRequest_function by blast
+  ultimately show ?thesis by simp
+qed
+
+lemma (in zen) JoinResponse_func:
+  assumes "JoinResponse i n t mt\<^sub>1 \<in> messages" and "JoinResponse i n t mt\<^sub>2 \<in> messages"
+  shows "mt\<^sub>1 = mt\<^sub>2"
+  using JoinResponse_Some_ApplyResponse JoinResponse_Some_lt assms JoinResponse_None 
+  apply (cases mt\<^sub>1)
+   apply (cases mt\<^sub>2)
+    apply simp
+   apply blast
+  apply (cases mt\<^sub>2)
+   apply blast
+  by (metis le_term_def term_not_le_lt JoinResponse_Some_max)
+
+lemma shows zen_initial_state: "zen {}" by (unfold_locales, auto)
+
+lemma (in zen) send_JoinResponse_None:
+  assumes "\<forall> i \<ge> i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t'. ApplyCommit i t' \<in> messages"
+  assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
+  shows   "zen (insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None) messages)" (is "zen ?messages'")
+proof -
+  define promised' where "\<And>i n t. promised' i n t \<equiv> \<exists>i'\<le>i. \<exists>mt'. JoinResponse i' n t mt' \<in> ?messages'"
+  have promised'I: "\<And>i n t. promised i n t \<Longrightarrow> promised' i n t" using promised'_def promised_def by auto
+
+  have messages_simps:
+    "\<And>i n t. (JoinResponse i n t None \<in> ?messages') = (JoinResponse i n t None \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0))"
+    "\<And>i n t t'. (JoinResponse i n t (Some t') \<in> ?messages') = (JoinResponse i n t (Some t') \<in> messages)"
+    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
+    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    by auto
+
+  show ?thesis
+    apply (unfold_locales)
+    apply (unfold messages_simps)
+                apply (fold isCommitted_def v_def prevAccepted_def)
+                apply (fold v\<^sub>c_def committedTo_def)
+                apply (fold era\<^sub>i_def)
+                apply (fold reconfig_def)
+                apply (fold Q_def promised'_def)
+    using ApplyResponse_ApplyRequest ApplyCommit_era ApplyCommit_quorum ApplyRequest_function
+      ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
+      JoinResponse_Some_max
+  proof -
+    fix i i' n t t' mt
+    assume "JoinResponse i n t mt \<in> insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None) messages" "i < i'" "t' \<prec> t"
+    with JoinResponse_future assms
+    show "ApplyResponse i' n t' \<notin> messages" by auto
+  next
+    fix i n t t'
+    assume "JoinResponse i n t None \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)" "t' \<prec> t"
+    with JoinResponse_None assms show "ApplyResponse i n t' \<notin> messages" by auto
+  next
+    fix i n t mt
+    assume "JoinResponse i n t mt \<in> ?messages'"
+    hence "JoinResponse i n t mt \<in> messages \<or> (i, n, t, mt) = (i\<^sub>0, n\<^sub>0, t\<^sub>0, None)" by auto
+    with JoinResponse_era show "\<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
+    proof (elim disjE)
+      assume "(i, n, t, mt) = (i\<^sub>0, n\<^sub>0, t\<^sub>0, None)"
+      with assms show ?thesis
+        by (intro exI [where x = i\<^sub>0], auto simp add: committedTo_def isCommitted_def)
+    qed
+  next
+    fix i t x assume "ApplyRequest i t x \<in> messages"
+    from ApplyRequest_quorum [OF this]
+    obtain q
+      where q: "q\<in>Q (era\<^sub>t t)" "\<forall>n\<in>q. promised i n t"
+        "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by blast
+
+    from q
+    show "\<exists>q\<in>Q (era\<^sub>t t). (\<forall>n\<in>q. promised' i n t) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
+      by (intro bexI [where x = q] conjI ballI promised'I, auto)
+  next
+    from finite_messages show "finite ?messages'" by auto
+  qed
+qed
+
+
+
+
 
 end
