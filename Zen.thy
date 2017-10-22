@@ -1411,6 +1411,11 @@ lemma (in zen) JoinResponse_func:
 lemma (in zen) shows finite_messages_insert: "finite (insert m messages)"
   using finite_messages by auto
 
+lemma (in zen) isCommitted_committedTo:
+  assumes "isCommitted i"
+  shows "committed\<^sub>< i"
+  using ApplyCommit_ApplyRequest ApplyRequest_committedTo assms isCommitted_def by blast
+
 lemma shows zen_initial_state: "zen {}" by (unfold_locales, auto)
 
 lemma (in zen) send_JoinResponse_None:
@@ -1567,18 +1572,64 @@ lemma (in zen) send_ApplyRequest:
   shows "zen (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" (is "zen ?messages'")
 proof -
 
-  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
-  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
-  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
-  define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
-  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
-
   have messages_simps:
     "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
     "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0))"
     "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
     by auto
+
+  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
+  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
+  define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
+  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+
+  have v'_eq: "\<And>i t. v' i t = (if (i, t) = (i\<^sub>0, t\<^sub>0) then x\<^sub>0 else v i t)"
+  proof -
+    fix i t
+    show "?thesis i t"
+    proof (cases "(i, t) = (i\<^sub>0, t\<^sub>0)")
+      case False
+      hence eq: "\<And>x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)" by auto
+      from False show ?thesis by (unfold v'_def eq, auto simp add: v_def)
+    next
+      case True with assms have eq: "\<And>x. (ApplyRequest i t x \<in> ?messages') = (x = x\<^sub>0)" by auto
+      from True show ?thesis by (unfold v'_def eq, auto)
+    qed
+  qed
+
+  have v\<^sub>c'_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
+  proof -
+    fix i
+    assume i: "isCommitted i"
+    show "?thesis i"
+    proof (cases "i = i\<^sub>0")
+      case False
+      with v'_eq show ?thesis by (simp add: v\<^sub>c_def v\<^sub>c'_def)
+    next
+      case True
+      with v'_eq assms show ?thesis apply (simp add: v\<^sub>c_def v\<^sub>c'_def)
+        by (metis ApplyCommit_ApplyRequest i isCommitted_def someI_ex)
+    qed
+  qed
+
+  have era\<^sub>i'_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> era\<^sub>i' i = era\<^sub>i i"
+  proof -
+    fix i assume i: "committed\<^sub>< i"
+    have "{j. j < i \<and> isReconfiguration (v\<^sub>c' j)} = {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
+      using committedTo_def i v\<^sub>c'_eq by auto
+    thus "?thesis i" by (auto simp add: era\<^sub>i_def era\<^sub>i'_def)
+  qed
+
+  have reconfig'_eq: "\<And>e. reconfig' e = reconfig e"
+  proof -
+    fix e
+    have "\<And>i. (isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e)
+            = (isCommitted i \<and> isReconfiguration (v\<^sub>c  i) \<and> era\<^sub>i  i = e)"
+      using era\<^sub>i'_eq isCommitted_committedTo v\<^sub>c'_eq by auto
+    thus "?thesis e" by (simp add: reconfig'_def reconfig_def)
+  qed
 
   show ?thesis
     apply (unfold_locales)
@@ -1605,6 +1656,10 @@ proof -
       by auto
 
     from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
+
+    from ApplyCommit_era era\<^sub>i'_eq show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+      apply (auto simp add: committedTo_def isCommitted_def)
+      using era\<^sub>i'_eq isCommitted_committedTo isCommitted_def by fastforce
 
 
 
