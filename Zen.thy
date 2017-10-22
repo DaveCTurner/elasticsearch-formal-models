@@ -1798,5 +1798,33 @@ proof -
           by (intro bexI [of _ q], simp_all add: Q_eq v_eq1 v_eq2)
       qed
     next
+      assume "(i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)"
+      hence fixed_simps: "i = i\<^sub>0" "t = t\<^sub>0" "x = x\<^sub>0" "v' i\<^sub>0 t\<^sub>0 = x\<^sub>0" by (simp_all add: v'_eq)
+
+      obtain i' where era_eq: "era\<^sub>t t\<^sub>0 = era\<^sub>i i'" "i' \<le> i"
+        by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(3) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1) promised_def)
+      hence "Q' (era\<^sub>t t\<^sub>0) = Q (era\<^sub>t t\<^sub>0)"
+        apply (unfold era_eq, intro Q'_eq)
+        by (simp add: assms(2) committedTo_def fixed_simps(1) isCommitted_def)
+      note fixed_simps = fixed_simps this
+
+      show "\<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
+      proof (unfold fixed_simps, intro bexI [where x = q] conjI assms)
+
+        show "prevAccepted i\<^sub>0 t\<^sub>0 q = {} \<or> x\<^sub>0 = v' i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
+        proof (cases "maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q) = t\<^sub>0")
+          case True
+          then show ?thesis by (simp add: v'_eq)
+        next
+          case False
+          with assms show ?thesis
+            using v'_eq by auto
+        qed
+      qed
+    qed
+  qed
+qed
+
+
 
 end
