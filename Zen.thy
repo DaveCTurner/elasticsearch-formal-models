@@ -1280,6 +1280,11 @@ lemma (in zen) ApplyCommit_ApplyRequest:
   shows "ApplyRequest i t (v i t) \<in> messages"
   by (metis ApplyCommit_ApplyResponse ApplyResponse_ApplyRequest assms the_equality v_def ApplyRequest_function)
 
+lemma (in zen) ApplyRequest_JoinResponse:
+  assumes "ApplyRequest i t x \<in> messages"
+  obtains i' n mt' where "i' \<le> i" "JoinResponse i' n t mt' \<in> messages"
+  by (meson ApplyRequest_quorum Q_member_member assms promised_def)
+
 lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
 proof -
   fix t\<^sub>0
@@ -1333,6 +1338,25 @@ next
   then show ?case
     by (metis era\<^sub>i_step le_SucI less_Suc_eq_le less_eq_Era_def natOfEra.simps(2) natOfEra_le natOfEra_lt order_refl)
 qed
+
+lemma (in zen) ApplyRequest_era:
+  assumes "ApplyRequest i t x \<in> messages"
+  shows "era\<^sub>t t \<le> era\<^sub>i i"
+proof -
+  from assms obtain i' n mt' where "i' \<le> i" "JoinResponse i' n t mt' \<in> messages"
+    using ApplyRequest_JoinResponse by blast
+  with JoinResponse_era obtain i'' where "i'' \<le> i'" "era\<^sub>t t \<le> era\<^sub>i i''" by blast
+
+  note `era\<^sub>t t \<le> era\<^sub>i i''`
+  also from `i'' \<le> i'` have "era\<^sub>i i'' \<le> era\<^sub>i i'" using era\<^sub>i_mono by blast
+  also from `i' \<le> i` have "era\<^sub>i i' \<le> era\<^sub>i i" using era\<^sub>i_mono by blast
+  finally show ?thesis .
+qed
+
+lemma (in zen) ApplyResponse_era:
+  assumes "ApplyResponse i n t \<in> messages"
+  shows "era\<^sub>t t \<le> era\<^sub>i i"
+  using assms ApplyRequest_era ApplyResponse_ApplyRequest by blast
 
 lemma (in zen) reconfig_props:
   assumes "committed\<^sub>< i" "e < era\<^sub>i i"
@@ -1388,13 +1412,7 @@ proof (unfold_locales, fold prevAccepted_def promised_long_def)
   assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<preceq> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
     by (simp add: era\<^sub>t_mono)
 
-  from t\<^sub>1 obtain i' n mt' where "JoinResponse i' n t\<^sub>1 mt' \<in> messages" "i' \<le> i"
-    by (meson ApplyRequest_quorum Q_member_member promised_def)
-  with JoinResponse_era obtain i'' where "i'' \<le> i'" "era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i''" by blast
-
-  note `era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i''`
-  also from `i'' \<le> i'` have "era\<^sub>i i'' \<le> era\<^sub>i i'" using era\<^sub>i_mono by blast
-  also from `i' \<le> i` have "era\<^sub>i i' \<le> era\<^sub>i i" using era\<^sub>i_mono by blast
+  from t\<^sub>1 ApplyRequest_era have "era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i" by blast
   also from t\<^sub>2 have "... = era\<^sub>t t\<^sub>2" using ApplyCommit_era by auto
   finally have "era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" .
 
@@ -1766,14 +1784,12 @@ proof -
       obtain q where q: "q \<in> Q (era\<^sub>t t)" "\<forall> n \<in> q. promised i n t"
         and disj: "prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q))" by blast
 
-      from q obtain n where n: "n \<in> q" "promised i n t" using Q_member_member by blast
-      from n obtain i' mt' where mt: "i' \<le> i" "JoinResponse i' n t mt' \<in> messages" by (auto simp add: promised_def)
-      with JoinResponse_era obtain i'' where i'': "i'' \<le> i'" "committed\<^sub>< i''" "era\<^sub>t t \<le> era\<^sub>i i''" by blast
-      with era\<^sub>i_contiguous obtain i''' where i''': "i''' \<le> i''" "era\<^sub>i i''' = era\<^sub>t t" by blast
-      hence era_eq: "era\<^sub>t t = era\<^sub>i i'''" by auto
+      from era\<^sub>i_contiguous ApplyRequest_era a
+      obtain i' where "era\<^sub>i i' = era\<^sub>t t" and i':"i' \<le> i" by blast
+      hence era_eq: "era\<^sub>t t = era\<^sub>i i'" by simp
 
       have Q_eq: "Q' (era\<^sub>t t) = Q (era\<^sub>t t)"
-        using i'' i'''
+        using i' ApplyRequest_committedTo [OF a]
         by (unfold era_eq, intro Q'_eq, auto simp add: committedTo_def)
 
       have v_eq1: "v' i t = v i t" using a assms v_eq by auto
