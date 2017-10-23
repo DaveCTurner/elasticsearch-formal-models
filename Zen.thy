@@ -765,7 +765,13 @@ lemma shows zen_initial_state: "zen {}" by (unfold_locales, auto)
 
 subsubsection \<open>Sending @{term JoinResponse} messages\<close>
 
-text \<open>@{term "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None"} can be sent under these conditions:\<close>
+text \<open>A node @{term n\<^sub>0} can send a @{term JoinResponse} message for slot @{term i\<^sub>0} only if
+\begin{itemize}
+\item all previous slots are committed, \item the eras of the term and the slot are equal, and
+\item it has sent no @{term ApplyResponse} message for any later slot. \end{itemize}.\<close>
+
+text \<open>@{term "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 None"} can be sent if, additionally, no @{term ApplyResponse}
+message has been sent for slot @{term i\<^sub>0}:\<close>
 
 lemma (in zen) send_JoinResponse_None:
   assumes "\<forall> i \<ge> i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
@@ -829,7 +835,10 @@ proof -
   qed
 qed
 
-text \<open>@{term "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0')"} can be sent under these conditions:\<close>
+text \<open>In contrast, @{term "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (Some t\<^sub>0')"} can be sent if an
+@{term ApplyResponse} message
+has been sent for slot @{term i\<^sub>0}, in which case @{term t\<^sub>0'} must be the greatest term of any such
+message previously sent by node @{term n\<^sub>0}:\<close>
 
 lemma (in zen) send_JoinResponse_Some:
   assumes "\<forall> i > i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
@@ -920,7 +929,15 @@ qed
 
 subsubsection \<open>Sending @{term ApplyRequest} messages\<close>
 
-text \<open>@{term "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0"} can be sent under these conditions\<close>
+text \<open>@{term "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0"} can be sent if \begin{itemize}
+\item no other value has previously
+been sent for this $\langle$ slot, term $\rangle$ pair,
+\item all slots below @{term i\<^sub>0} are committed,
+\item a quorum of @{term JoinResponse} messages have previously
+been received
+\item the value proposed is the value accepted in the greatest term
+amongst all @{term JoinResponse} messages, if any.
+\end{itemize} \<close>
 
 lemma (in zen) send_ApplyRequest:
   assumes "\<forall> x. ApplyRequest i\<^sub>0 t\<^sub>0 x \<notin> messages"
