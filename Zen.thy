@@ -937,11 +937,14 @@ lemma (in zen) send_ApplyRequest:
   assumes "\<forall> x. ApplyRequest i\<^sub>0 t\<^sub>0 x \<notin> messages"
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
-  assumes "\<forall> n \<in> q. promised i\<^sub>0 n t\<^sub>0"
+  assumes "\<forall> n \<in> q. \<exists> i \<le> i\<^sub>0. \<exists> mt'. JoinResponse i n t\<^sub>0 mt' \<in> messages"
   assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
     \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
   shows "zen (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" (is "zen ?messages'")
 proof -
+
+  have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n t\<^sub>0"
+    by (simp add: assms promised_def)
 
   have messages_simps:
     "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
@@ -1105,14 +1108,14 @@ proof -
       hence fixed_simps: "i = i\<^sub>0" "t = t\<^sub>0" "x = x\<^sub>0" "v' i\<^sub>0 t\<^sub>0 = x\<^sub>0" by (simp_all add: v_eq)
 
       obtain i' where era_eq: "era\<^sub>t t\<^sub>0 = era\<^sub>i i'" "i' \<le> i"
-        by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(3) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1) promised_def)
+        by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(3) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1))
       hence "Q' (era\<^sub>t t\<^sub>0) = Q (era\<^sub>t t\<^sub>0)"
         apply (unfold era_eq, intro Q'_eq)
         by (simp add: assms(2) committedTo_def fixed_simps(1) isCommitted_def)
       note fixed_simps = fixed_simps this
 
       show "\<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
-      proof (unfold fixed_simps, intro bexI [where x = q] conjI assms)
+      proof (unfold fixed_simps, intro bexI [where x = q] conjI quorum_promised assms)
 
         from assms
         show "prevAccepted i\<^sub>0 t\<^sub>0 q = {} \<or> x\<^sub>0 = v' i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
