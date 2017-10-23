@@ -483,6 +483,8 @@ locale zen =
   assumes JoinResponse_era:
     "\<And>i n t mt. JoinResponse i n t mt \<in> messages
       \<Longrightarrow> \<exists> i' \<le> i. committedTo i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
+  assumes ApplyRequest_era:
+    "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
   assumes ApplyRequest_committedTo:
     "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committedTo i"
   assumes ApplyRequest_quorum:
@@ -497,8 +499,6 @@ locale zen =
     "finite messages"
   assumes ApplyResponse_ApplyRequest:
     "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists> x. ApplyRequest i t x \<in> messages"
-  assumes ApplyCommit_era:
-    "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
   assumes ApplyCommit_quorum:
     "\<And>i t. ApplyCommit i t \<in> messages
                         \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> n \<in> q. ApplyResponse i n t \<in> messages"
@@ -586,24 +586,15 @@ next
     by (metis era\<^sub>i_step le_SucI less_Suc_eq_le less_eq_Era_def natOfEra.simps(2) natOfEra_le natOfEra_lt order_refl)
 qed
 
-lemma (in zen) ApplyRequest_era:
-  assumes "ApplyRequest i t x \<in> messages"
-  shows "era\<^sub>t t \<le> era\<^sub>i i"
-proof -
-  from assms obtain i' n mt' where "i' \<le> i" "JoinResponse i' n t mt' \<in> messages"
-    using ApplyRequest_JoinResponse by blast
-  with JoinResponse_era obtain i'' where "i'' \<le> i'" "era\<^sub>t t \<le> era\<^sub>i i''" by blast
-
-  note `era\<^sub>t t \<le> era\<^sub>i i''`
-  also from `i'' \<le> i'` have "era\<^sub>i i'' \<le> era\<^sub>i i'" using era\<^sub>i_mono by blast
-  also from `i' \<le> i` have "era\<^sub>i i' \<le> era\<^sub>i i" using era\<^sub>i_mono by blast
-  finally show ?thesis .
-qed
-
 lemma (in zen) ApplyResponse_era:
   assumes "ApplyResponse i n t \<in> messages"
-  shows "era\<^sub>t t \<le> era\<^sub>i i"
-  using assms ApplyRequest_era ApplyResponse_ApplyRequest by blast
+  shows "era\<^sub>t t = era\<^sub>i i"
+  using assms ApplyRequest_era ApplyResponse_ApplyRequest by metis
+
+lemma (in zen) ApplyCommit_era:
+  assumes "ApplyCommit i t \<in> messages"
+  shows "era\<^sub>t t = era\<^sub>i i"
+  by (meson ApplyResponse_era assms ApplyCommit_ApplyResponse)
 
 lemma (in zen) reconfig_props:
   assumes "committed\<^sub>< i" "e < era\<^sub>i i"
@@ -697,12 +688,9 @@ proof (unfold_locales, fold prevAccepted_def promised_long_def)
   assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<preceq> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
     by (simp add: era\<^sub>t_mono)
 
-  from t\<^sub>1 ApplyRequest_era have "era\<^sub>t t\<^sub>1 \<le> era\<^sub>i i" by blast
+  from t\<^sub>1 ApplyRequest_era have "era\<^sub>t t\<^sub>1 = era\<^sub>i i" by simp
   also from t\<^sub>2 have "... = era\<^sub>t t\<^sub>2" using ApplyCommit_era by auto
-  finally have "era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" .
-
-  with `era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1` have "era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2" by simp
-  thus "(Q \<circ> era\<^sub>t) t\<^sub>1 \<frown> (Q \<circ> era\<^sub>t) t\<^sub>2" by (simp add: Q_intersects)
+  finally show "(Q \<circ> era\<^sub>t) t\<^sub>1 \<frown> (Q \<circ> era\<^sub>t) t\<^sub>2" by (simp add: Q_intersects)
 next
   fix q t assume "q \<in> (Q \<circ> era\<^sub>t) t" thus "q \<noteq> {}" by (simp add: Q_members_nonempty)
 next
@@ -806,7 +794,7 @@ proof -
                 apply (fold era\<^sub>i_def)
                 apply (fold reconfig_def)
                 apply (fold Q_def promised'_def)
-    using ApplyResponse_ApplyRequest ApplyCommit_era ApplyCommit_quorum ApplyRequest_function
+    using ApplyResponse_ApplyRequest ApplyRequest_era ApplyCommit_quorum ApplyRequest_function
       ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
       JoinResponse_Some_max finite_messages_insert
   proof -
@@ -876,7 +864,8 @@ proof -
                 apply (fold era\<^sub>i_def)
                 apply (fold reconfig_def)
                 apply (fold Q_def promised'_def)
-    using JoinResponse_None  ApplyRequest_committedTo ApplyRequest_function finite_messages_insert ApplyResponse_ApplyRequest ApplyCommit_era  ApplyCommit_quorum 
+    using JoinResponse_None  ApplyRequest_committedTo ApplyRequest_function finite_messages_insert
+      ApplyResponse_ApplyRequest ApplyRequest_era  ApplyCommit_quorum 
   proof -
 
     from assms JoinResponse_future
@@ -936,6 +925,7 @@ text \<open>@{term "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0"} can be sent und
 lemma (in zen) send_ApplyRequest:
   assumes "\<forall> x. ApplyRequest i\<^sub>0 t\<^sub>0 x \<notin> messages"
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> n \<in> q. \<exists> i \<le> i\<^sub>0. \<exists> mt'. JoinResponse i n t\<^sub>0 mt' \<in> messages"
   assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
@@ -1045,7 +1035,7 @@ proof -
                 apply (fold Q'_def promised_def prevAccepted_def)
     using  JoinResponse_future JoinResponse_None  JoinResponse_Some_lt JoinResponse_Some_ApplyResponse  JoinResponse_Some_max  finite_messages_insert 
   proof -
-    from assms ApplyRequest_committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
+    from assms ApplyRequest_committedTo show committedTo: "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
       by (auto simp add: committedTo_def isCommitted_def)
 
     from assms ApplyRequest_function show "\<And>i t x x'. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> ApplyRequest i t x' \<in> messages \<or> (i, t, x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> x = x'"
@@ -1053,9 +1043,13 @@ proof -
 
     from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
 
-    from ApplyCommit_era era\<^sub>i_eq show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+    from ApplyRequest_era era\<^sub>i_eq have "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       apply (auto simp add: committedTo_def isCommitted_def)
-      using era\<^sub>i_eq isCommitted_committedTo isCommitted_def by fastforce
+      using era\<^sub>i_eq isCommitted_committedTo isCommitted_def 
+      by (simp add: ApplyRequest_committedTo)
+
+    with assms committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+      by (metis Pair_inject era\<^sub>i_eq)
 
     show "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
       using JoinResponse_era era\<^sub>i_eq by force
@@ -1108,7 +1102,7 @@ proof -
       hence fixed_simps: "i = i\<^sub>0" "t = t\<^sub>0" "x = x\<^sub>0" "v' i\<^sub>0 t\<^sub>0 = x\<^sub>0" by (simp_all add: v_eq)
 
       obtain i' where era_eq: "era\<^sub>t t\<^sub>0 = era\<^sub>i i'" "i' \<le> i"
-        by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(3) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1))
+        by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(5) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1))
       hence "Q' (era\<^sub>t t\<^sub>0) = Q (era\<^sub>t t\<^sub>0)"
         apply (unfold era_eq, intro Q'_eq)
         by (simp add: assms(2) committedTo_def fixed_simps(1) isCommitted_def)
@@ -1153,7 +1147,7 @@ proof -
                 apply (fold reconfig_def)
                 apply (fold Q_def promised_def)
     using JoinResponse_Some_lt JoinResponse_era ApplyRequest_committedTo ApplyRequest_quorum
-      ApplyRequest_function finite_messages_insert ApplyCommit_era
+      ApplyRequest_function finite_messages_insert ApplyRequest_era
   proof -
     show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> \<not> (ApplyResponse i' n t' \<in> messages \<or> (i', n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))"
       by (metis JoinResponse_future Pair_inject assms(2) dual_order.strict_implies_order promised_def term_not_le_lt)
@@ -1179,9 +1173,11 @@ configuration:\<close>
 lemma (in zen) send_ApplyCommit:
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> n \<in> q. ApplyResponse i\<^sub>0 n t\<^sub>0 \<in> messages"
-  assumes "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
   shows "zen (insert (ApplyCommit i\<^sub>0 t\<^sub>0) messages)" (is "zen ?messages'")
 proof -
+
+  have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
+    by (metis ApplyResponse_era Q_member_member assms(1) assms(2))
 
   have messages_simps:
     "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
@@ -1240,7 +1236,7 @@ proof -
         then obtain x where "ApplyRequest i\<^sub>0 t x \<in> messages" by blast
 
         hence "era\<^sub>t t \<le> era\<^sub>i i\<^sub>0" using ApplyRequest_era by simp
-        also from assms have "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0" by simp
+        also from era have "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0" by simp
         finally have "era\<^sub>t t \<le> era\<^sub>t t\<^sub>0".
 
         moreover from le have "era\<^sub>t t\<^sub>0 \<le> era\<^sub>t t" by (simp add: era\<^sub>t_mono)
@@ -1319,14 +1315,15 @@ proof -
     show "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub><' i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
       by force
 
-    from era\<^sub>i_eq show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
-      using ApplyCommit_era assms(3) committedTo_current isCommitted_committedTo isCommitted_def by force
+    from era\<^sub>i_eq show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+      using ApplyCommit_era era committedTo_current isCommitted_committedTo isCommitted_def 
+      by (simp add: ApplyRequest_committedTo ApplyRequest_era)
 
     show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
-      by (metis ApplyRequest_committedTo ApplyRequest_era ApplyRequest_quorum Q'_eq v_eq)
+      by (metis ApplyRequest_JoinResponse ApplyRequest_quorum JoinResponse_era Q'_eq v_eq)
 
     show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages"
-      by (metis ApplyCommit_ApplyRequest ApplyCommit_quorum ApplyRequest_committedTo ApplyResponse_era Q'_eq Q_member_member assms(1) assms(2) committedTo_current prod.inject)
+        by (metis ApplyCommit_quorum ApplyRequest_JoinResponse ApplyResponse_ApplyRequest JoinResponse_era Q'_eq Q_member_member assms(1) assms(2) prod.inject)
   qed
 qed
 
