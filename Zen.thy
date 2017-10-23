@@ -763,6 +763,12 @@ qed
 
 subsection \<open>Preserving invariants\<close>
 
+text \<open>The statement @{term "zen M"} indicates that the set @{term M} of messages satisfies
+the invariants of @{term zen}, and therefore all committed values are equal. Lemmas that are
+proven ``in zen'' include the variable @{term messages} along with a silent assumption
+@{term "zen messages"} and show from this that some modified set of messages also satisfies the
+invariants.\<close>
+
 subsubsection \<open>Initial state\<close>
 
 text \<open>When no messages have been sent, the invariants hold:\<close>
@@ -932,7 +938,8 @@ lemma (in zen) send_ApplyRequest:
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> n \<in> q. promised i\<^sub>0 n t\<^sub>0"
-  assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {} \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
+  assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
+    \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
   shows "zen (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" (is "zen ?messages'")
 proof -
 
