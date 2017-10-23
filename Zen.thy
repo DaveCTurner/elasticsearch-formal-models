@@ -1395,6 +1395,13 @@ proof -
   from p assms show "isCommitted (reconfig e)" "isReconfiguration (v\<^sub>c (reconfig e))" "era\<^sub>i (reconfig e) = e" by auto
 qed
 
+lemma (in zen) reconfig_eq:
+  assumes "committed\<^sub>< i" "e < era\<^sub>i i"
+  assumes "isReconfiguration (v\<^sub>c j)"
+  assumes "era\<^sub>i j = e"
+  shows "j = reconfig e"
+  by (metis assms era\<^sub>i_mono era\<^sub>i_step le_neq_implies_less lessI natOfEra.simps(2) natOfEra_lt not_le not_less_eq_eq reconfig_era reconfig_isReconfiguration)
+
 lemma (in zen) zen_is_oneSlot:
   fixes i
   shows "oneSlot (Q \<circ> era\<^sub>t) (v i)
@@ -1866,6 +1873,160 @@ proof -
       using ApplyResponse_ApplyRequest assms(1) by blast
     show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> \<exists>q\<in>Q (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
       by (meson ApplyCommit_quorum)
+  qed
+qed
+
+lemma (in zen) send_ApplyCommit:
+  assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
+  assumes "\<forall> n \<in> q. ApplyResponse i\<^sub>0 n t\<^sub>0 \<in> messages"
+  assumes "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
+  shows "zen (insert (ApplyCommit i\<^sub>0 t\<^sub>0) messages)" (is "zen ?messages'")
+proof -
+
+  have messages_simps:
+    "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
+    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
+    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0))"
+    by auto
+
+  define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. ApplyCommit i t \<in> ?messages'"
+  define committedTo' ("committed\<^sub><'") where "\<And>i. committed\<^sub><' i \<equiv> \<forall>j < i. isCommitted' j"
+  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
+  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
+  define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
+  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+
+  have committedTo_current: "committed\<^sub>< i\<^sub>0"
+    using assms by (metis ApplyRequest_committedTo Q_member_member ApplyResponse_ApplyRequest)
+
+  have isCommitted_eq: "\<And>i. isCommitted' i = (isCommitted i \<or> i = i\<^sub>0)"
+    using isCommitted'_def isCommitted_def by auto
+
+  have committedTo_eq: "\<And>i. committed\<^sub><' i = ((committed\<^sub>< i) \<or> (i = Suc i\<^sub>0))"
+    apply (unfold committedTo_def committedTo'_def isCommitted_eq)
+    using Suc_lessI committedTo_current committedTo_def isCommitted_committedTo by blast
+
+  have v_eq: "\<And>i t. v' i t = v i t" by (simp add: v'_def v_def)
+
+  have v\<^sub>c_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
+  proof -
+    fix i assume i: "isCommitted i"
+    show "?thesis i"
+    proof (cases "i = i\<^sub>0")
+      case False thus ?thesis by (simp add: v\<^sub>c_def v\<^sub>c'_def v_eq)
+    next
+      case True
+      define t  where "t  \<equiv> SOME t. ApplyCommit i\<^sub>0 t \<in> messages"
+      define t' where "t' \<equiv> SOME t. ApplyCommit i\<^sub>0 t \<in> ?messages'"
+
+      have eq:  "v\<^sub>c  i\<^sub>0 = v i\<^sub>0 t"  by (simp add: v\<^sub>c_def t_def)
+      have eq': "v\<^sub>c' i\<^sub>0 = v i\<^sub>0 t'" by (simp add: v\<^sub>c'_def t'_def v_eq)
+
+      show ?thesis
+        apply (unfold True eq eq')
+      proof (intro oneSlot.consistent [OF oneSlot.commit [OF zen_is_oneSlot]])
+        from assms show "q \<in> (Q \<circ> era\<^sub>t) t\<^sub>0" "\<And>n. n \<in> q \<Longrightarrow> ApplyResponse i\<^sub>0 n t\<^sub>0 \<in> messages"
+          by simp_all
+
+        from i have "ApplyCommit i\<^sub>0 t  \<in> messages" by (metis True isCommitted_def someI_ex t_def)
+        thus "ApplyCommit i\<^sub>0 t \<in> messages \<or> t = t\<^sub>0" by simp
+        from i have t': "ApplyCommit i\<^sub>0 t' \<in> ?messages'" by (metis insertI1 someI_ex t'_def)
+        thus "ApplyCommit i\<^sub>0 t' \<in> messages \<or> t' = t\<^sub>0" by blast
+
+        fix t assume le: "t\<^sub>0 \<preceq> t"
+        assume "\<exists>x. ApplyRequest i\<^sub>0 t x \<in> messages"
+        then obtain x where "ApplyRequest i\<^sub>0 t x \<in> messages" by blast
+
+        hence "era\<^sub>t t \<le> era\<^sub>i i\<^sub>0" using ApplyRequest_era by simp
+        also from assms have "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0" by simp
+        finally have "era\<^sub>t t \<le> era\<^sub>t t\<^sub>0".
+
+        moreover from le have "era\<^sub>t t\<^sub>0 \<le> era\<^sub>t t" by (simp add: era\<^sub>t_mono)
+
+        ultimately have "era\<^sub>t t\<^sub>0 = era\<^sub>t t" by simp
+        thus "(Q \<circ> era\<^sub>t) t \<frown> (Q \<circ> era\<^sub>t) t\<^sub>0"
+          by (simp add: Q_intersects)
+      qed
+    qed
+  qed
+
+  have era\<^sub>i_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> era\<^sub>i' i = era\<^sub>i i"
+  proof -
+    fix i assume i: "committed\<^sub>< i"
+    hence "{j. j < i \<and> isReconfiguration (v\<^sub>c' j)} = {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
+      using v\<^sub>c_eq by (auto simp add: committedTo_def)
+    thus "?thesis i" by (simp add: era\<^sub>i_def era\<^sub>i'_def)
+  qed
+
+  have reconfig'_eq: "\<And>e i. committed\<^sub>< i \<Longrightarrow> e < era\<^sub>i i \<Longrightarrow> reconfig' e = reconfig e"
+  proof -
+    fix e i
+    assume a: "committed\<^sub>< i" "e < era\<^sub>i i"
+
+    define P where "\<And>i. P i \<equiv> isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
+    have reconfig'_the: "reconfig' e = (THE i. P i)" by (simp add: P_def reconfig'_def)
+
+    have "P (reconfig' e)"
+    proof (unfold reconfig'_the, intro theI [of P])
+      show "P (reconfig e)"
+        using P_def a era\<^sub>i_eq isCommitted_committedTo isCommitted_eq reconfig_era reconfig_isCommitted reconfig_isReconfiguration v\<^sub>c_eq by auto
+
+      show "\<And>j. P j \<Longrightarrow> j = reconfig e"
+        using P_def a
+        by (metis committedTo_current committedTo_def era\<^sub>i_eq era\<^sub>i_mono isCommitted_committedTo isCommitted_eq not_le reconfig_eq v\<^sub>c_eq)
+    qed
+    thus "?thesis e i"
+      using P_def a
+      by (metis committedTo_current committedTo_def era\<^sub>i_eq era\<^sub>i_mono isCommitted_committedTo isCommitted_eq not_le reconfig_eq v\<^sub>c_eq)
+  qed
+
+  have Q'_eq: "\<And>e i. committed\<^sub>< i \<Longrightarrow> e \<le> era\<^sub>i i \<Longrightarrow> Q' e = Q e"
+  proof -
+    fix e i assume "committed\<^sub>< i" "e \<le> era\<^sub>i i"
+    thus "Q' e = Q e" 
+      apply (cases e, simp add: Q_def Q'_def)
+      using Q'_def
+      by (metis Era.simps(5) Q_def Suc_le_lessD natOfEra.simps(2) natOfEra_le natOfEra_lt reconfig'_eq reconfig_isCommitted v\<^sub>c_eq)
+  qed
+
+  show ?thesis
+    apply (unfold_locales)
+                apply (fold isCommitted'_def)
+                apply (fold committedTo'_def)
+                apply (fold v'_def)
+                apply (fold v\<^sub>c'_def)
+                apply (fold era\<^sub>i'_def)
+                apply (fold reconfig'_def)
+                apply (fold Q'_def)
+                apply (unfold messages_simps)
+                apply (fold promised_def)
+                apply (fold prevAccepted_def)
+  proof -
+    from JoinResponse_future show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" .
+    from JoinResponse_None show "\<And>i n t t'. JoinResponse i n t None \<in> messages \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i n t' \<notin> messages" .
+    from JoinResponse_Some_lt show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t" .
+    from JoinResponse_Some_ApplyResponse show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> ApplyResponse i n t' \<in> messages" .
+    from JoinResponse_Some_max show "\<And>i n t t' t''. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages" .
+    from ApplyRequest_function show "\<And>i t x x'. ApplyRequest i t x \<in> messages \<Longrightarrow> ApplyRequest i t x' \<in> messages \<Longrightarrow> x = x'" .
+    from finite_messages_insert show "finite ?messages'" .
+    from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages" .
+
+    from ApplyRequest_committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committed\<^sub><' i" by (simp add: committedTo_eq)
+
+    from JoinResponse_era era\<^sub>i_eq committedTo_eq
+    show "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub><' i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
+      by force
+
+    from era\<^sub>i_eq show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+      using ApplyCommit_era assms(3) committedTo_current isCommitted_committedTo isCommitted_def by force
+
+    show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
+      by (metis ApplyRequest_committedTo ApplyRequest_era ApplyRequest_quorum Q'_eq v_eq)
+
+    show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages"
+      by (metis ApplyCommit_ApplyRequest ApplyCommit_quorum ApplyRequest_committedTo ApplyResponse_era Q'_eq Q_member_member assms(1) assms(2) committedTo_current prod.inject)
   qed
 qed
 
