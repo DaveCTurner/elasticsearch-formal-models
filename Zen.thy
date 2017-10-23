@@ -1119,7 +1119,7 @@ proof -
   qed
 qed
 
-subsubsection \<open>Sending @{term ApplyRequest} messages\<close>
+subsubsection \<open>Sending @{term ApplyResponse} messages\<close>
 
 text \<open>@{term "ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0"} can be sent in response to an @{term ApplyRequest}
 as long as a @{term JoinResponse} for a later term has not been sent:\<close>
@@ -1299,16 +1299,9 @@ proof -
                 apply (unfold messages_simps)
                 apply (fold promised_def)
                 apply (fold prevAccepted_def)
+    using JoinResponse_future JoinResponse_None JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
+      JoinResponse_Some_max ApplyRequest_function finite_messages_insert ApplyResponse_ApplyRequest
   proof -
-    from JoinResponse_future show "\<And>i i' n t t' mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" .
-    from JoinResponse_None show "\<And>i n t t'. JoinResponse i n t None \<in> messages \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i n t' \<notin> messages" .
-    from JoinResponse_Some_lt show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t" .
-    from JoinResponse_Some_ApplyResponse show "\<And>i n t t'. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> ApplyResponse i n t' \<in> messages" .
-    from JoinResponse_Some_max show "\<And>i n t t' t''. JoinResponse i n t (Some t') \<in> messages \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages" .
-    from ApplyRequest_function show "\<And>i t x x'. ApplyRequest i t x \<in> messages \<Longrightarrow> ApplyRequest i t x' \<in> messages \<Longrightarrow> x = x'" .
-    from finite_messages_insert show "finite ?messages'" .
-    from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages" .
-
     from ApplyRequest_committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committed\<^sub><' i" by (simp add: committedTo_eq)
 
     from JoinResponse_era era\<^sub>i_eq committedTo_eq
