@@ -1645,7 +1645,7 @@ proof -
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
   define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
 
-  have v'_eq: "\<And>i t. v' i t = (if (i, t) = (i\<^sub>0, t\<^sub>0) then x\<^sub>0 else v i t)"
+  have v_eq: "\<And>i t. v' i t = (if (i, t) = (i\<^sub>0, t\<^sub>0) then x\<^sub>0 else v i t)"
   proof -
     fix i t
     show "?thesis i t"
@@ -1659,26 +1659,26 @@ proof -
     qed
   qed
 
-  have v\<^sub>c'_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
+  have v\<^sub>c_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
   proof -
     fix i
     assume i: "isCommitted i"
     show "?thesis i"
     proof (cases "i = i\<^sub>0")
       case False
-      with v'_eq show ?thesis by (simp add: v\<^sub>c_def v\<^sub>c'_def)
+      with v_eq show ?thesis by (simp add: v\<^sub>c_def v\<^sub>c'_def)
     next
       case True
-      with v'_eq assms show ?thesis apply (simp add: v\<^sub>c_def v\<^sub>c'_def)
+      with v_eq assms show ?thesis apply (simp add: v\<^sub>c_def v\<^sub>c'_def)
         by (metis ApplyCommit_ApplyRequest i isCommitted_def someI_ex)
     qed
   qed
 
-  have era\<^sub>i'_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> era\<^sub>i' i = era\<^sub>i i"
+  have era\<^sub>i_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> era\<^sub>i' i = era\<^sub>i i"
   proof -
     fix i assume i: "committed\<^sub>< i"
     have "{j. j < i \<and> isReconfiguration (v\<^sub>c' j)} = {j. j < i \<and> isReconfiguration (v\<^sub>c j)}"
-      using committedTo_def i v\<^sub>c'_eq by auto
+      using committedTo_def i v\<^sub>c_eq by auto
     thus "?thesis i" by (auto simp add: era\<^sub>i_def era\<^sub>i'_def)
   qed
 
@@ -1687,7 +1687,7 @@ proof -
     fix e
     have "\<And>i. (isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e)
             = (isCommitted i \<and> isReconfiguration (v\<^sub>c  i) \<and> era\<^sub>i  i = e)"
-      using era\<^sub>i'_eq isCommitted_committedTo v\<^sub>c'_eq by auto
+      using era\<^sub>i_eq isCommitted_committedTo v\<^sub>c_eq by auto
     thus "?thesis e" by (simp add: reconfig'_def reconfig_def)
   qed
 
@@ -1710,7 +1710,7 @@ proof -
 
         show ?thesis
         proof (unfold nextEra, simp add: Q_def Q'_def reconfig'_eq,
-            intro cong [OF refl, where f = getConf] v\<^sub>c'_eq reconfig_isCommitted)
+            intro cong [OF refl, where f = getConf] v\<^sub>c_eq reconfig_isCommitted)
           show "era\<^sub>i i < era\<^sub>i (Suc i)"
             using natOfEra_lt nextEra by fastforce
           from Suc.prems show "committed\<^sub>< (Suc i)" .
@@ -1739,12 +1739,12 @@ proof -
 
     from ApplyResponse_ApplyRequest show "\<And>i n t. ApplyResponse i n t \<in> messages \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
 
-    from ApplyCommit_era era\<^sub>i'_eq show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+    from ApplyCommit_era era\<^sub>i_eq show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       apply (auto simp add: committedTo_def isCommitted_def)
-      using era\<^sub>i'_eq isCommitted_committedTo isCommitted_def by fastforce
+      using era\<^sub>i_eq isCommitted_committedTo isCommitted_def by fastforce
 
     show "\<And>i n t mt. JoinResponse i n t mt \<in> messages \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
-      using JoinResponse_era era\<^sub>i'_eq by force
+      using JoinResponse_era era\<^sub>i_eq by force
 
   next
     fix i t
@@ -1776,7 +1776,7 @@ proof -
         using i'' i'''
         by (unfold era_eq, intro Q'_eq, auto simp add: committedTo_def)
 
-      have v_eq1: "v' i t = v i t" using a assms v'_eq by auto
+      have v_eq1: "v' i t = v i t" using a assms v_eq by auto
 
       show ?thesis
       proof (cases "prevAccepted i t q = {}")
@@ -1786,14 +1786,14 @@ proof -
         have "maxTerm (prevAccepted i t q) \<in> prevAccepted i t q"
           by (intro maxTerm_mem finite_prevAccepted False)
         hence v_eq2: "v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
-          apply (unfold v'_eq, simp)
+          apply (unfold v_eq, simp)
           by (smt assms(1) mem_Collect_eq prevAccepted_def zen.ApplyResponse_ApplyRequest zen.JoinResponse_Some_ApplyResponse zen_axioms)
         from q disj show ?thesis
           by (intro bexI [of _ q], simp_all add: Q_eq v_eq1 v_eq2)
       qed
     next
       assume "(i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)"
-      hence fixed_simps: "i = i\<^sub>0" "t = t\<^sub>0" "x = x\<^sub>0" "v' i\<^sub>0 t\<^sub>0 = x\<^sub>0" by (simp_all add: v'_eq)
+      hence fixed_simps: "i = i\<^sub>0" "t = t\<^sub>0" "x = x\<^sub>0" "v' i\<^sub>0 t\<^sub>0 = x\<^sub>0" by (simp_all add: v_eq)
 
       obtain i' where era_eq: "era\<^sub>t t\<^sub>0 = era\<^sub>i i'" "i' \<le> i"
         by (metis (no_types, lifting) JoinResponse_era Q_member_member assms(3) assms(4) dual_order.trans era\<^sub>i_contiguous fixed_simps(1) promised_def)
@@ -1807,7 +1807,7 @@ proof -
 
         from assms
         show "prevAccepted i\<^sub>0 t\<^sub>0 q = {} \<or> x\<^sub>0 = v' i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
-          by (cases "maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q) = t\<^sub>0", auto simp add: v'_eq)
+          by (cases "maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q) = t\<^sub>0", auto simp add: v_eq)
       qed
     qed
   qed
