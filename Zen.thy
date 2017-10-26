@@ -397,9 +397,18 @@ sent, and asserts that this set obeys certain invariants, listed below. Further 
 shown that these invariants imply that each slot obeys the @{term oneSlot} invariants above and
 hence that each slot cannot see inconsistent committed values.\<close>
 
+datatype Destination = Broadcast | OneNode Node
+
+record RoutedMessage =
+  sender :: Node
+  destination :: Destination
+  payload :: Message
+
 locale zen =
+  fixes routedMessages :: "RoutedMessage set"
   fixes messages :: "Message set"
     (* value proposed in a slot & a term *)
+  defines "messages \<equiv> payload ` routedMessages"
   fixes v :: "nat \<Rightarrow> Term \<Rightarrow> Value"
   defines "v i t \<equiv> THE x. ApplyRequest i t x \<in> messages"
     (* whether a slot is committed *)
@@ -631,7 +640,7 @@ next
 
   from ApplyResponseSent a\<^sub>2 assms
   have t: "t\<^sub>1 = t\<^sub>2"
-    by (meson JoinResponse_Some_ApplyResponse JoinResponse_Some_lt less_linear zen.JoinResponse_Some_max zen_axioms)
+    by (meson JoinResponse_Some_ApplyResponse JoinResponse_Some_lt less_linear JoinResponse_Some_max)
 
   from assms
   have x: "x\<^sub>1 = x\<^sub>2" 
@@ -751,8 +760,11 @@ subsubsection \<open>Sending @{term JoinRequest} messages\<close>
 text \<open>Any node may send a @{term JoinRequest} message for any term at any time.\<close>
 
 lemma (in zen) send_JoinRequest:
-  shows "zen (insert (JoinRequest t\<^sub>0) messages)" (is "zen ?messages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = JoinRequest t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (JoinRequest t\<^sub>0) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
+
   have messages_simps:
     "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
     "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
@@ -765,7 +777,7 @@ proof -
       JoinResponse_Some_max finite_messages_insert JoinResponse_None JoinResponse_era
       JoinResponse_future ApplyCommit_quorum JoinResponse_Some_ApplyRequest
   show ?thesis
-    by (unfold_locales, unfold messages_simps era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def, simp_all)
+    by (unfold_locales, unfold payload_eq messages_simps era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def, simp_all)
 qed
 
 subsubsection \<open>Sending @{term JoinResponse} messages\<close>
@@ -784,8 +796,13 @@ lemma (in zen) send_JoinResponse_None:
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
-  shows   "zen (insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 NoApplyResponseSent) messages)" (is "zen ?messages'")
+  shows   "zen (insert \<lparr> sender = anySender, destination = anyDestination,
+                         payload = JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 NoApplyResponseSent \<rparr> routedMessages)"
+          (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 NoApplyResponseSent) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
+
   define promised' where "\<And>i n t. promised' i n t \<equiv> \<exists>i'\<le>i. \<exists>mt'. JoinResponse i' n t mt' \<in> ?messages'"
   have promised'I: "\<And>i n t. promised i n t \<Longrightarrow> promised' i n t" using promised'_def promised_def by auto
 
@@ -799,7 +816,7 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-    apply (unfold messages_simps)
+    apply (unfold messages_simps payload_eq)
                 apply (fold isCommitted_def v_def prevAccepted_def)
                 apply (fold v\<^sub>c_def committedTo_def)
                 apply (fold era\<^sub>i_def)
@@ -856,8 +873,12 @@ lemma (in zen) send_JoinResponse_Some:
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
-  shows   "zen (insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')) messages)" (is "zen ?messages'")
+  shows   "zen (insert \<lparr> sender = anySender, destination = anyDestination,
+                         payload = JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
+
   define promised' where "\<And>i n t. promised' i n t \<equiv> \<exists>i'\<le>i. \<exists>mt'. JoinResponse i' n t mt' \<in> ?messages'"
   have promised'I: "\<And>i n t. promised i n t \<Longrightarrow> promised' i n t" using promised'_def promised_def by auto
 
@@ -876,13 +897,14 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                apply (fold prevAccepted'_def)
-                apply (unfold messages_simps)
-                apply (fold isCommitted_def v_def)
-                apply (fold v\<^sub>c_def committedTo_def)
-                apply (fold era\<^sub>i_def)
-                apply (fold reconfig_def)
-                apply (fold Q_def promised'_def)
+                 apply (unfold payload_eq)
+                 apply (fold prevAccepted'_def)
+                 apply (unfold messages_simps)
+                 apply (fold isCommitted_def v_def)
+                 apply (fold v\<^sub>c_def committedTo_def)
+                 apply (fold era\<^sub>i_def)
+                 apply (fold reconfig_def)
+                 apply (fold Q_def promised'_def)
     using JoinResponse_None  ApplyRequest_committedTo ApplyRequest_function finite_messages_insert
       ApplyResponse_ApplyRequest ApplyRequest_era  ApplyCommit_quorum 
   proof -
@@ -960,8 +982,11 @@ lemma (in zen) send_ApplyRequest:
   assumes "\<forall> n \<in> q. \<exists> i \<le> i\<^sub>0. \<exists> a. JoinResponse i n t\<^sub>0 a \<in> messages"
   assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
     \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
-  shows "zen (insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages)" (is "zen ?messages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination,
+                       payload = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
 
   have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n t\<^sub>0"
     by (simp add: assms promised_def)
@@ -1055,15 +1080,16 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                apply (fold v'_def)
-                apply (fold v\<^sub>c'_def)
-                apply (unfold messages_simps)
-                apply (fold isCommitted_def)
-                apply (fold committedTo_def)
-                apply (fold era\<^sub>i'_def)
-                apply (fold reconfig'_def)
-                apply (fold Q'_def promised_def prevAccepted_def)
-   using  JoinResponse_future JoinResponse_None  JoinResponse_Some_lt JoinResponse_Some_ApplyResponse  JoinResponse_Some_max  finite_messages_insert
+                 apply (unfold payload_eq)
+                 apply (fold v'_def)
+                 apply (fold v\<^sub>c'_def)
+                 apply (unfold messages_simps)
+                 apply (fold isCommitted_def)
+                 apply (fold committedTo_def)
+                 apply (fold era\<^sub>i'_def)
+                 apply (fold reconfig'_def)
+                 apply (fold Q'_def promised_def prevAccepted_def)
+    using  JoinResponse_future JoinResponse_None  JoinResponse_Some_lt JoinResponse_Some_ApplyResponse  JoinResponse_Some_max  finite_messages_insert
   proof -
     from assms ApplyRequest_committedTo show committedTo: "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
       by (auto simp add: committedTo_def isCommitted_def)
@@ -1126,7 +1152,7 @@ proof -
           by (intro maxTerm_mem finite_prevAccepted False)
         hence v_eq2: "v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
           apply (unfold v_eq, simp)
-          by (smt assms(1) mem_Collect_eq prevAccepted_def zen.ApplyResponse_ApplyRequest zen.JoinResponse_Some_ApplyResponse zen_axioms)
+          using JoinResponse_Some_ApplyRequest assms(1) prevAccepted_def by fastforce
         from q disj show ?thesis
           by (intro bexI [of _ q], simp_all add: Q_eq v_eq1 v_eq2)
       qed
@@ -1160,8 +1186,10 @@ as long as a @{term JoinResponse} for a later term has not been sent:\<close>
 lemma (in zen) send_ApplyResponse:
   assumes "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<in> messages"
   assumes "\<forall> i t a. JoinResponse i n\<^sub>0 t a \<in> messages \<longrightarrow> t \<le> t\<^sub>0"
-  shows "zen (insert (ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0) messages)" (is "zen ?messages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
 
   have messages_simps:
     "\<And>i n t a. (JoinResponse i n t a \<in> ?messages') = (JoinResponse i n t a \<in> messages)"
@@ -1172,13 +1200,13 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                apply (unfold messages_simps)
-                apply (fold prevAccepted_def)
-                apply (fold isCommitted_def v_def)
-                apply (fold v\<^sub>c_def committedTo_def)
-                apply (fold era\<^sub>i_def)
-                apply (fold reconfig_def)
-                apply (fold Q_def promised_def)
+                 apply (unfold messages_simps payload_eq)
+                 apply (fold prevAccepted_def)
+                 apply (fold isCommitted_def v_def)
+                 apply (fold v\<^sub>c_def committedTo_def)
+                 apply (fold era\<^sub>i_def)
+                 apply (fold reconfig_def)
+                 apply (fold Q_def promised_def)
     using JoinResponse_Some_lt JoinResponse_era ApplyRequest_committedTo ApplyRequest_quorum
       ApplyRequest_function finite_messages_insert ApplyRequest_era JoinResponse_Some_ApplyRequest
   proof -
@@ -1206,8 +1234,10 @@ configuration:\<close>
 lemma (in zen) send_ApplyCommit:
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> n \<in> q. ApplyResponse i\<^sub>0 n t\<^sub>0 \<in> messages"
-  shows "zen (insert (ApplyCommit i\<^sub>0 t\<^sub>0) messages)" (is "zen ?messages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
+  have payload_eq: "payload ` ?routedMessages' = insert (ApplyCommit i\<^sub>0 t\<^sub>0) messages" (is "_ = ?messages'")
+    by (auto simp add: messages_def)
 
   have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
     by (metis ApplyResponse_era Q_member_member assms(1) assms(2))
@@ -1322,16 +1352,17 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                apply (fold isCommitted'_def)
-                apply (fold committedTo'_def)
-                apply (fold v'_def)
-                apply (fold v\<^sub>c'_def)
-                apply (fold era\<^sub>i'_def)
-                apply (fold reconfig'_def)
-                apply (fold Q'_def)
-                apply (unfold messages_simps)
-                apply (fold promised_def)
-                apply (fold prevAccepted_def)
+                 apply (unfold payload_eq)
+                 apply (fold isCommitted'_def)
+                 apply (fold committedTo'_def)
+                 apply (fold v'_def)
+                 apply (fold v\<^sub>c'_def)
+                 apply (fold era\<^sub>i'_def)
+                 apply (fold reconfig'_def)
+                 apply (fold Q'_def)
+                 apply (unfold messages_simps)
+                 apply (fold promised_def)
+                 apply (fold prevAccepted_def)
     using JoinResponse_future JoinResponse_None JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
       JoinResponse_Some_max ApplyRequest_function finite_messages_insert ApplyResponse_ApplyRequest
       JoinResponse_Some_ApplyRequest
@@ -1382,16 +1413,19 @@ definition lastAcceptedGreaterTermThan :: "Term \<Rightarrow> NodeData \<Rightar
       NoApplyResponseSent \<Rightarrow> False
       | ApplyResponseSent t' _ \<Rightarrow> t' < t"
 
-definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (NodeData * Message list)"
+definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow> (NodeData * RoutedMessage list)"
   where
-    "ProcessMessage nd msg \<equiv> case msg of
+    "ProcessMessage nd msg \<equiv>
+      let respond = (\<lambda> m. [ \<lparr> sender = currentNode nd, destination = OneNode (sender msg), payload = m \<rparr>])
+          
+      in case payload msg of
       JoinRequest t \<Rightarrow>
           if minimumAcceptableTerm nd < t
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
-               , [ JoinResponse (localCheckpoint nd)
-                                (currentNode nd)
-                                t
-                                (lastAccepted nd) ])
+               , respond (JoinResponse (localCheckpoint nd)
+                                       (currentNode nd)
+                                       t
+                                       (lastAccepted nd)))
           else (nd, [])
 
       | JoinResponse i n t a \<Rightarrow>
@@ -1410,7 +1444,7 @@ definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (Node
           if minimumAcceptableTerm nd \<le> t
                 \<and> \<not> lastAcceptedGreaterTermThan t nd
           then ( nd \<lparr> lastAccepted := ApplyResponseSent t x \<rparr>
-               , [ ApplyResponse i (currentNode nd) t ])
+               , respond (ApplyResponse i (currentNode nd) t))
           else (nd, [])
 
       | ApplyResponse i n t \<Rightarrow> (nd, [])
@@ -1438,7 +1472,7 @@ locale zenImpl = zen +
     | ApplyResponseSent t' _ \<Rightarrow> t' \<le> minimumAcceptableTerm (nodeState n)"
 
 lemma (in zenImpl)
-  shows "zenImpl (insert (JoinRequest t) messages) nodeState"
+  shows "zenImpl (insert \<lparr> sender = anySender, destination = Broadcast, payload = JoinRequest t \<rparr> routedMessages) nodeState"
   sorry
 
 lemma (in zenImpl)
