@@ -1362,4 +1362,94 @@ proof -
   qed
 qed
 
+section \<open>Per-node model\<close>
+
+record NodeData =
+  currentNode :: Node (* identity of this node *)
+  localCheckpoint :: nat (* all slots strictly below this one are committed *)
+  currentEra :: Era (* era of the localCheckpoint slot *)
+  currentConfiguration :: Configuration (* configuration of the currentEra *)
+  lastAccepted :: "(Term * Value) option" (* term and value that were last accepted in this slot, if any *)
+  minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
+
+definition UpdateConfiguration :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
+  where
+    "UpdateConfiguration x nd \<equiv> case x of
+       Reconfigure Q \<Rightarrow> nd \<lparr> currentEra := nextEra (currentEra nd)
+                           , currentConfiguration := Q \<rparr>
+       | _ \<Rightarrow> nd"
+
+definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (NodeData * Message list)"
+  where
+    "ProcessMessage nd msg \<equiv> case msg
+      of JoinResponse i n t mt \<Rightarrow> (nd, [])
+      | ApplyRequest i t x \<Rightarrow> (nd, [])
+      | ApplyResponse i n t \<Rightarrow> (nd, [])
+
+      | ApplyCommit i t \<Rightarrow> let
+          nd' = if i = localCheckpoint nd
+                then case lastAccepted nd of
+                    Some (lastAcceptedTerm, lastAcceptedValue) \<Rightarrow>
+                      if t = lastAcceptedTerm
+                      then UpdateConfiguration lastAcceptedValue
+                              nd \<lparr> localCheckpoint := i + 1
+                                 , lastAccepted := None \<rparr>
+                      else nd
+                  | None \<Rightarrow> nd
+                else nd
+          in (nd', [])"
+
+locale zenImpl = zen +
+  fixes nodeState :: "Node \<Rightarrow> NodeData"
+  assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
+  assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))"
+  assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))"
+
+lemma (in zenImpl)
+  fixes n\<^sub>0
+  assumes "m \<in> messages"
+  defines "nd \<equiv> nodeState n\<^sub>0"
+  defines "result \<equiv> ProcessMessage nd m"
+  defines "nodeState' \<equiv> \<lambda>n. if n = n\<^sub>0 then (fst result) else nodeState n"
+  defines "messages' \<equiv> messages \<union> set (snd result)"
+  shows "zenImpl messages' nodeState'"
+proof (cases m)
+  case (JoinResponse i n t mt)
+  have [simp]: "result = (nd, [])"
+    by (simp add: result_def JoinResponse ProcessMessage_def)
+  have [simp]: "nodeState' = nodeState"
+    by (auto simp add: nodeState'_def nd_def)
+  have [simp]: "messages' = messages"
+    by (auto simp add: messages'_def)
+  from zenImpl_axioms show ?thesis by simp
+next
+  case (ApplyRequest i t x)
+  then show ?thesis sorry
+next
+  case (ApplyResponse i n t)
+  then show ?thesis sorry
+next
+  case (ApplyCommit i t)
+
+  have [simp]: "messages' = messages"
+    by (simp add: messages'_def result_def ApplyCommit ProcessMessage_def)
+
+  show ?thesis
+  proof (cases "i < localCheckpoint nd")
+    case True
+    have [simp]: "result = (nd, [])"
+      by (simp add: True result_def ApplyCommit ProcessMessage_def)
+    have [simp]: "nodeState' = nodeState"
+      by (auto simp add: nodeState'_def nd_def)
+    from zenImpl_axioms show ?thesis by simp
+  next
+    case False
+    from zenImpl.axioms [OF zenImpl_axioms] have "zen messages'" by simp
+    then show ?thesis proof (intro zenImpl.intro)
+  qed
+
+
+  then show ?thesis sorry
+qed
+
 end
