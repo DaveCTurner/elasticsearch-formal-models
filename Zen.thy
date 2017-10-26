@@ -406,9 +406,9 @@ record RoutedMessage =
 
 locale zen =
   fixes routedMessages :: "RoutedMessage set"
-  fixes isRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [50])
+  fixes isRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> routedMessages"
-  fixes isRoutedMessageAnyDestination :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [50])
+  fixes isRoutedMessageAnyDestination :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. (s \<midarrow>\<langle> m \<rangle>\<rightarrow> d)"
   fixes messages :: "Message set"
     (* value proposed in a slot & a term *)
@@ -772,19 +772,26 @@ proof -
   have payload_eq: "payload ` ?routedMessages' = insert (JoinRequest t\<^sub>0) messages" (is "_ = ?messages'")
     by (auto simp add: messages_def)
 
+  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+
   have messages_simps:
-    "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
+    "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
     "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
     "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
-    by auto
+    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isNewRoutedMessage_def)
 
   from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
-      ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
-      JoinResponse_Some_max finite_messages_insert JoinResponse_None JoinResponse_era
-      JoinResponse_future ApplyCommit_quorum JoinResponse_Some_ApplyRequest
+    ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
+    JoinResponse_Some_max finite_messages_insert JoinResponse_None JoinResponse_era
+    JoinResponse_future ApplyCommit_quorum JoinResponse_Some_ApplyRequest
   show ?thesis
-    by (unfold_locales, unfold payload_eq messages_simps era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def, simp_all)
+    apply (unfold_locales)
+                 apply (fold isNewRoutedMessage_def)
+                 apply (unfold payload_eq messages_simps)
+                 apply (unfold era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def)
+    by (simp_all)
 qed
 
 subsubsection \<open>Sending @{term JoinResponse} messages\<close>
@@ -794,7 +801,7 @@ i\<^sub>0} only if \begin{itemize} \item all previous slots are committed, \item
 term and the slot are equal, and \item it has sent no @{term ApplyResponse} message for any later
 slot. \end{itemize}.\<close>
 
-text \<open>@{term "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 NoApplyResponseSent"} can be sent if,
+text \<open>@{term "JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent"} can be sent by node @{term n\<^sub>0} if,
 additionally, no @{term ApplyResponse} message has been sent for slot @{term i\<^sub>0}:\<close>
 
 lemma (in zen) send_JoinResponse_None:
