@@ -1418,7 +1418,8 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
     "ProcessMessage nd msg \<equiv>
       let respond = (\<lambda> m. [ \<lparr> sender = currentNode nd, destination = OneNode (sender msg), payload = m \<rparr>])
           
-      in case payload msg of
+      in if destination msg \<in> { Broadcast, OneNode (currentNode nd) } then case payload msg of
+
       JoinRequest t \<Rightarrow>
           if minimumAcceptableTerm nd < t
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
@@ -1460,7 +1461,9 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
                       else nd
                   | NoApplyResponseSent \<Rightarrow> nd
                 else nd
-          in (nd', [])"
+          in (nd', [])
+
+      else (nd, [])"
 
 locale zenImpl = zen +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
