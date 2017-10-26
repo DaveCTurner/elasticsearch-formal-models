@@ -19,44 +19,6 @@ datatype Era = e\<^sub>0 | nextEra Era
 text \<open>This is followed by some routine development to help the prover understand that they
 behave like natural numbers. First, they are ordered:\<close>
 
-instantiation Era :: linorder
-begin
-
-fun less_Era :: "Era \<Rightarrow> Era \<Rightarrow> bool" where
-    "less_Era    _ e\<^sub>0 = False"
-  | "less_Era    e\<^sub>0 _ = True" 
-  | "less_Era    (nextEra e\<^sub>1) (nextEra e\<^sub>2) = less_Era e\<^sub>1 e\<^sub>2"
-definition less_eq_Era :: "Era \<Rightarrow> Era \<Rightarrow> bool" where
-  "less_eq_Era e\<^sub>1 e\<^sub>2 == e\<^sub>1 < e\<^sub>2 \<or> e\<^sub>1 = e\<^sub>2"
-
-instance proof
-  fix e\<^sub>1 :: Era
-  show "e\<^sub>1 \<le> e\<^sub>1" by (induct e\<^sub>1, auto simp add: less_eq_Era_def)
-
-  fix e\<^sub>2
-  show "(e\<^sub>1 < e\<^sub>2) = (e\<^sub>1 \<le> e\<^sub>2 \<and> \<not> e\<^sub>2 \<le> e\<^sub>1)"
-    apply (induct e\<^sub>1 arbitrary: e\<^sub>2) 
-    using less_eq_Era_def apply auto[1]
-    by (metis less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
-
-  show "e\<^sub>1 \<le> e\<^sub>2 \<or> e\<^sub>2 \<le> e\<^sub>1"
-    apply (induct e\<^sub>1 arbitrary: e\<^sub>2)
-    using less_Era.elims(3) less_eq_Era_def apply auto[1]
-    by (metis less_Era.elims(3) less_Era.simps(3) less_eq_Era_def)
-
-  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>1 \<Longrightarrow> e\<^sub>1 = e\<^sub>2"
-    apply (induct e\<^sub>1 arbitrary: e\<^sub>2)
-     apply (simp add: less_eq_Era_def)
-    by (metis less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
-
-  fix e\<^sub>3
-  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>3 \<Longrightarrow> e\<^sub>1 \<le> e\<^sub>3"
-    apply (induct e\<^sub>1 arbitrary: e\<^sub>2 e\<^sub>3) 
-    using less_Era.elims(3) less_eq_Era_def apply auto[1]
-    by (smt Era.exhaust less_Era.elims(2) less_Era.simps(3) less_eq_Era_def)
-qed
-end
-
 text \<open>The isomorphism with the natural numbers is spelled out in full.\<close>
 
 fun natOfEra :: "Era \<Rightarrow> nat" where
@@ -64,27 +26,22 @@ fun natOfEra :: "Era \<Rightarrow> nat" where
 fun eraOfNat :: "nat \<Rightarrow> Era" where
   "eraOfNat 0 = e\<^sub>0" | "eraOfNat (Suc n) = nextEra (eraOfNat n)"
 
-text \<open>A handful of lemmas that are useful for the simplifier follow.\<close>
-
-lemma natOfEra_le[simp]: "(natOfEra e\<^sub>1 \<le> natOfEra e\<^sub>2) = (e\<^sub>1 \<le> e\<^sub>2)"
-  apply (induct e\<^sub>1 arbitrary: e\<^sub>2, simp add: leI)
-  by (metis (no_types, lifting) Suc_le_mono less_Era.elims(3) less_Era.simps(3) less_irrefl natOfEra.simps(1) natOfEra.simps(2) not_less zero_less_Suc)
-
-lemma natOfEra_eq[simp]: "(natOfEra e\<^sub>1 = natOfEra e\<^sub>2) = (e\<^sub>1 = e\<^sub>2)"
-  by (simp add: eq_iff)
-
-lemma natOfEra_lt[simp]: "(natOfEra e\<^sub>1 < natOfEra e\<^sub>2) = (e\<^sub>1 < e\<^sub>2)"
-  by (meson natOfEra_le not_less)
-
 lemma eraOfNat_inv[simp]: "eraOfNat (natOfEra e) = e" by (induct e, simp_all)
 lemma natOfEra_inv[simp]: "natOfEra (eraOfNat n) = n" by (induct n, simp_all)
+lemma natOfEra_inj[simp]: "(natOfEra e\<^sub>1 = natOfEra e\<^sub>2) = (e\<^sub>1 = e\<^sub>2)" by (metis eraOfNat_inv)
 
-lemma eraOfNat_le[simp]: "(eraOfNat n\<^sub>1 \<le> eraOfNat n\<^sub>2) = (n\<^sub>1 \<le> n\<^sub>2)" by (metis natOfEra_inv natOfEra_le)
-lemma eraOfNat_lt[simp]: "(eraOfNat n\<^sub>1 < eraOfNat n\<^sub>2) = (n\<^sub>1 < n\<^sub>2)" by (metis natOfEra_inv natOfEra_lt)
-lemma eraOfNat_eq[simp]: "(eraOfNat n\<^sub>1 = eraOfNat n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis natOfEra_inv)
+instantiation Era :: linorder
+begin
+definition less_Era where "e\<^sub>1 < e\<^sub>2 \<equiv> natOfEra e\<^sub>1 < natOfEra e\<^sub>2"
+definition less_eq_Era where "e\<^sub>1 \<le> e\<^sub>2 \<equiv> natOfEra e\<^sub>1 \<le> natOfEra e\<^sub>2"
+instance proof
+  fix e\<^sub>1 e\<^sub>2 :: Era
+  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>1 \<Longrightarrow> e\<^sub>1 = e\<^sub>2"
+    by (metis eq_iff eraOfNat_inv less_eq_Era_def)
+qed (auto simp add: less_eq_Era_def less_Era_def)
+end
 
-lemma e0_le[simp]: "e\<^sub>0 \<le> e" by (simp add: leI)
-lemma le_e0[simp]: "e \<le> e\<^sub>0 = (e = e\<^sub>0)" by (simp add: eq_iff)
+lemma lt_e0[simp]: "e < e\<^sub>0 = False" by (auto simp add: less_Era_def)
 
 section \<open>Nodes\<close>
 
@@ -158,7 +115,7 @@ proof -
   have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 }"
   proof -
     have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
-      by (simp add: measures_def inv_image_def lt_term_def less_Node_def)
+      by (simp add: measures_def inv_image_def lt_term_def less_Node_def less_Era_def)
     thus ?thesis by simp
   qed
 
@@ -601,7 +558,7 @@ proof (induct i)
     assume "i' \<le> i"
     with Suc.hyps have "era\<^sub>i i' \<le> era\<^sub>i i" .
     also have "... \<le> era\<^sub>i (Suc i)"
-      by (metis Suc_leD eq_iff era\<^sub>i_step natOfEra.simps(2) natOfEra_le)
+      using era\<^sub>i_step less_eq_Era_def by auto
     finally show ?thesis .
   qed simp
 qed simp
@@ -612,11 +569,13 @@ lemma (in zen) era\<^sub>i_contiguous:
   using assms
 proof (induct i)
   case 0
-  then show ?case by (auto simp add: era\<^sub>i_def)
+  then show ?case
+    apply (auto simp add: era\<^sub>i_def less_eq_Era_def)
+    using natOfEra_inj by fastforce
 next
   case (Suc i)
   then show ?case
-    by (metis era\<^sub>i_step le_SucI less_Suc_eq_le less_eq_Era_def natOfEra.simps(2) natOfEra_le natOfEra_lt order_refl)
+    by (metis antisym_conv1 era\<^sub>i_step le_SucI less_Era_def less_Suc_eq_le less_eq_Era_def natOfEra.simps(2))
 qed
 
 lemma (in zen) ApplyResponse_era:
@@ -641,7 +600,7 @@ proof -
   next
     case (Suc i e)
     have "e < era\<^sub>i i \<or> (e = era\<^sub>i i \<and> isReconfiguration (v\<^sub>c i))"
-      by (metis Suc.prems(1) era\<^sub>i_step less_antisym natOfEra.simps(2) natOfEra_lt neq_iff)
+      by (metis Suc.prems(1) dual_order.antisym era\<^sub>i_step leI less_Era_def natOfEra.simps(2) not_less_less_Suc_eq)
     thus ?case
     proof (elim disjE conjE)
       assume a: "e < era\<^sub>i i"
@@ -671,7 +630,8 @@ lemma (in zen) reconfig_eq:
   assumes "isReconfiguration (v\<^sub>c j)"
   assumes "era\<^sub>i j = e"
   shows "j = reconfig e"
-  by (metis assms era\<^sub>i_mono era\<^sub>i_step le_neq_implies_less lessI natOfEra.simps(2) natOfEra_lt not_le not_less_eq_eq reconfig_era reconfig_isReconfiguration)
+  using assms
+  by (metis era\<^sub>i_mono era\<^sub>i_step lessI less_Era_def less_antisym less_eq_Suc_le natOfEra.simps(2) not_less reconfig_era reconfig_isReconfiguration)
 
 lemma (in zen) promised_long_def: "promised i n t
      \<equiv> (JoinResponse i n t NoApplyResponseSent \<in> messages
@@ -1111,7 +1071,7 @@ proof -
         proof (unfold nextEra, simp add: Q_def Q'_def reconfig'_eq,
             intro cong [OF refl, where f = getConf] v\<^sub>c_eq reconfig_isCommitted)
           show "era\<^sub>i i < era\<^sub>i (Suc i)"
-            using natOfEra_lt nextEra by fastforce
+            by (simp add: less_Era_def nextEra)
           from Suc.prems show "committed\<^sub>< (Suc i)" .
         qed
       qed
@@ -1382,7 +1342,7 @@ proof -
     thus "Q' e = Q e" 
       apply (cases e, simp add: Q_def Q'_def)
       using Q'_def
-      by (metis Era.simps(5) Q_def Suc_le_lessD natOfEra.simps(2) natOfEra_le natOfEra_lt reconfig'_eq reconfig_isCommitted v\<^sub>c_eq)
+      by (metis Era.simps(5) Q_def lessI less_eq_Era_def less_le_trans natOfEra.simps(2) not_less reconfig'_eq reconfig_isCommitted v\<^sub>c_eq)
   qed
 
   show ?thesis
