@@ -1406,12 +1406,12 @@ record NodeData =
   localCheckpoint :: nat (* all slots strictly below this one are committed *)
   currentEra :: Era (* era of the localCheckpoint slot *)
   currentConfiguration :: Configuration (* configuration of the currentEra *)
-  lastAccepted :: "(Term * Value) option" (* term and value that were last accepted in this slot, if any *)
+  lastAccepted :: PreviousApplyResponse (* term and value that were last accepted in this slot, if any *)
   minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
 
-definition UpdateConfiguration :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition updateConfiguration :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
-    "UpdateConfiguration x nd \<equiv> case x of
+    "updateConfiguration x nd \<equiv> case x of
        Reconfigure Q \<Rightarrow> nd \<lparr> currentEra := nextEra (currentEra nd)
                            , currentConfiguration := Q \<rparr>
        | _ \<Rightarrow> nd"
@@ -1419,20 +1419,29 @@ definition UpdateConfiguration :: "Value \<Rightarrow> NodeData \<Rightarrow> No
 definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (NodeData * Message list)"
   where
     "ProcessMessage nd msg \<equiv> case msg
-      of JoinResponse i n t mt \<Rightarrow> (nd, [])
+      of JoinRequest t \<Rightarrow>
+          if minimumAcceptableTerm nd \<prec> t (* NB equal not allowed, to prevent multiple promises *)
+          then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
+               , [ JoinResponse (localCheckpoint nd)
+                                (currentNode nd)
+                                t
+                                (lastAccepted nd) ])
+          else (nd, [])
+
+      | JoinResponse i n t a \<Rightarrow> (nd, [])
       | ApplyRequest i t x \<Rightarrow> (nd, [])
       | ApplyResponse i n t \<Rightarrow> (nd, [])
 
       | ApplyCommit i t \<Rightarrow> let
           nd' = if i = localCheckpoint nd
                 then case lastAccepted nd of
-                    Some (lastAcceptedTerm, lastAcceptedValue) \<Rightarrow>
-                      if t = lastAcceptedTerm
-                      then UpdateConfiguration lastAcceptedValue
+                    ApplyResponseSent t' x' \<Rightarrow>
+                      if t = t'
+                      then updateConfiguration x'
                               nd \<lparr> localCheckpoint := i + 1
-                                 , lastAccepted := None \<rparr>
+                                 , lastAccepted := NoApplyResponseSent \<rparr>
                       else nd
-                  | None \<Rightarrow> nd
+                  | NoApplyResponseSent \<Rightarrow> nd
                 else nd
           in (nd', [])"
 
@@ -1441,6 +1450,13 @@ locale zenImpl = zen +
   assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
   assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))"
   assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))"
+  assumes lastAcceptedInEarlierTerm: "\<And>n. case lastAccepted (nodeState n) of
+      NoApplyResponseSent \<Rightarrow> True
+    | ApplyResponseSent t' _ \<Rightarrow> t' \<preceq> minimumAcceptableTerm (nodeState n)"
+
+lemma (in zenImpl)
+  shows "zenImpl (insert (JoinRequest t) messages) nodeState"
+  sorry
 
 lemma (in zenImpl)
   fixes n\<^sub>0
@@ -1451,7 +1467,7 @@ lemma (in zenImpl)
   defines "messages' \<equiv> messages \<union> set (snd result)"
   shows "zenImpl messages' nodeState'"
 proof (cases m)
-  case (JoinResponse i n t mt)
+  case (JoinResponse i n t a)
   have [simp]: "result = (nd, [])"
     by (simp add: result_def JoinResponse ProcessMessage_def)
   have [simp]: "nodeState' = nodeState"
