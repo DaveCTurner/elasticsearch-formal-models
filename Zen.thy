@@ -43,27 +43,6 @@ end
 
 lemma lt_e0[simp]: "e < e\<^sub>0 = False" by (auto simp add: less_Era_def)
 
-section \<open>Nodes\<close>
-
-text \<open>Nodes are simply identified by a natural number.\<close>
-
-datatype Node = Node nat
-
-definition natOfNode :: "Node \<Rightarrow> nat" where "natOfNode node \<equiv> case node of Node n \<Rightarrow> n"
-lemma natOfNode_Node[simp]: "natOfNode (Node n) = n" by (simp add: natOfNode_def)
-lemma Node_natOfNode[simp]: "Node (natOfNode n) = n" by (cases n, simp add: natOfNode_def)
-lemma natOfNode_inj[simp]: "(natOfNode n\<^sub>1 = natOfNode n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis Node_natOfNode)
-
-instantiation Node :: linorder
-begin
-definition less_Node where "n\<^sub>1 < n\<^sub>2 \<equiv> natOfNode n\<^sub>1 < natOfNode n\<^sub>2"
-definition less_eq_Node where "n\<^sub>1 \<le> n\<^sub>2 \<equiv> natOfNode n\<^sub>1 \<le> natOfNode n\<^sub>2"
-instance proof
-  fix n\<^sub>1 n\<^sub>2 :: Node
-  show "n\<^sub>1 \<le> n\<^sub>2 \<Longrightarrow> n\<^sub>2 \<le> n\<^sub>1 \<Longrightarrow> n\<^sub>1 = n\<^sub>2" by (cases n\<^sub>1, cases n\<^sub>2, auto simp add: less_eq_Node_def)
-qed (auto simp add: less_eq_Node_def less_Node_def)
-end
-
 section \<open>Terms\<close>
 
 subsection \<open>Definitions\<close>
@@ -71,31 +50,28 @@ subsection \<open>Definitions\<close>
 text \<open>Terms are triples of an @{type Era}, an \textit{election number} within the era, and an
 \textit{owning node}.\<close>
 
-datatype Term = Term Era nat Node
+datatype Term = Term Era nat
 
-fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _ _) = e"
-fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n _) = n"
-fun owner :: "Term \<Rightarrow> Node" where "owner (Term _ _ n) = n"
+fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _) = e"
+fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n) = n"
+
+text \<open>Terms are ordered lexicographically:\<close>
 
 instantiation Term :: linorder
 begin
-definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
+definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [natOfEra \<circ> era\<^sub>t, termInEra]"
 definition less_eq_Term where "(t\<^sub>1::Term) \<le> t\<^sub>2 \<equiv> (t\<^sub>1 < t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
 instance proof
   fix x y :: Term
   show "x \<le> y \<or> y \<le> x"
     apply (cases x, cases y)
-    apply (auto simp add: less_Term_def less_eq_Term_def)
-    by (meson less_Node_def neqE)
+    by (auto simp add: less_Term_def less_eq_Term_def)
 qed (auto simp add: less_Term_def less_eq_Term_def)
 end
 
-text \<open>Terms are ordered lexicographically:\<close>
-
 lemma lt_term: "t\<^sub>1 < t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
-      \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2
-                                \<or> (termInEra t\<^sub>1 = termInEra t\<^sub>2 \<and> owner t\<^sub>1 < owner t\<^sub>2))))"
-  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def less_Era_def less_Node_def)
+      \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2)))"
+  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def less_Era_def)
 
 text \<open>A handful of lemmas that are useful for the simplifier follow.\<close>
 
@@ -108,7 +84,7 @@ lemma term_induct [case_names less]:
   assumes "\<And>t\<^sub>1. (\<forall> t\<^sub>2. t\<^sub>2 < t\<^sub>1 \<longrightarrow> P t\<^sub>2) \<Longrightarrow> P t\<^sub>1"
   shows "P t"
 proof -
-  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
+  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra]"
     by (auto simp add: less_Term_def)
 
   have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 < (t\<^sub>2 :: Term) }"
@@ -172,6 +148,15 @@ proof -
 qed auto
 
 section \<open>Configurations and quorums\<close>
+
+text \<open>Nodes are simply identified by a natural number.\<close>
+
+datatype Node = Node nat
+
+definition natOfNode :: "Node \<Rightarrow> nat" where "natOfNode node \<equiv> case node of Node n \<Rightarrow> n"
+lemma natOfNode_Node[simp]: "natOfNode (Node n) = n" by (simp add: natOfNode_def)
+lemma Node_natOfNode[simp]: "Node (natOfNode n) = n" by (cases n, simp add: natOfNode_def)
+lemma natOfNode_inj[simp]: "(natOfNode n\<^sub>1 = natOfNode n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis Node_natOfNode)
 
 text \<open>It is useful to be able to talk about whether sets-of-sets-of nodes mutually intersect or not.\<close>
 
@@ -1376,21 +1361,32 @@ record NodeData =
   localCheckpoint :: nat (* all slots strictly below this one are committed *)
   currentEra :: Era (* era of the localCheckpoint slot *)
   currentConfiguration :: Configuration (* configuration of the currentEra *)
+  currentClusterState :: ClusterState (* last-committed cluster state *)
   lastAccepted :: PreviousApplyResponse (* term and value that were last accepted in this slot, if any *)
   minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
+  (* election data *)
+  electionTerm :: Term (* term of JoinResponses being collected *)
+  electionVotes :: "Node set option" (* is None if the election was won *)
 
-definition updateConfiguration :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition applyValue :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
-    "updateConfiguration x nd \<equiv> case x of
-       Reconfigure Q \<Rightarrow> nd \<lparr> currentEra := nextEra (currentEra nd)
-                           , currentConfiguration := Q \<rparr>
-       | _ \<Rightarrow> nd"
+    "applyValue x nd \<equiv> case x of
+        NoOp \<Rightarrow> nd
+      | Reconfigure Q \<Rightarrow> nd \<lparr> currentEra := nextEra (currentEra nd)
+                            , currentConfiguration := Q \<rparr>
+      | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
+
+definition lastAcceptedGreaterTermThan :: "Term \<Rightarrow> NodeData \<Rightarrow> bool"
+  where
+    "lastAcceptedGreaterTermThan t nd \<equiv> case lastAccepted nd of
+      NoApplyResponseSent \<Rightarrow> False
+      | ApplyResponseSent t' _ \<Rightarrow> t' < t"
 
 definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (NodeData * Message list)"
   where
-    "ProcessMessage nd msg \<equiv> case msg
-      of JoinRequest t \<Rightarrow>
-          if minimumAcceptableTerm nd < t (* NB equal not allowed, to prevent multiple promises *)
+    "ProcessMessage nd msg \<equiv> case msg of
+      JoinRequest t \<Rightarrow>
+          if minimumAcceptableTerm nd < t
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
                , [ JoinResponse (localCheckpoint nd)
                                 (currentNode nd)
@@ -1398,8 +1394,25 @@ definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (Node
                                 (lastAccepted nd) ])
           else (nd, [])
 
-      | JoinResponse i n t a \<Rightarrow> (nd, [])
-      | ApplyRequest i t x \<Rightarrow> (nd, [])
+      | JoinResponse i n t a \<Rightarrow>
+          if localCheckpoint nd < i
+             \<or> t < electionTerm nd
+             \<or> (t = electionTerm nd \<and> electionVotes nd = None)
+          then (nd, [])
+          else let previousVotes = case electionVotes nd of
+                                      None \<Rightarrow> {}
+                                      | Some vs \<Rightarrow> if electionTerm nd = t then vs else {};
+                   currentVotes = insert n previousVotes
+                in (nd, [])
+
+
+      | ApplyRequest i t x \<Rightarrow>
+          if minimumAcceptableTerm nd \<le> t
+                \<and> \<not> lastAcceptedGreaterTermThan t nd
+          then ( nd \<lparr> lastAccepted := ApplyResponseSent t x \<rparr>
+               , [ ApplyResponse i (currentNode nd) t ])
+          else (nd, [])
+
       | ApplyResponse i n t \<Rightarrow> (nd, [])
 
       | ApplyCommit i t \<Rightarrow> let
@@ -1407,7 +1420,7 @@ definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (Node
                 then case lastAccepted nd of
                     ApplyResponseSent t' x' \<Rightarrow>
                       if t = t'
-                      then updateConfiguration x'
+                      then applyValue x'
                               nd \<lparr> localCheckpoint := i + 1
                                  , lastAccepted := NoApplyResponseSent \<rparr>
                       else nd
