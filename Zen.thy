@@ -1416,7 +1416,8 @@ definition lastAcceptedGreaterTermThan :: "Term \<Rightarrow> NodeData \<Rightar
 definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow> (NodeData * RoutedMessage list)"
   where
     "ProcessMessage nd msg \<equiv>
-      let respond = (\<lambda> m. [ \<lparr> sender = currentNode nd, destination = OneNode (sender msg), payload = m \<rparr>])
+      let respond   = (\<lambda> m. [\<lparr> sender = currentNode nd, destination = OneNode (sender msg), payload = m \<rparr>]);
+          broadcast = (\<lambda> m. [\<lparr> sender = currentNode nd, destination = Broadcast, payload = m \<rparr>])
           
       in if destination msg \<in> { Broadcast, OneNode (currentNode nd) } then case payload msg of
 
