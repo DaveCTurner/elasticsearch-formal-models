@@ -86,21 +86,45 @@ lemma eraOfNat_eq[simp]: "(eraOfNat n\<^sub>1 = eraOfNat n\<^sub>2) = (n\<^sub>1
 lemma e0_le[simp]: "e\<^sub>0 \<le> e" by (simp add: leI)
 lemma le_e0[simp]: "e \<le> e\<^sub>0 = (e = e\<^sub>0)" by (simp add: eq_iff)
 
+section \<open>Nodes\<close>
+
+text \<open>Nodes are simply identified by a natural number.\<close>
+
+datatype Node = Node nat
+
+definition natOfNode :: "Node \<Rightarrow> nat" where "natOfNode node \<equiv> case node of Node n \<Rightarrow> n"
+lemma natOfNode_Node[simp]: "natOfNode (Node n) = n" by (simp add: natOfNode_def)
+lemma Node_natOfNode[simp]: "Node (natOfNode n) = n" by (cases n, simp add: natOfNode_def)
+
+instantiation Node :: linorder
+begin
+definition less_Node where "n\<^sub>1 < n\<^sub>2 \<equiv> natOfNode n\<^sub>1 < natOfNode n\<^sub>2"
+definition less_eq_Node where "n\<^sub>1 \<le> n\<^sub>2 \<equiv> natOfNode n\<^sub>1 \<le> natOfNode n\<^sub>2"
+instance proof
+  fix n\<^sub>1 n\<^sub>2 :: Node
+  show "n\<^sub>1 \<le> n\<^sub>2 \<Longrightarrow> n\<^sub>2 \<le> n\<^sub>1 \<Longrightarrow> n\<^sub>1 = n\<^sub>2" by (cases n\<^sub>1, cases n\<^sub>2, auto simp add: less_eq_Node_def)
+qed (auto simp add: less_eq_Node_def less_Node_def)
+end
+
 section \<open>Terms\<close>
 
 subsection \<open>Definitions\<close>
 
-text \<open>Terms are pairs of an @{type Era} and an \textit{election number} within the era.\<close>
+text \<open>Terms are triples of an @{type Era}, an \textit{election number} within the era, and an
+\textit{owning node}.\<close>
 
-datatype Term = Term Era nat
+datatype Term = Term Era nat Node
 
-fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _) = e"
-fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n) = n"
+fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _ _) = e"
+fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n _) = n"
+fun owner :: "Term \<Rightarrow> Node" where "owner (Term _ _ n) = n"
 
 text \<open>Terms are ordered lexicographically:\<close>
 
 definition lt_term :: "Term \<Rightarrow> Term \<Rightarrow> bool" (infixl "\<prec>" 50)
-  where "t\<^sub>1 \<prec> t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2 \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> termInEra t\<^sub>1 < termInEra t\<^sub>2))"
+  where "t\<^sub>1 \<prec> t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
+      \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2
+                                \<or> (termInEra t\<^sub>1 = termInEra t\<^sub>2 \<and> owner t\<^sub>1 < owner t\<^sub>2))))"
 
 definition le_term :: "Term \<Rightarrow> Term \<Rightarrow> bool" (infixl "\<preceq>" 50)
   where "t\<^sub>1 \<preceq> t\<^sub>2 = (t\<^sub>1 \<prec> t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
@@ -121,7 +145,7 @@ lemma term_le_le_trans[trans]:  "\<lbrakk> t\<^sub>1 \<preceq> t\<^sub>2; t\<^su
 lemma term_lt_le: "t\<^sub>1 \<prec> t\<^sub>2 \<Longrightarrow> t\<^sub>1 \<preceq> t\<^sub>2" using le_term_def by auto
 
 lemma term_not_le_lt[simp]: "(\<not> (t\<^sub>1 \<preceq> t\<^sub>2)) = (t\<^sub>2 \<prec> t\<^sub>1)"
-  by (metis Term.exhaust era\<^sub>t.simps le_term_def lt_term_def not_less_iff_gr_or_eq termInEra.simps)
+  by (smt era\<^sub>t.simps le_term_def lt_term_def not_less_iff_gr_or_eq owner.simps termInEra.elims)
 
 lemma era\<^sub>t_mono: "t\<^sub>1 \<preceq> t\<^sub>2 \<Longrightarrow> era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" using le_term_def lt_term_def by auto
 
@@ -133,8 +157,8 @@ lemma term_induct [case_names less]:
 proof -
   have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 }"
   proof -
-    have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra]"
-      by (simp add: measures_def inv_image_def lt_term_def)
+    have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
+      by (simp add: measures_def inv_image_def lt_term_def less_Node_def)
     thus ?thesis by simp
   qed
 
@@ -198,11 +222,7 @@ proof -
   with t show "maxTerm S \<in> S" "\<And>t'. t' \<in> S \<Longrightarrow> t' \<preceq> maxTerm S" by simp_all
 qed auto
 
-subsection \<open>Nodes and quorums\<close>
-
-text \<open>Nodes are simply identified by a natural number.\<close>
-
-datatype Node = Node nat
+section \<open>Configurations and quorums\<close>
 
 text \<open>It is useful to be able to talk about whether sets-of-sets-of nodes mutually intersect or not.\<close>
 
