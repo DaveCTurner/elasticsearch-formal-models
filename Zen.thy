@@ -357,7 +357,7 @@ datatype PreviousApplyResponse
 
 datatype Message
   = JoinRequest Term
-  | JoinResponse nat Node Term PreviousApplyResponse
+  | JoinResponse nat Term PreviousApplyResponse
   | ApplyRequest nat Term Value
   | ApplyResponse nat Node Term
   | ApplyCommit nat Term
@@ -369,7 +369,7 @@ kind of message can be sent is further below.\<close>
 text \<open>The message @{term "JoinRequest t"} may be sent by any node to attempt to start a master
 election in the given term @{term t}.\<close>
 
-text \<open>The message @{term "JoinResponse i n t a"} may be sent by any node @{term n} in response
+text \<open>The message @{term "JoinResponse i t a"} may be sent by a node in response
 to a @{term JoinRequest} message. It indicates that the sender knows all committed values for slots
 strictly below @{term i}, and that the sender will no longer vote (i.e. send an @{term
 ApplyResponse}) in any term prior to @{term t}. The field @{term a} is either @{term
@@ -406,6 +406,10 @@ record RoutedMessage =
 
 locale zen =
   fixes routedMessages :: "RoutedMessage set"
+  fixes isRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [50])
+  defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> routedMessages"
+  fixes isRoutedMessageAnyDestination :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [50])
+  defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. (s \<midarrow>\<langle> m \<rangle>\<rightarrow> d)"
   fixes messages :: "Message set"
     (* value proposed in a slot & a term *)
   defines "messages \<equiv> payload ` routedMessages"
@@ -432,31 +436,34 @@ locale zen =
   defines "Q e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
     (* predicate to say whether an applicable JoinResponse has been sent *)
   fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-  defines "promised i n t \<equiv> \<exists> i' \<le> i. \<exists> a. JoinResponse i' n t a \<in> messages"
+  defines "promised i s t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>"
     (* set of previously-accepted terms *)
   fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
-  defines "prevAccepted i t ns
-      \<equiv> {t'. \<exists> n \<in> ns. \<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages}"
+  defines "prevAccepted i t senders
+      \<equiv> {t'. \<exists> s \<in> senders. \<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> }"
     (* ASSUMPTIONS *)
   assumes JoinResponse_future:
-    "\<And>i i' n t t' a. \<lbrakk> JoinResponse i n t a \<in> messages; i < i'; t' < t \<rbrakk>
-                        \<Longrightarrow> ApplyResponse i' n t' \<notin> messages"
+    "\<And>i i' s t t' a.
+        \<lbrakk> s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>; i < i'; t' < t \<rbrakk>
+            \<Longrightarrow> ApplyResponse i' s t' \<notin> messages"
   assumes JoinResponse_None:
-    "\<And>i n t t'. \<lbrakk> JoinResponse i n t NoApplyResponseSent \<in> messages; t' < t \<rbrakk>
-                        \<Longrightarrow> ApplyResponse i n t' \<notin> messages"
+    "\<And>i s t t'.
+        \<lbrakk> s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>; t' < t \<rbrakk>
+            \<Longrightarrow> ApplyResponse i s t' \<notin> messages"
   assumes JoinResponse_Some_lt:
-    "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> t' < t"
+    "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>
+      \<Longrightarrow> t' < t"
   assumes JoinResponse_Some_ApplyResponse:
-    "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages
-      \<Longrightarrow> ApplyResponse i n t' \<in> messages"
+    "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>
+      \<Longrightarrow> ApplyResponse i s t' \<in> messages"
   assumes JoinResponse_Some_ApplyRequest:
-    "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages
+    "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>
       \<Longrightarrow> ApplyRequest i t' x' \<in> messages"
   assumes JoinResponse_Some_max:
-    "\<And>i n t t' t'' x'. \<lbrakk> JoinResponse i n t (ApplyResponseSent t' x') \<in> messages; t' < t''; t'' < t \<rbrakk>
-                        \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
+    "\<And>i s t t' t'' x'. \<lbrakk> s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>; t' < t''; t'' < t \<rbrakk>
+      \<Longrightarrow> ApplyResponse i s t'' \<notin> messages"
   assumes JoinResponse_era:
-    "\<And>i n t a. JoinResponse i n t a \<in> messages
+    "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>
       \<Longrightarrow> \<exists> i' \<le> i. committedTo i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
   assumes ApplyRequest_era:
     "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
@@ -504,15 +511,15 @@ lemma (in zen) ApplyCommit_ApplyRequest:
 
 lemma (in zen) ApplyRequest_JoinResponse:
   assumes "ApplyRequest i t x \<in> messages"
-  obtains i' n mt' where "i' \<le> i" "JoinResponse i' n t mt' \<in> messages"
+  obtains i' s a where "i' \<le> i" "s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>"
   by (meson ApplyRequest_quorum Q_member_member assms promised_def)
 
 lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
 proof -
   fix t\<^sub>0
-  define f where "f \<equiv> \<lambda> m. case m of JoinResponse _ _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
+  define f where "f \<equiv> \<lambda> m. case m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
   have "prevAccepted i t ns \<subseteq> f ` messages"
-    apply (simp add: prevAccepted_def f_def, intro subsetI)
+    apply (simp add: prevAccepted_def f_def messages_def isRoutedMessageAnyDestination_def isRoutedMessage_def, intro subsetI)
     using image_iff by fastforce
   with finite_messages show ?thesis using finite_surj by auto
 qed
@@ -618,16 +625,16 @@ lemma (in zen) reconfig_eq:
   using assms
   by (metis era\<^sub>i_mono era\<^sub>i_step lessI less_Era_def less_antisym less_eq_Suc_le natOfEra.simps(2) not_less reconfig_era reconfig_isReconfiguration)
 
-lemma (in zen) promised_long_def: "promised i n t
-     \<equiv> (JoinResponse i n t NoApplyResponseSent \<in> messages
-           \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages))
-           \<or> (\<exists>t'. \<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages)"
+lemma (in zen) promised_long_def: "promised i s t
+     \<equiv> (s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>
+           \<or> (\<exists>i'<i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>))
+           \<or> (\<exists>t'. \<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>)"
   using PreviousApplyResponse.exhaust by (smt nat_less_le not_le promised_def)
 
 lemma (in zen) JoinResponse_func:
-  assumes "JoinResponse i n t a\<^sub>1 \<in> messages" and "JoinResponse i n t a\<^sub>2 \<in> messages"
+  assumes "s \<midarrow>\<langle> JoinResponse i t a\<^sub>1 \<rangle>\<leadsto>" and "s \<midarrow>\<langle> JoinResponse i t a\<^sub>2 \<rangle>\<leadsto>"
   shows "a\<^sub>1 = a\<^sub>2"
-proof (cases "a\<^sub>1")
+proof (cases a\<^sub>1)
   case NoApplyResponseSent
   with assms show ?thesis
     by (metis JoinResponse_None JoinResponse_Some_ApplyResponse JoinResponse_Some_lt PreviousApplyResponse.exhaust)
@@ -667,11 +674,11 @@ oneSlot} model above.\<close>
 lemma (in zen) zen_is_oneSlot:
   fixes i
   shows "oneSlot (Q \<circ> era\<^sub>t) (v i)
-    (\<lambda> n t. JoinResponse i n t NoApplyResponseSent \<in> messages
-        \<or> (\<exists> i' < i. \<exists> a. JoinResponse i' n t a \<in> messages))
-    (\<lambda> n t t'. \<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages)
+    (\<lambda> s t. s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>
+        \<or> (\<exists> i' < i. \<exists> a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>))
+    (\<lambda> s t t'. \<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>)
     (\<lambda> t. \<exists> x. ApplyRequest i t x \<in> messages)
-    (\<lambda> n t. ApplyResponse i n t \<in> messages)
+    (\<lambda> s t. ApplyResponse i s t \<in> messages)
     (\<lambda> t. ApplyCommit i t \<in> messages)"
 proof (unfold_locales, fold prevAccepted_def promised_long_def)
   fix t\<^sub>1 t\<^sub>2
@@ -687,18 +694,18 @@ proof (unfold_locales, fold prevAccepted_def promised_long_def)
 next
   fix q t assume "q \<in> (Q \<circ> era\<^sub>t) t" thus "q \<noteq> {}" by (simp add: Q_members_nonempty)
 next
-  fix n t t'
-  assume "t' < t" "JoinResponse i n t NoApplyResponseSent \<in> messages \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages)"
-  thus "ApplyResponse i n t' \<notin> messages"
-    using JoinResponse_None JoinResponse_future by blast
+  fix s t t'
+  assume "t' < t" "s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto> \<or> (\<exists>i'<i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>)"
+  thus "ApplyResponse i s t' \<notin> messages"
+    using JoinResponse_None JoinResponse_future by auto
 next
-  fix n t t'
-  assume j: "\<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages"
+  fix s t t'
+  assume j: "\<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
   from j show "t' < t" using JoinResponse_Some_lt by blast
-  from j show "ApplyResponse i n t' \<in> messages" using JoinResponse_Some_ApplyResponse by blast
+  from j show "ApplyResponse i s t' \<in> messages" using JoinResponse_Some_ApplyResponse by blast
 
   fix t'' assume "t' < t''" "t'' < t"
-  with j show "ApplyResponse i n t'' \<notin> messages" using JoinResponse_Some_max by blast
+  with j show "ApplyResponse i s t'' \<notin> messages" using JoinResponse_Some_max by blast
 next
   fix t
   assume "\<exists>x. ApplyRequest i t x \<in> messages"
