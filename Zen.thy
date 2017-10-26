@@ -149,7 +149,7 @@ subsection \<open>Maximum term of a set\<close>
 text \<open>A function for finding the maximum term in a set is as follows.\<close>
 
 definition maxTerm :: "Term set \<Rightarrow> Term"
-  where "maxTerm S = (THE t. t \<in> S \<and> (\<forall> t' \<in> S. t' \<preceq> t))"
+  where "maxTerm S \<equiv> THE t. t \<in> S \<and> (\<forall> t' \<in> S. t' \<preceq> t)"
 
 text \<open>It works on finite and nonempty sets, which is sufficient.\<close>
 
@@ -399,7 +399,8 @@ must not send these messages itself to ensure safety. The @{type nat} parameter 
 message refers to a slot number.\<close>
 
 datatype Message
-  = JoinResponse nat Node Term "Term option"
+  = JoinRequest Term
+  | JoinResponse nat Node Term "Term option"
   | ApplyRequest nat Term Value
   | ApplyResponse nat Node Term
   | ApplyCommit nat Term
@@ -407,6 +408,9 @@ datatype Message
 text \<open>Some prose descriptions of these messages follows, in order to give a bit more of an
 intuitive understanding of their purposes. A precise description of the conditions under
 which each kind of message can be sent is further below.\<close>
+
+text \<open>The message @{term "JoinRequest t"} may be sent by any node to attempt to start a master
+election in the given term @{term t}.\<close>
 
 text \<open>The message @{term "JoinResponse i n t mt'"} may be sent by any node @{term n} during an
 election. It indicates that the sender knows all committed values for slots strictly below
@@ -761,7 +765,29 @@ subsubsection \<open>Initial state\<close>
 
 text \<open>When no messages have been sent, the invariants hold:\<close>
 
-lemma shows zen_initial_state: "zen {}" by (unfold_locales, auto)
+lemma zen_initial_state: "zen {}" by (unfold_locales, auto)
+
+subsubsection \<open>Sending @{term JoinRequest} messages\<close>
+
+text \<open>Any node may send a @{term JoinRequest} message for any term at any time.\<close>
+
+lemma (in zen) send_JoinRequest:
+  shows "zen (insert (JoinRequest t\<^sub>0) messages)" (is "zen ?messages'")
+proof -
+  have messages_simps:
+    "\<And>i n t mt'. (JoinResponse i n t mt' \<in> ?messages') = (JoinResponse i n t mt' \<in> messages)"
+    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i n t. (ApplyResponse i n t \<in> ?messages') = (ApplyResponse i n t \<in> messages)"
+    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    by auto
+
+  from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
+      ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
+      JoinResponse_Some_max finite_messages_insert JoinResponse_None JoinResponse_era
+      JoinResponse_future ApplyCommit_quorum
+  show ?thesis
+    by (unfold_locales, unfold messages_simps era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def, simp_all)
+qed
 
 subsubsection \<open>Sending @{term JoinResponse} messages\<close>
 
@@ -931,10 +957,9 @@ subsubsection \<open>Sending @{term ApplyRequest} messages\<close>
 
 text \<open>@{term "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0"} can be sent if \begin{itemize}
 \item no other value has previously
-been sent for this $\langle$ slot, term $\rangle$ pair,
+been sent for this $\langle \mathrm{slot}, \mathrm{term} \rangle$ pair,
 \item all slots below @{term i\<^sub>0} are committed,
-\item a quorum of @{term JoinResponse} messages have previously
-been received
+\item a quorum of nodes have sent @{term JoinResponse} messages for term @{term t\<^sub>0}, and
 \item the value proposed is the value accepted in the greatest term
 amongst all @{term JoinResponse} messages, if any.
 \end{itemize} \<close>
