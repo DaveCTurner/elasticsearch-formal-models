@@ -52,6 +52,7 @@ datatype Node = Node nat
 definition natOfNode :: "Node \<Rightarrow> nat" where "natOfNode node \<equiv> case node of Node n \<Rightarrow> n"
 lemma natOfNode_Node[simp]: "natOfNode (Node n) = n" by (simp add: natOfNode_def)
 lemma Node_natOfNode[simp]: "Node (natOfNode n) = n" by (cases n, simp add: natOfNode_def)
+lemma natOfNode_inj[simp]: "(natOfNode n\<^sub>1 = natOfNode n\<^sub>2) = (n\<^sub>1 = n\<^sub>2)" by (metis Node_natOfNode)
 
 instantiation Node :: linorder
 begin
@@ -76,53 +77,46 @@ fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _ _) = e"
 fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n _) = n"
 fun owner :: "Term \<Rightarrow> Node" where "owner (Term _ _ n) = n"
 
+instantiation Term :: linorder
+begin
+definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
+definition less_eq_Term where "(t\<^sub>1::Term) \<le> t\<^sub>2 \<equiv> (t\<^sub>1 < t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
+instance proof
+  fix x y :: Term
+  show "x \<le> y \<or> y \<le> x"
+    apply (cases x, cases y)
+    apply (auto simp add: less_Term_def less_eq_Term_def)
+    by (meson less_Node_def neqE)
+qed (auto simp add: less_Term_def less_eq_Term_def)
+end
+
 text \<open>Terms are ordered lexicographically:\<close>
 
-definition lt_term :: "Term \<Rightarrow> Term \<Rightarrow> bool" (infixl "\<prec>" 50)
-  where "t\<^sub>1 \<prec> t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
+lemma lt_term: "t\<^sub>1 < t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
       \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2
                                 \<or> (termInEra t\<^sub>1 = termInEra t\<^sub>2 \<and> owner t\<^sub>1 < owner t\<^sub>2))))"
-
-definition le_term :: "Term \<Rightarrow> Term \<Rightarrow> bool" (infixl "\<preceq>" 50)
-  where "t\<^sub>1 \<preceq> t\<^sub>2 = (t\<^sub>1 \<prec> t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
+  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def less_Era_def less_Node_def)
 
 text \<open>A handful of lemmas that are useful for the simplifier follow.\<close>
 
-lemma term_le_refl[simp]: "t \<preceq> t" by (simp add: le_term_def)
-
-lemma term_lt_lt_trans[trans]:  "\<lbrakk> t\<^sub>1 \<prec> t\<^sub>2; t\<^sub>2 \<prec> t\<^sub>3 \<rbrakk> \<Longrightarrow> t\<^sub>1 \<prec> t\<^sub>3"
-  by (smt Term.inject less_trans lt_term_def)
-
-lemma term_lt_le_trans[trans]:  "\<lbrakk> t\<^sub>1 \<prec> t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>3 \<rbrakk> \<Longrightarrow> t\<^sub>1 \<prec> t\<^sub>3"
-  by (metis le_term_def term_lt_lt_trans)
-
-lemma term_le_lt_trans[trans]:  "\<lbrakk> t\<^sub>1 \<preceq> t\<^sub>2; t\<^sub>2 \<prec> t\<^sub>3 \<rbrakk> \<Longrightarrow> t\<^sub>1 \<prec> t\<^sub>3" using term_lt_lt_trans le_term_def by auto
-lemma term_le_le_trans[trans]:  "\<lbrakk> t\<^sub>1 \<preceq> t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>3 \<rbrakk> \<Longrightarrow> t\<^sub>1 \<preceq> t\<^sub>3" using term_lt_lt_trans le_term_def by auto
-
-lemma term_lt_le: "t\<^sub>1 \<prec> t\<^sub>2 \<Longrightarrow> t\<^sub>1 \<preceq> t\<^sub>2" using le_term_def by auto
-
-lemma term_not_le_lt[simp]: "(\<not> (t\<^sub>1 \<preceq> t\<^sub>2)) = (t\<^sub>2 \<prec> t\<^sub>1)"
-  by (smt era\<^sub>t.simps le_term_def lt_term_def not_less_iff_gr_or_eq owner.simps termInEra.elims)
-
-lemma era\<^sub>t_mono: "t\<^sub>1 \<preceq> t\<^sub>2 \<Longrightarrow> era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" using le_term_def lt_term_def by auto
+lemma era\<^sub>t_mono: "t\<^sub>1 \<le> t\<^sub>2 \<Longrightarrow> era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" using less_eq_Term_def lt_term by auto
 
 text \<open>Importantly, this shows how to do induction over the terms:\<close>
 
 lemma term_induct [case_names less]:
-  assumes "\<And>t\<^sub>1. (\<forall> t\<^sub>2. t\<^sub>2 \<prec> t\<^sub>1 \<longrightarrow> P t\<^sub>2) \<Longrightarrow> P t\<^sub>1"
+  fixes t :: Term
+  assumes "\<And>t\<^sub>1. (\<forall> t\<^sub>2. t\<^sub>2 < t\<^sub>1 \<longrightarrow> P t\<^sub>2) \<Longrightarrow> P t\<^sub>1"
   shows "P t"
 proof -
-  have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 }"
-  proof -
-    have "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 \<prec> t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
-      by (simp add: measures_def inv_image_def lt_term_def less_Node_def less_Era_def)
-    thus ?thesis by simp
-  qed
+  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra, natOfNode \<circ> owner]"
+    by (auto simp add: less_Term_def)
+
+  have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 < (t\<^sub>2 :: Term) }"
+    by (unfold p, simp)
 
   show ?thesis
     using assms
-    apply (rule wf_induct [OF term_lt_wf])
-    by simp
+    apply (rule wf_induct [OF term_lt_wf]) by auto
 qed
 
 subsection \<open>Maximum term of a set\<close>
@@ -130,18 +124,18 @@ subsection \<open>Maximum term of a set\<close>
 text \<open>A function for finding the maximum term in a set is as follows.\<close>
 
 definition maxTerm :: "Term set \<Rightarrow> Term"
-  where "maxTerm S \<equiv> THE t. t \<in> S \<and> (\<forall> t' \<in> S. t' \<preceq> t)"
+  where "maxTerm S \<equiv> THE t. t \<in> S \<and> (\<forall> t' \<in> S. t' \<le> t)"
 
 text \<open>It works on finite and nonempty sets, which is sufficient.\<close>
 
 lemma
   assumes finite: "finite S"
   shows maxTerm_mem: "S \<noteq> {} \<Longrightarrow> maxTerm S \<in> S"
-    and maxTerm_max: "\<And> t'. t' \<in> S \<Longrightarrow> t' \<preceq> maxTerm S"
+    and maxTerm_max: "\<And> t'. t' \<in> S \<Longrightarrow> t' \<le> maxTerm S"
 proof -
   presume "S \<noteq> {}"
   with assms
-  obtain t where t: "t \<in> S" "\<And> t'. t' \<in> S \<Longrightarrow> t' \<preceq> t"
+  obtain t where t: "t \<in> S" "\<And> t'. t' \<in> S \<Longrightarrow> t' \<le> t"
   proof (induct arbitrary: thesis)
     case empty
     then show ?case by simp
@@ -153,30 +147,28 @@ proof -
       from insert.prems show ?thesis by simp
     next
       case False
-      obtain t' where t': "t' \<in> S" "\<forall> t'' \<in> S. t'' \<preceq> t'"
+      obtain t' where t': "t' \<in> S" "\<forall> t'' \<in> S. t'' \<le> t'"
         by (meson False insert.hyps(3))
 
       from t'
       show ?thesis
       proof (intro insert.prems ballI)
         fix t'' assume t'': "t'' \<in> insert t S"
-        show "t'' \<preceq> (if t \<preceq> t' then t' else t)"
+        show "t'' \<le> (if t \<le> t' then t' else t)"
         proof (cases "t'' = t")
           case False
           with t'' have "t'' \<in> S" by simp
-          with t' have "t'' \<preceq> t'" by simp
-          thus ?thesis
-            using term_lt_le_trans term_not_le_lt le_term_def by auto
+          with t' have "t'' \<le> t'" by simp
+          thus ?thesis by auto
         qed simp
       qed simp
     qed
   qed
 
   from t have "maxTerm S = t"
-    apply (unfold maxTerm_def, intro the_equality, simp)
-    using le_term_def term_not_le_lt by blast
+    by (unfold maxTerm_def, intro the_equality, simp_all add: eq_iff)
 
-  with t show "maxTerm S \<in> S" "\<And>t'. t' \<in> S \<Longrightarrow> t' \<preceq> maxTerm S" by simp_all
+  with t show "maxTerm S \<in> S" "\<And>t'. t' \<in> S \<Longrightarrow> t' \<le> maxTerm S" by simp_all
 qed auto
 
 section \<open>Configurations and quorums\<close>
@@ -270,12 +262,12 @@ locale oneSlot =
   fixes prevAccepted :: "Term \<Rightarrow> Node set \<Rightarrow> Term set"
   defines "prevAccepted t ns \<equiv> {t'. \<exists> n \<in> ns. promised\<^sub>b n t t'}"
     (* invariants *)
-  assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; committed t\<^sub>2; t\<^sub>2 \<preceq> t\<^sub>1 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
+  assumes Q_intersects: "\<lbrakk> proposed t\<^sub>1; committed t\<^sub>2; t\<^sub>2 \<le> t\<^sub>1 \<rbrakk> \<Longrightarrow> Q t\<^sub>1 \<frown> Q t\<^sub>2"
   assumes Q_nonempty: "q \<in> Q t \<Longrightarrow> q \<noteq> {}"
-  assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f n t; t' \<prec> t \<rbrakk> \<Longrightarrow> \<not> accepted n t'"
-  assumes promised\<^sub>b_lt: "promised\<^sub>b n t t' \<Longrightarrow> t' \<prec> t"
+  assumes promised\<^sub>f: "\<lbrakk> promised\<^sub>f n t; t' < t \<rbrakk> \<Longrightarrow> \<not> accepted n t'"
+  assumes promised\<^sub>b_lt: "promised\<^sub>b n t t' \<Longrightarrow> t' < t"
   assumes promised\<^sub>b_accepted: "promised\<^sub>b n t t' \<Longrightarrow> accepted n t'"
-  assumes promised\<^sub>b_max: "\<lbrakk> promised\<^sub>b n t t'; t' \<prec> t''; t'' \<prec> t \<rbrakk>
+  assumes promised\<^sub>b_max: "\<lbrakk> promised\<^sub>b n t t'; t' < t''; t'' < t \<rbrakk>
    \<Longrightarrow> \<not> accepted n t''"
   assumes proposed: "proposed t
      \<Longrightarrow> \<exists> q \<in> Q t. (\<forall> n \<in> q. promised n t)
@@ -294,14 +286,13 @@ lemma (in oneSlot) prevAccepted_finite: "finite (prevAccepted p ns)"
 text \<open>The heart of the consistency proof is property P2b from \textit{Paxos made simple} by Lamport:\<close>
 
 lemma (in oneSlot) p2b:
-  assumes "proposed t\<^sub>1" and "committed t\<^sub>2" and "t\<^sub>2 \<prec> t\<^sub>1"
+  assumes "proposed t\<^sub>1" and "committed t\<^sub>2" and "t\<^sub>2 < t\<^sub>1"
   shows "v t\<^sub>1 = v t\<^sub>2"
   using assms
 proof (induct t\<^sub>1 rule: term_induct)
   case (less t\<^sub>1)
 
-  hence hyp: "\<And> t\<^sub>1'. \<lbrakk> t\<^sub>1' \<prec> t\<^sub>1; proposed t\<^sub>1'; t\<^sub>2 \<preceq> t\<^sub>1' \<rbrakk> \<Longrightarrow> v t\<^sub>1' = v t\<^sub>2"
-    using le_term_def by blast
+  hence hyp: "\<And> t\<^sub>1'. \<lbrakk> t\<^sub>1' < t\<^sub>1; proposed t\<^sub>1'; t\<^sub>2 \<le> t\<^sub>1' \<rbrakk> \<Longrightarrow> v t\<^sub>1' = v t\<^sub>2" by auto
 
   from `proposed t\<^sub>1` obtain q\<^sub>1 where
     q\<^sub>1_quorum:   "q\<^sub>1 \<in> Q t\<^sub>1" and
@@ -315,7 +306,7 @@ proof (induct t\<^sub>1 rule: term_induct)
     using committed by force
 
   have "q\<^sub>1 \<inter> q\<^sub>2 \<noteq> {}"
-    by (meson intersects_def less.prems(1) less.prems(2) less.prems(3) oneSlot.Q_intersects oneSlot_axioms q\<^sub>1_quorum q\<^sub>2_quorum term_lt_le)
+    using Q_intersects intersects_def less.prems q\<^sub>1_quorum q\<^sub>2_quorum by auto
 
   then obtain n where n\<^sub>1: "n \<in> q\<^sub>1" and n\<^sub>2: "n \<in> q\<^sub>2" by auto
 
@@ -333,17 +324,17 @@ proof (induct t\<^sub>1 rule: term_induct)
       apply (intro maxTerm_mem prevAccepted_finite)
       using n\<^sub>1 prevAccepted_def t\<^sub>2' by auto
 
-    show "maxTerm (prevAccepted t\<^sub>1 q\<^sub>1) \<prec> t\<^sub>1"
+    show "maxTerm (prevAccepted t\<^sub>1 q\<^sub>1) < t\<^sub>1"
       using p prevAccepted_def promised\<^sub>b_lt by auto
 
     show "proposed (maxTerm (prevAccepted t\<^sub>1 q\<^sub>1))"
       using p prevAccepted_proposed by auto
 
-    have "t\<^sub>2 \<preceq> t\<^sub>2'"
-      using \<open>accepted n t\<^sub>2\<close> less.prems(3) promised\<^sub>b_max t\<^sub>2' term_not_le_lt by blast
-    also have "t\<^sub>2' \<preceq> maxTerm (prevAccepted t\<^sub>1 q\<^sub>1)"
+    have "t\<^sub>2 \<le> t\<^sub>2'"
+      by (meson \<open>accepted n t\<^sub>2\<close> less.prems(3) not_le promised\<^sub>b_max t\<^sub>2')
+    also have "t\<^sub>2' \<le> maxTerm (prevAccepted t\<^sub>1 q\<^sub>1)"
       using n\<^sub>1 prevAccepted_def t\<^sub>2' prevAccepted_finite by (intro maxTerm_max, auto)
-    finally show "t\<^sub>2 \<preceq> maxTerm (prevAccepted t\<^sub>1 q\<^sub>1)" .
+    finally show "t\<^sub>2 \<le> maxTerm (prevAccepted t\<^sub>1 q\<^sub>1)" .
   qed
 
   finally show ?case .
@@ -354,7 +345,7 @@ text \<open>From this, it follows that any two committed values are equal as des
 lemma (in oneSlot) consistent:
   assumes "committed t\<^sub>1" and "committed t\<^sub>2"
   shows "v t\<^sub>1 = v t\<^sub>2"
-  by (metis Q_nonempty accepted all_not_in_conv assms committed le_term_def p2b term_not_le_lt)
+  using assms by (metis Q_nonempty accepted all_not_in_conv committed not_less_iff_gr_or_eq p2b)
 
 text \<open>It will be useful later to know the conditions under which a value in a term can be committed,
 which is spelled out here:\<close>
@@ -362,7 +353,7 @@ which is spelled out here:\<close>
 lemma (in oneSlot) commit:
   assumes q_quorum: "q \<in> Q t\<^sub>0"
   assumes q_accepted: "\<And>n. n \<in> q \<Longrightarrow> accepted n t\<^sub>0"
-  assumes intersects: "\<And>t. proposed t \<Longrightarrow> t\<^sub>0 \<preceq> t \<Longrightarrow> Q t \<frown> Q t\<^sub>0"
+  assumes intersects: "\<And>t. proposed t \<Longrightarrow> t\<^sub>0 \<le> t \<Longrightarrow> Q t \<frown> Q t\<^sub>0"
   defines "committed' t \<equiv> committed t \<or> t = t\<^sub>0"
   shows "oneSlot Q v promised\<^sub>f promised\<^sub>b proposed accepted committed'"
   by (smt committed'_def intersects oneSlot_axioms oneSlot_def q_accepted q_quorum)
@@ -454,13 +445,13 @@ locale zen =
       \<equiv> {t'. \<exists> n \<in> ns. \<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages}"
     (* ASSUMPTIONS *)
   assumes JoinResponse_future:
-    "\<And>i i' n t t' a. \<lbrakk> JoinResponse i n t a \<in> messages; i < i'; t' \<prec> t \<rbrakk>
+    "\<And>i i' n t t' a. \<lbrakk> JoinResponse i n t a \<in> messages; i < i'; t' < t \<rbrakk>
                         \<Longrightarrow> ApplyResponse i' n t' \<notin> messages"
   assumes JoinResponse_None:
-    "\<And>i n t t'. \<lbrakk> JoinResponse i n t NoApplyResponseSent \<in> messages; t' \<prec> t \<rbrakk>
+    "\<And>i n t t'. \<lbrakk> JoinResponse i n t NoApplyResponseSent \<in> messages; t' < t \<rbrakk>
                         \<Longrightarrow> ApplyResponse i n t' \<notin> messages"
   assumes JoinResponse_Some_lt:
-    "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> t' \<prec> t"
+    "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> t' < t"
   assumes JoinResponse_Some_ApplyResponse:
     "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages
       \<Longrightarrow> ApplyResponse i n t' \<in> messages"
@@ -468,7 +459,7 @@ locale zen =
     "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages
       \<Longrightarrow> ApplyRequest i t' x' \<in> messages"
   assumes JoinResponse_Some_max:
-    "\<And>i n t t' t'' x'. \<lbrakk> JoinResponse i n t (ApplyResponseSent t' x') \<in> messages; t' \<prec> t''; t'' \<prec> t \<rbrakk>
+    "\<And>i n t t' t'' x'. \<lbrakk> JoinResponse i n t (ApplyResponseSent t' x') \<in> messages; t' < t''; t'' < t \<rbrakk>
                         \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
   assumes JoinResponse_era:
     "\<And>i n t a. JoinResponse i n t a \<in> messages
@@ -655,8 +646,7 @@ next
 
   from ApplyResponseSent a\<^sub>2 assms
   have t: "t\<^sub>1 = t\<^sub>2"
-    by (metis le_term_def term_not_le_lt
-        JoinResponse_Some_ApplyResponse JoinResponse_Some_lt JoinResponse_Some_max)
+    by (meson JoinResponse_Some_ApplyResponse JoinResponse_Some_lt less_linear zen.JoinResponse_Some_max zen_axioms)
 
   from assms
   have x: "x\<^sub>1 = x\<^sub>2" 
@@ -694,7 +684,7 @@ proof (unfold_locales, fold prevAccepted_def promised_long_def)
   assume "\<exists>x. ApplyRequest i t\<^sub>1 x \<in> messages"
   then obtain x where t\<^sub>1: "ApplyRequest i t\<^sub>1 x \<in> messages" ..
   assume t\<^sub>2: "ApplyCommit i t\<^sub>2 \<in> messages"
-  assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<preceq> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
+  assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<le> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
     by (simp add: era\<^sub>t_mono)
 
   from t\<^sub>1 ApplyRequest_era have "era\<^sub>t t\<^sub>1 = era\<^sub>i i" by simp
@@ -704,16 +694,16 @@ next
   fix q t assume "q \<in> (Q \<circ> era\<^sub>t) t" thus "q \<noteq> {}" by (simp add: Q_members_nonempty)
 next
   fix n t t'
-  assume "t' \<prec> t" "JoinResponse i n t NoApplyResponseSent \<in> messages \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages)"
+  assume "t' < t" "JoinResponse i n t NoApplyResponseSent \<in> messages \<or> (\<exists>i'<i. \<exists>mt'. JoinResponse i' n t mt' \<in> messages)"
   thus "ApplyResponse i n t' \<notin> messages"
     using JoinResponse_None JoinResponse_future by blast
 next
   fix n t t'
   assume j: "\<exists> x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages"
-  from j show "t' \<prec> t" using JoinResponse_Some_lt by blast
+  from j show "t' < t" using JoinResponse_Some_lt by blast
   from j show "ApplyResponse i n t' \<in> messages" using JoinResponse_Some_ApplyResponse by blast
 
-  fix t'' assume "t' \<prec> t''" "t'' \<prec> t"
+  fix t'' assume "t' < t''" "t'' < t"
   with j show "ApplyResponse i n t'' \<notin> messages" using JoinResponse_Some_max by blast
 next
   fix t
@@ -835,12 +825,12 @@ proof -
       JoinResponse_Some_max finite_messages_insert JoinResponse_Some_ApplyRequest
   proof -
     fix i i' n t t' a
-    assume "JoinResponse i n t a \<in> ?messages'" "i < i'" "t' \<prec> t"
+    assume "JoinResponse i n t a \<in> ?messages'" "i < i'" "t' < t"
     with JoinResponse_future assms
     show "ApplyResponse i' n t' \<notin> messages" by auto
   next
     fix i n t t'
-    assume "JoinResponse i n t NoApplyResponseSent \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)" "t' \<prec> t"
+    assume "JoinResponse i n t NoApplyResponseSent \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)" "t' < t"
     with JoinResponse_None assms show "ApplyResponse i n t' \<notin> messages" by auto
   next
     fix i n t a
@@ -875,8 +865,8 @@ lemma (in zen) send_JoinResponse_Some:
   assumes "\<forall> i > i\<^sub>0. \<forall> t. ApplyResponse i n\<^sub>0 t \<notin> messages"
   assumes "ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0' \<in> messages"
   assumes "ApplyRequest i\<^sub>0 t\<^sub>0' x\<^sub>0' \<in> messages"
-  assumes "t\<^sub>0' \<prec> t\<^sub>0"
-  assumes "\<forall> t'. ApplyResponse i\<^sub>0 n\<^sub>0 t' \<in> messages \<longrightarrow> t' \<preceq> t\<^sub>0'"
+  assumes "t\<^sub>0' < t\<^sub>0"
+  assumes "\<forall> t'. ApplyResponse i\<^sub>0 n\<^sub>0 t' \<in> messages \<longrightarrow> t' \<le> t\<^sub>0'"
     (* first-uncommitted slot and the era is ok *)
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
@@ -914,14 +904,14 @@ proof -
 
     from assms JoinResponse_future
     show "\<And>i i' n t t' a. JoinResponse i n t a \<in> ?messages'
-      \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" by auto
+      \<Longrightarrow> i < i' \<Longrightarrow> t' < t \<Longrightarrow> ApplyResponse i' n t' \<notin> messages" by auto
 
     from assms JoinResponse_era
     show "\<And>i n t a. JoinResponse i n t a \<in> ?messages' \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
       by (auto simp add: committedTo_def isCommitted_def)
 
     from assms JoinResponse_Some_lt
-    show "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> t' \<prec> t" by auto
+    show "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> t' < t" by auto
 
     from assms JoinResponse_Some_ApplyResponse
     show "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> ApplyResponse i n t' \<in> messages" by auto
@@ -930,8 +920,8 @@ proof -
     show "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> ApplyRequest i t' x' \<in> messages" by auto
 
     from assms JoinResponse_Some_max
-    show "\<And>i n t t' t'' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
-      by (metis Pair_inject term_not_le_lt)
+    show "\<And>i n t t' t'' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<or> (i, n, t, t', x') = (i\<^sub>0, n\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> t' < t'' \<Longrightarrow> t'' < t \<Longrightarrow> ApplyResponse i n t'' \<notin> messages"
+      by auto
 
   next
 
@@ -953,7 +943,7 @@ proof -
       with r assms have "a = ApplyResponseSent t\<^sub>0' x\<^sub>0'"
         apply (cases a)
          apply (simp add: JoinResponse_None)
-        by (metis ApplyRequest_function JoinResponse_Some_ApplyRequest JoinResponse_Some_ApplyResponse JoinResponse_Some_max le_term_def)
+        by (metis ApplyRequest_function JoinResponse_Some_ApplyRequest JoinResponse_Some_ApplyResponse JoinResponse_Some_max order.not_eq_order_implies_strict)
 
       moreover note p r
       ultimately have "JoinResponse i\<^sub>0 n\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<in> messages" by auto
@@ -1184,7 +1174,7 @@ as long as a @{term JoinResponse} for a later term has not been sent:\<close>
 
 lemma (in zen) send_ApplyResponse:
   assumes "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<in> messages"
-  assumes "\<forall> i t a. JoinResponse i n\<^sub>0 t a \<in> messages \<longrightarrow> t \<preceq> t\<^sub>0"
+  assumes "\<forall> i t a. JoinResponse i n\<^sub>0 t a \<in> messages \<longrightarrow> t \<le> t\<^sub>0"
   shows "zen (insert (ApplyResponse i\<^sub>0 n\<^sub>0 t\<^sub>0) messages)" (is "zen ?messages'")
 proof -
 
@@ -1207,14 +1197,14 @@ proof -
     using JoinResponse_Some_lt JoinResponse_era ApplyRequest_committedTo ApplyRequest_quorum
       ApplyRequest_function finite_messages_insert ApplyRequest_era JoinResponse_Some_ApplyRequest
   proof -
-    show "\<And>i i' n t t' a. JoinResponse i n t a \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' \<prec> t \<Longrightarrow> \<not> (ApplyResponse i' n t' \<in> messages \<or> (i', n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))"
-      by (metis JoinResponse_future Pair_inject assms(2) dual_order.strict_implies_order promised_def term_not_le_lt)
-    show "\<And>i n t t'. JoinResponse i n t NoApplyResponseSent \<in> messages \<Longrightarrow> t' \<prec> t \<Longrightarrow> \<not> (ApplyResponse i n t' \<in> messages \<or> (i, n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))" 
-      by (metis JoinResponse_None assms(2) prod.inject term_not_le_lt)
+    show "\<And>i i' n t t' a. JoinResponse i n t a \<in> messages \<Longrightarrow> i < i' \<Longrightarrow> t' < t \<Longrightarrow> \<not> (ApplyResponse i' n t' \<in> messages \<or> (i', n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))"
+      using JoinResponse_future assms(2) not_le by blast
+    show "\<And>i n t t'. JoinResponse i n t NoApplyResponseSent \<in> messages \<Longrightarrow> t' < t \<Longrightarrow> \<not> (ApplyResponse i n t' \<in> messages \<or> (i, n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))" 
+      using JoinResponse_None assms(2) not_le by blast
     show "\<And>i n t t' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> ApplyResponse i n t' \<in> messages \<or> (i, n, t') = (i\<^sub>0, n\<^sub>0, t\<^sub>0)" 
       using JoinResponse_Some_ApplyResponse by blast
-    show "\<And>i n t t' t'' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> t' \<prec> t'' \<Longrightarrow> t'' \<prec> t \<Longrightarrow> \<not> (ApplyResponse i n t'' \<in> messages \<or> (i, n, t'') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))" 
-      by (metis JoinResponse_Some_max assms(2) prod.inject term_not_le_lt)
+    show "\<And>i n t t' t'' x'. JoinResponse i n t (ApplyResponseSent t' x') \<in> messages \<Longrightarrow> t' < t'' \<Longrightarrow> t'' < t \<Longrightarrow> \<not> (ApplyResponse i n t'' \<in> messages \<or> (i, n, t'') = (i\<^sub>0, n\<^sub>0, t\<^sub>0))" 
+      using JoinResponse_Some_max assms(2) not_le by blast
     show "\<And>i n t. ApplyResponse i n t \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages"
       using ApplyResponse_ApplyRequest assms(1) by blast
     show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> \<exists>q\<in>Q (era\<^sub>t t). \<forall>n\<in>q. ApplyResponse i n t \<in> messages \<or> (i, n, t) = (i\<^sub>0, n\<^sub>0, t\<^sub>0)"
@@ -1289,7 +1279,7 @@ proof -
         from i have t': "ApplyCommit i\<^sub>0 t' \<in> ?messages'" by (metis insertI1 someI_ex t'_def)
         thus "ApplyCommit i\<^sub>0 t' \<in> messages \<or> t' = t\<^sub>0" by blast
 
-        fix t assume le: "t\<^sub>0 \<preceq> t"
+        fix t assume le: "t\<^sub>0 \<le> t"
         assume "\<exists>x. ApplyRequest i\<^sub>0 t x \<in> messages"
         then obtain x where "ApplyRequest i\<^sub>0 t x \<in> messages" by blast
 
@@ -1400,7 +1390,7 @@ definition ProcessMessage :: "NodeData \<Rightarrow> Message \<Rightarrow> (Node
   where
     "ProcessMessage nd msg \<equiv> case msg
       of JoinRequest t \<Rightarrow>
-          if minimumAcceptableTerm nd \<prec> t (* NB equal not allowed, to prevent multiple promises *)
+          if minimumAcceptableTerm nd < t (* NB equal not allowed, to prevent multiple promises *)
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
                , [ JoinResponse (localCheckpoint nd)
                                 (currentNode nd)
@@ -1432,7 +1422,7 @@ locale zenImpl = zen +
   assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))"
   assumes lastAcceptedInEarlierTerm: "\<And>n. case lastAccepted (nodeState n) of
       NoApplyResponseSent \<Rightarrow> True
-    | ApplyResponseSent t' _ \<Rightarrow> t' \<preceq> minimumAcceptableTerm (nodeState n)"
+    | ApplyResponseSent t' _ \<Rightarrow> t' \<le> minimumAcceptableTerm (nodeState n)"
 
 lemma (in zenImpl)
   shows "zenImpl (insert (JoinRequest t) messages) nodeState"
