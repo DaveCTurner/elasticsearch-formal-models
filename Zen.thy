@@ -773,10 +773,10 @@ text \<open>Any node may send a @{term JoinRequest} message for any term at any 
 lemma (in zen) send_JoinRequest:
   shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = JoinRequest t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  define isNewRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
   have messages_simps:
@@ -785,7 +785,7 @@ proof -
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
-    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isMessage_def isNewRoutedMessage_def isNewMessage_def)
+    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isMessage_def isMessageFrom'_def isMessage'_def)
 
   from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
     ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
@@ -793,7 +793,7 @@ proof -
     JoinResponse_future ApplyCommit_quorum JoinResponse_Some_ApplyRequest
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def isNewMessage_def)
+                 apply (fold isMessageFrom'_def isMessage'_def)
                  apply (unfold messages_simps)
                  apply (unfold era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def)
     by (simp_all)
@@ -819,19 +819,19 @@ lemma (in zen) send_JoinResponse_None:
                          payload = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent \<rparr> routedMessages)"
           (is "zen ?routedMessages'")
 proof -
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  have isNewRoutedMessage_eq [simp]:
+  have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent))"
-    by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
-  have isNewMessage_eq [simp]:
+  have isMessage'_eq [simp]:
     "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent)"
-    by (auto simp add: isNewMessage_def isMessage_def)
+    by (auto simp add: isMessage'_def isMessage_def)
 
   define promised' where "\<And>i s t. promised' i s t \<equiv> \<exists>i'\<le>i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>'"
   have promised'I: "\<And>i s t. promised i s t \<Longrightarrow> promised' i s t" 
@@ -847,7 +847,7 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def isNewMessage_def)
+                 apply (fold isMessageFrom'_def isMessage'_def)
                  apply (unfold messages_simps)
                  apply (fold isCommitted_def v_def prevAccepted_def)
                  apply (fold v\<^sub>c_def committedTo_def)
@@ -908,19 +908,19 @@ lemma (in zen) send_JoinResponse_Some:
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
                          payload = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  have isNewRoutedMessage_eq [simp]:
+  have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')))"
-    by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
-  have isNewMessage_eq [simp]:
+  have isMessage'_eq [simp]:
     "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0'))"
-    by (auto simp add: isNewMessage_def isMessage_def)
+    by (auto simp add: isMessage'_def isMessage_def)
 
   define promised' where "\<And>i s t. promised' i s t \<equiv> \<exists>i'\<le>i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>'"
   have promised'I: "\<And>i s t. promised i s t \<Longrightarrow> promised' i s t" 
@@ -941,8 +941,8 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
-                 apply (fold isNewMessage_def)
+                 apply (fold isMessageFrom'_def)
+                 apply (fold isMessage'_def)
                  apply (fold prevAccepted'_def)
                  apply (unfold messages_simps)
                  apply (fold isCommitted_def)
@@ -1035,19 +1035,19 @@ proof -
   have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n t\<^sub>0"
     by (simp add: assms promised_def)
 
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  have isNewRoutedMessage_eq [simp]:
+  have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0))"
-    by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
-  have isNewMessage_eq [simp]:
+  have isMessage'_eq [simp]:
     "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0)"
-    by (auto simp add: isNewMessage_def isMessage_def)
+    by (auto simp add: isMessage'_def isMessage_def)
 
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
@@ -1138,8 +1138,8 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
-                 apply (fold isNewMessage_def)
+                 apply (fold isMessageFrom'_def)
+                 apply (fold isMessage'_def)
                  apply (fold v'_def)
                  apply (fold v\<^sub>c'_def)
                  apply (unfold messages_simps)
@@ -1248,19 +1248,19 @@ lemma (in zen) send_ApplyResponse:
   shows "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
                        payload = ApplyResponse i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  have isNewRoutedMessage_eq [simp]:
+  have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = ApplyResponse i\<^sub>0 t\<^sub>0))"
-    by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
-  have isNewMessage_eq [simp]:
+  have isMessage'_eq [simp]:
     "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyResponse i\<^sub>0 t\<^sub>0)"
-    by (auto simp add: isNewMessage_def isMessage_def)
+    by (auto simp add: isMessage'_def isMessage_def)
 
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
@@ -1271,8 +1271,8 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
-                 apply (fold isNewMessage_def)
+                 apply (fold isMessageFrom'_def)
+                 apply (fold isMessage'_def)
                  apply (unfold messages_simps)
                  apply (fold prevAccepted_def)
                  apply (fold isCommitted_def v_def)
@@ -1312,19 +1312,19 @@ proof -
   have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
     by (metis ApplyResponse_era Q_member_member assms(1) assms(2))
 
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
-  have isNewRoutedMessage_eq [simp]:
+  have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyCommit i\<^sub>0 t\<^sub>0))"
-    by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
-  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
-  have isNewMessage_eq [simp]:
+  have isMessage'_eq [simp]:
     "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyCommit i\<^sub>0 t\<^sub>0)"
-    by (auto simp add: isNewMessage_def isMessage_def)
+    by (auto simp add: isMessage'_def isMessage_def)
 
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
@@ -1376,7 +1376,7 @@ proof -
         from i have "\<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto>" by (metis True isCommitted_def someI_ex t_def)
         thus "\<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto> \<or> t = t\<^sub>0" by simp
         from i have t': "\<langle> ApplyCommit i\<^sub>0 t' \<rangle>\<leadsto>'" 
-          by (metis isNewMessage_eq someI_ex t'_def)
+          by (metis isMessage'_eq someI_ex t'_def)
         thus "\<langle> ApplyCommit i\<^sub>0 t' \<rangle>\<leadsto> \<or> t' = t\<^sub>0" by simp
 
         fix t assume le: "t\<^sub>0 \<le> t"
@@ -1437,8 +1437,8 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
-                 apply (fold isNewMessage_def)
+                 apply (fold isMessageFrom'_def)
+                 apply (fold isMessage'_def)
                  apply (fold isCommitted'_def)
                  apply (fold committedTo'_def)
                  apply (fold v'_def)
