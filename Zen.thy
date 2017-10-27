@@ -1614,7 +1614,10 @@ record NodeData =
   minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
   (* election data *)
   electionTerm :: Term (* term of JoinResponses being collected *)
-  electionVotes :: "Node set option" (* is None if the election was won *)
+  electionVotes :: "Node set"
+  electionWon :: bool
+  electionValue :: PreviousApplyResponse
+  applyRequestedInCurrentSlot :: bool
 
 definition applyValue :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
@@ -1630,6 +1633,16 @@ definition lastAcceptedGreaterTermThan :: "Term \<Rightarrow> NodeData \<Rightar
       NoApplyResponseSent \<Rightarrow> False
       | ApplyResponseSent t' _ \<Rightarrow> t' < t"
 
+definition isQuorum :: "NodeData \<Rightarrow> Node set \<Rightarrow> bool"
+  where "isQuorum nd q \<equiv> q \<in> Rep_Configuration (currentConfiguration nd)"
+
+fun combineApplyResponses :: "PreviousApplyResponse \<Rightarrow> PreviousApplyResponse \<Rightarrow> PreviousApplyResponse"
+  where
+    "combineApplyResponses NoApplyResponseSent par = par"
+  | "combineApplyResponses par NoApplyResponseSent = par"
+  | "combineApplyResponses (ApplyResponseSent t\<^sub>1 x\<^sub>1) (ApplyResponseSent t\<^sub>2 x\<^sub>2)
+        = (if t\<^sub>1 < t\<^sub>2 then ApplyResponseSent t\<^sub>2 x\<^sub>2 else ApplyResponseSent t\<^sub>1 x\<^sub>1)"
+
 definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow> (NodeData * RoutedMessage list)"
   where
     "ProcessMessage nd msg \<equiv>
@@ -1642,31 +1655,38 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
           if minimumAcceptableTerm nd < t
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
                , respond (JoinResponse (localCheckpoint nd)
-                                       (currentNode nd)
                                        t
                                        (lastAccepted nd)))
           else (nd, [])
 
-      | JoinResponse i n t a \<Rightarrow>
+      | JoinResponse i t a \<Rightarrow>
           if localCheckpoint nd < i
              \<or> t < electionTerm nd
-             \<or> (t = electionTerm nd \<and> electionVotes nd = None)
+             \<or> (t = electionTerm nd \<and> electionWon nd)
           then (nd, [])
-          else let previousVotes = case electionVotes nd of
-                                      None \<Rightarrow> {}
-                                      | Some vs \<Rightarrow> if electionTerm nd = t then vs else {};
-                   currentVotes = insert n previousVotes
-                in (nd, [])
+          else let newVotes = if electionTerm nd = t
+                                then insert (sender msg) (electionVotes nd)
+                                else { sender msg };
 
+                   nd1 = nd \<lparr> electionVotes := newVotes
+                            , electionValue := combineApplyResponses (electionValue nd) a
+                            , electionWon := isQuorum nd newVotes
+                            , electionTerm := t \<rparr>
+
+                in (case (electionWon nd1, electionValue nd1) of
+                      (True, ApplyResponseSent _ x)
+                          \<Rightarrow> ( nd1 \<lparr> applyRequestedInCurrentSlot := True \<rparr>
+                             , broadcast (ApplyRequest (localCheckpoint nd) t x))
+                      | _ \<Rightarrow> (nd1, []))
 
       | ApplyRequest i t x \<Rightarrow>
           if minimumAcceptableTerm nd \<le> t
                 \<and> \<not> lastAcceptedGreaterTermThan t nd
           then ( nd \<lparr> lastAccepted := ApplyResponseSent t x \<rparr>
-               , respond (ApplyResponse i (currentNode nd) t))
+               , respond (ApplyResponse i t))
           else (nd, [])
 
-      | ApplyResponse i n t \<Rightarrow> (nd, [])
+      | ApplyResponse i t \<Rightarrow> (nd, [])
 
       | ApplyCommit i t \<Rightarrow> let
           nd' = if i = localCheckpoint nd
