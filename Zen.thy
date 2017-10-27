@@ -412,9 +412,7 @@ locale zen =
   defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
   fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
   defines "\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>"
-  fixes messages :: "Message set"
     (* value proposed in a slot & a term *)
-  defines "messages \<equiv> payload ` routedMessages"
   fixes v :: "nat \<Rightarrow> Term \<Rightarrow> Value"
   defines "v i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     (* whether a slot is committed *)
@@ -523,7 +521,7 @@ proof -
   fix t\<^sub>0
   define f :: "RoutedMessage \<Rightarrow> Term" where "f \<equiv> \<lambda> m. case payload m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
   have "prevAccepted i t ns \<subseteq> f ` routedMessages"
-    apply (simp add: prevAccepted_def f_def messages_def isRoutedMessageAnyDestination_def isRoutedMessage_def, intro subsetI)
+    apply (simp add: prevAccepted_def f_def isRoutedMessageAnyDestination_def isRoutedMessage_def, intro subsetI)
     using image_iff by fastforce
   with finite_messages show ?thesis using finite_surj by auto
 qed
@@ -729,7 +727,7 @@ next
     where "f \<equiv> \<lambda> m. case payload m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
 
   have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` routedMessages"
-    apply (unfold isMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def messages_def)
+    apply (unfold isMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
     using f_def image_iff by fastforce
 
   moreover have "finite (f ` routedMessages)"
@@ -775,9 +773,6 @@ text \<open>Any node may send a @{term JoinRequest} message for any term at any 
 lemma (in zen) send_JoinRequest:
   shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = JoinRequest t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (JoinRequest t\<^sub>0) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   define isNewRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
@@ -799,7 +794,7 @@ proof -
   show ?thesis
     apply (unfold_locales)
                  apply (fold isNewRoutedMessage_def isNewMessage_def)
-                 apply (unfold payload_eq messages_simps)
+                 apply (unfold messages_simps)
                  apply (unfold era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def)
     by (simp_all)
 qed
