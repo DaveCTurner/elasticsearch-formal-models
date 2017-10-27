@@ -480,7 +480,7 @@ locale zen =
     "\<And>i t x x'. \<lbrakk> \<langle> ApplyRequest i t x \<rangle>\<leadsto>; \<langle> ApplyRequest i t x' \<rangle>\<leadsto> \<rbrakk>
        \<Longrightarrow> x = x'"
   assumes finite_messages:
-    "finite messages"
+    "finite routedMessages"
   assumes ApplyResponse_ApplyRequest:
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   assumes ApplyCommit_quorum:
@@ -521,8 +521,8 @@ lemma (in zen) ApplyRequest_JoinResponse:
 lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
 proof -
   fix t\<^sub>0
-  define f where "f \<equiv> \<lambda> m. case m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
-  have "prevAccepted i t ns \<subseteq> f ` messages"
+  define f :: "RoutedMessage \<Rightarrow> Term" where "f \<equiv> \<lambda> m. case payload m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
+  have "prevAccepted i t ns \<subseteq> f ` routedMessages"
     apply (simp add: prevAccepted_def f_def messages_def isRoutedMessageAnyDestination_def isRoutedMessage_def, intro subsetI)
     using image_iff by fastforce
   with finite_messages show ?thesis using finite_surj by auto
@@ -662,7 +662,7 @@ next
     by (simp add: ApplyResponseSent a\<^sub>2 t x)
 qed
 
-lemma (in zen) shows finite_messages_insert: "finite (insert m messages)"
+lemma (in zen) shows finite_messages_insert: "finite (insert m routedMessages)"
   using finite_messages by auto
 
 lemma (in zen) isCommitted_committedTo:
@@ -725,13 +725,14 @@ next
     by (simp add: ApplyCommit_quorum)
 next
   fix t\<^sub>0
-  define f where "f \<equiv> \<lambda> m. case m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
+  define f :: "RoutedMessage \<Rightarrow> Term"
+    where "f \<equiv> \<lambda> m. case payload m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
 
-  have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` messages"
+  have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` routedMessages"
     apply (unfold isMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def messages_def)
     using f_def image_iff by fastforce
 
-  moreover have "finite (f ` messages)"
+  moreover have "finite (f ` routedMessages)"
     by (simp add: finite_messages)
 
   ultimately show "finite {t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>}"
@@ -823,9 +824,6 @@ lemma (in zen) send_JoinResponse_None:
                          payload = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent \<rparr> routedMessages)"
           (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
@@ -855,7 +853,7 @@ proof -
   show ?thesis
     apply (unfold_locales)
                  apply (fold isNewRoutedMessage_def isNewMessage_def)
-                 apply (unfold payload_eq messages_simps)
+                 apply (unfold messages_simps)
                  apply (fold isCommitted_def v_def prevAccepted_def)
                  apply (fold v\<^sub>c_def committedTo_def)
                  apply (fold era\<^sub>i_def)
@@ -915,9 +913,6 @@ lemma (in zen) send_JoinResponse_Some:
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
                          payload = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
@@ -951,7 +946,6 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
                  apply (fold isNewMessage_def)
                  apply (fold prevAccepted'_def)
@@ -1043,9 +1037,6 @@ lemma (in zen) send_ApplyRequest:
   shows "zen (insert \<lparr> sender = anySender, destination = anyDestination,
                        payload = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n t\<^sub>0"
     by (simp add: assms promised_def)
 
@@ -1152,7 +1143,6 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
                  apply (fold isNewMessage_def)
                  apply (fold v'_def)
@@ -1263,9 +1253,6 @@ lemma (in zen) send_ApplyResponse:
   shows "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
                        payload = ApplyResponse i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (ApplyResponse i\<^sub>0 t\<^sub>0) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
 
@@ -1289,7 +1276,6 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
                  apply (fold isNewMessage_def)
                  apply (unfold messages_simps)
@@ -1328,9 +1314,6 @@ lemma (in zen) send_ApplyCommit:
   assumes "\<forall> s \<in> q. s \<midarrow>\<langle> ApplyResponse i\<^sub>0 t\<^sub>0 \<rangle>\<leadsto>"
   shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
 proof -
-  have payload_eq: "payload ` ?routedMessages' = insert (ApplyCommit i\<^sub>0 t\<^sub>0) messages" (is "_ = ?messages'")
-    by (auto simp add: messages_def)
-
   have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
     by (metis ApplyResponse_era Q_member_member assms(1) assms(2))
 
@@ -1459,7 +1442,6 @@ proof -
 
   show ?thesis
     apply (unfold_locales)
-                 apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
                  apply (fold isNewMessage_def)
                  apply (fold isCommitted'_def)
