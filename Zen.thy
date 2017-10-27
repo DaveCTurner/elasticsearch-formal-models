@@ -405,9 +405,9 @@ record RoutedMessage =
   payload :: Message
 
 locale zen =
-  fixes routedMessages :: "RoutedMessage set"
+  fixes messages :: "RoutedMessage set"
   fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [55])
-  defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> routedMessages"
+  defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages"
   fixes isMessageFrom :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
   fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
@@ -478,7 +478,7 @@ locale zen =
     "\<And>i t x x'. \<lbrakk> \<langle> ApplyRequest i t x \<rangle>\<leadsto>; \<langle> ApplyRequest i t x' \<rangle>\<leadsto> \<rbrakk>
        \<Longrightarrow> x = x'"
   assumes finite_messages:
-    "finite routedMessages"
+    "finite messages"
   assumes ApplyResponse_ApplyRequest:
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   assumes ApplyCommit_quorum:
@@ -520,7 +520,7 @@ lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
 proof -
   fix t\<^sub>0
   define f :: "RoutedMessage \<Rightarrow> Term" where "f \<equiv> \<lambda> m. case payload m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
-  have "prevAccepted i t ns \<subseteq> f ` routedMessages"
+  have "prevAccepted i t ns \<subseteq> f ` messages"
     apply (simp add: prevAccepted_def f_def isMessageFrom_def isMessageFromTo_def, intro subsetI)
     using image_iff by fastforce
   with finite_messages show ?thesis using finite_surj by auto
@@ -660,7 +660,7 @@ next
     by (simp add: ApplyResponseSent a\<^sub>2 t x)
 qed
 
-lemma (in zen) shows finite_messages_insert: "finite (insert m routedMessages)"
+lemma (in zen) shows finite_messages_insert: "finite (insert m messages)"
   using finite_messages by auto
 
 lemma (in zen) isCommitted_committedTo:
@@ -726,11 +726,11 @@ next
   define f :: "RoutedMessage \<Rightarrow> Term"
     where "f \<equiv> \<lambda> m. case payload m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
 
-  have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` routedMessages"
+  have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` messages"
     apply (unfold isMessage_def isMessageFrom_def isMessageFromTo_def)
     using f_def image_iff by fastforce
 
-  moreover have "finite (f ` routedMessages)"
+  moreover have "finite (f ` messages)"
     by (simp add: finite_messages)
 
   ultimately show "finite {t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>}"
@@ -771,10 +771,10 @@ subsubsection \<open>Sending @{term JoinRequest} messages\<close>
 text \<open>Any node may send a @{term JoinRequest} message for any term at any time.\<close>
 
 lemma (in zen) send_JoinRequest:
-  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = JoinRequest t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = JoinRequest t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
 proof -
   define isMessageFrom' :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
@@ -816,11 +816,11 @@ lemma (in zen) send_JoinResponse_None:
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
-                         payload = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent \<rparr> routedMessages)"
-          (is "zen ?routedMessages'")
+                         payload = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent \<rparr> messages)"
+          (is "zen ?messages'")
 proof -
   define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent))"
@@ -906,10 +906,10 @@ lemma (in zen) send_JoinResponse_Some:
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
-                         payload = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<rparr> routedMessages)" (is "zen ?routedMessages'")
+                         payload = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0') \<rparr> messages)" (is "zen ?messages'")
 proof -
   define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')))"
@@ -1030,13 +1030,13 @@ lemma (in zen) send_ApplyRequest:
   assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
     \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
   shows "zen (insert \<lparr> sender = anySender, destination = anyDestination,
-                       payload = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
+                       payload = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
 proof -
   have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n t\<^sub>0"
     by (simp add: assms promised_def)
 
   define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0))"
@@ -1246,10 +1246,10 @@ lemma (in zen) send_ApplyResponse:
   assumes "\<langle> ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rangle>\<leadsto>"
   assumes "\<forall> i t a. s\<^sub>0 \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<longrightarrow> t \<le> t\<^sub>0"
   shows "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
-                       payload = ApplyResponse i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
+                       payload = ApplyResponse i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
 proof -
   define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = ApplyResponse i\<^sub>0 t\<^sub>0))"
@@ -1307,13 +1307,13 @@ configuration:\<close>
 lemma (in zen) send_ApplyCommit:
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> s \<in> q. s \<midarrow>\<langle> ApplyResponse i\<^sub>0 t\<^sub>0 \<rangle>\<leadsto>"
-  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
+  shows "zen (insert \<lparr> sender = anySender, destination = anyDestination, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
 proof -
   have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
     by (metis ApplyResponse_era Q_member_member assms(1) assms(2))
 
   define isMessageFrom' ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
-    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+    "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyCommit i\<^sub>0 t\<^sub>0))"
@@ -1562,7 +1562,7 @@ locale zenImpl = zen +
     | ApplyResponseSent t' _ \<Rightarrow> t' \<le> minimumAcceptableTerm (nodeState n)"
 
 lemma (in zenImpl)
-  shows "zenImpl (insert \<lparr> sender = anySender, destination = Broadcast, payload = JoinRequest t \<rparr> routedMessages) nodeState"
+  shows "zenImpl (insert \<lparr> sender = anySender, destination = Broadcast, payload = JoinRequest t \<rparr> messages) nodeState"
   sorry
 
 lemma (in zenImpl)
