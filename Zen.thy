@@ -419,13 +419,13 @@ locale zen =
   defines "v i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     (* whether a slot is committed *)
   fixes isCommitted :: "nat \<Rightarrow> bool"
-  defines "isCommitted i \<equiv> \<exists> t. ApplyCommit i t \<in> messages"
+  defines "isCommitted i \<equiv> \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     (* whether all preceding slots are committed *)
   fixes committedTo :: "nat \<Rightarrow> bool" ("committed\<^sub><")
   defines "committed\<^sub>< i \<equiv> \<forall> j < i. isCommitted j" 
     (* the committed value in a slot *)
   fixes v\<^sub>c :: "nat \<Rightarrow> Value"
-  defines "v\<^sub>c i \<equiv> v i (SOME t. ApplyCommit i t \<in> messages)"
+  defines "v\<^sub>c i \<equiv> v i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>)"
     (* the era of a slot *)
   fixes era\<^sub>i :: "nat \<Rightarrow> Era"
   defines "era\<^sub>i i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c j) })"
@@ -484,7 +484,7 @@ locale zen =
   assumes ApplyResponse_ApplyRequest:
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   assumes ApplyCommit_quorum:
-    "\<And>i t. ApplyCommit i t \<in> messages
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>
                         \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> s \<in> q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
 
 declare [[goals_limit = 20]]
@@ -504,12 +504,12 @@ lemma (in zen) Q_member_member: assumes "q \<in> Q e" obtains n where "n \<in> q
   using Q_members_nonempty assms by fastforce
 
 lemma (in zen) ApplyCommit_ApplyResponse:
-  assumes "ApplyCommit i t \<in> messages"
+  assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   obtains s where "s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
   by (meson ApplyCommit_quorum Q_member_member assms)
 
 lemma (in zen) ApplyCommit_ApplyRequest:
-  assumes "ApplyCommit i t \<in> messages"
+  assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "\<langle> ApplyRequest i t (v i t) \<rangle>\<leadsto>"
   by (metis ApplyCommit_ApplyResponse ApplyResponse_ApplyRequest assms the_equality v_def ApplyRequest_function)
 
@@ -580,7 +580,7 @@ lemma (in zen) ApplyResponse_era:
   using assms ApplyRequest_era ApplyResponse_ApplyRequest by metis
 
 lemma (in zen) ApplyCommit_era:
-  assumes "ApplyCommit i t \<in> messages"
+  assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "era\<^sub>t t = era\<^sub>i i"
   by (meson ApplyResponse_era assms ApplyCommit_ApplyResponse)
 
@@ -683,12 +683,12 @@ lemma (in zen) zen_is_oneSlot:
     (\<lambda> s t t'. \<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>)
     (\<lambda> t. \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>)
     (\<lambda> s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>)
-    (\<lambda> t. ApplyCommit i t \<in> messages)"
+    (\<lambda> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>)"
 proof (unfold_locales, fold prevAccepted_def promised_long_def)
   fix t\<^sub>1 t\<^sub>2
   assume "\<exists>x. \<langle> ApplyRequest i t\<^sub>1 x \<rangle>\<leadsto>"
   then obtain x where t\<^sub>1: "\<langle> ApplyRequest i t\<^sub>1 x \<rangle>\<leadsto>" ..
-  assume t\<^sub>2: "ApplyCommit i t\<^sub>2 \<in> messages"
+  assume t\<^sub>2: "\<langle> ApplyCommit i t\<^sub>2 \<rangle>\<leadsto>"
   assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<le> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
     by (simp add: era\<^sub>t_mono)
 
@@ -720,7 +720,7 @@ next
   thus "\<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     by (simp add: ApplyResponse_ApplyRequest)
 next
-  fix t assume "ApplyCommit i t \<in> messages"
+  fix t assume "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   thus "\<exists>q\<in>(Q \<circ> era\<^sub>t) t. \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     by (simp add: ApplyCommit_quorum)
 next
@@ -741,8 +741,8 @@ qed
 text \<open>From this it follows that all committed values are equal.\<close>
 
 lemma (in zen) consistent:
-  assumes "ApplyCommit  i t\<^sub>1 \<in> messages"
-  assumes "ApplyCommit  i t\<^sub>2 \<in> messages"
+  assumes "\<langle> ApplyCommit  i t\<^sub>1 \<rangle>\<leadsto>"
+  assumes "\<langle> ApplyCommit  i t\<^sub>2 \<rangle>\<leadsto>"
   assumes "\<langle> ApplyRequest i t\<^sub>1 v\<^sub>1 \<rangle>\<leadsto>"
   assumes "\<langle> ApplyRequest i t\<^sub>2 v\<^sub>2 \<rangle>\<leadsto>"
   shows "v\<^sub>1 = v\<^sub>2"
@@ -788,7 +788,7 @@ proof -
     "\<And>i s t x. s \<midarrow>\<langle> ApplyRequest i t x \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isMessage_def isNewRoutedMessage_def isNewMessage_def)
 
   from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
@@ -816,7 +816,7 @@ additionally, no @{term ApplyResponse} message has been sent for slot @{term i\<
 lemma (in zen) send_JoinResponse_None:
   assumes "\<forall> i \<ge> i\<^sub>0. \<forall> t. \<not> s\<^sub>0 \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     (* first-uncommitted slot and the era is ok *)
-  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
@@ -849,7 +849,7 @@ proof -
     "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     by auto
 
   show ?thesis
@@ -909,7 +909,7 @@ lemma (in zen) send_JoinResponse_Some:
   assumes "t\<^sub>0' < t\<^sub>0"
   assumes "\<forall> t'. s\<^sub>0 \<midarrow>\<langle> ApplyResponse i\<^sub>0 t' \<rangle>\<leadsto> \<longrightarrow> t' \<le> t\<^sub>0'"
     (* first-uncommitted slot and the era is ok *)
-  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
     (* *)
   shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
@@ -946,7 +946,7 @@ proof -
           \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0'))"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     by auto
 
   show ?thesis
@@ -1034,7 +1034,7 @@ value accepted in the greatest term amongst all @{term JoinResponse} messages, i
 
 lemma (in zen) send_ApplyRequest:
   assumes "\<forall> x. \<not> \<langle> ApplyRequest i\<^sub>0 t\<^sub>0 x \<rangle>\<leadsto>"
-  assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
+  assumes "\<forall> i < i\<^sub>0. \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> s \<in> q. \<exists> i \<le> i\<^sub>0. \<exists> a. s \<midarrow>\<langle> JoinResponse i t\<^sub>0 a \<rangle>\<leadsto>"
@@ -1067,11 +1067,11 @@ proof -
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = (\<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0))"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     by auto
 
   define v' where "\<And>i t. v' i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>'"
-  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
+  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
   define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
   define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
@@ -1189,7 +1189,7 @@ proof -
 
   next
     fix i t
-    assume a: "ApplyCommit i t \<in> messages"
+    assume a: "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
     hence "committed\<^sub>< i" using ApplyCommit_ApplyRequest ApplyRequest_committedTo by blast
     hence "Q' (era\<^sub>i i) = Q (era\<^sub>i i)" by (simp add: Q'_eq)
     moreover from a have "era\<^sub>t t = era\<^sub>i i"
@@ -1284,7 +1284,7 @@ proof -
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = (s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0))"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     by auto
 
   show ?thesis
@@ -1312,7 +1312,7 @@ proof -
       using JoinResponse_Some_max assms(2) not_le by blast
     show "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
       using ApplyResponse_ApplyRequest assms(1) by blast
-    show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> \<exists>q\<in>Q (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0)"
+    show "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto> \<Longrightarrow> \<exists>q\<in>Q (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0)"
       by (meson ApplyCommit_quorum)
   qed
 qed
@@ -1352,13 +1352,13 @@ proof -
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-    "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0))"
+    "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = (\<langle> ApplyCommit i t \<rangle>\<leadsto> \<or> (i, t) = (i\<^sub>0, t\<^sub>0))"
     by auto
 
-  define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. ApplyCommit i t \<in> ?messages'"
+  define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>'"
   define committedTo' ("committed\<^sub><'") where "\<And>i. committed\<^sub><' i \<equiv> \<forall>j < i. isCommitted' j"
   define v' where "\<And>i t. v' i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>'"
-  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
+  define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
   define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
   define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
@@ -1383,8 +1383,8 @@ proof -
       case False thus ?thesis by (simp add: v\<^sub>c_def v\<^sub>c'_def v_eq)
     next
       case True
-      define t  where "t  \<equiv> SOME t. ApplyCommit i\<^sub>0 t \<in> messages"
-      define t' where "t' \<equiv> SOME t. ApplyCommit i\<^sub>0 t \<in> ?messages'"
+      define t  where "t  \<equiv> SOME t. \<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto>"
+      define t' where "t' \<equiv> SOME t. \<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto>'"
 
       have eq:  "v\<^sub>c  i\<^sub>0 = v i\<^sub>0 t"  by (simp add: v\<^sub>c_def t_def)
       have eq': "v\<^sub>c' i\<^sub>0 = v i\<^sub>0 t'" by (simp add: v\<^sub>c'_def t'_def v_eq)
@@ -1395,10 +1395,11 @@ proof -
         from assms show "q \<in> (Q \<circ> era\<^sub>t) t\<^sub>0" "\<And>s. s \<in> q \<Longrightarrow> s \<midarrow>\<langle> ApplyResponse i\<^sub>0 t\<^sub>0 \<rangle>\<leadsto>"
           by simp_all
 
-        from i have "ApplyCommit i\<^sub>0 t  \<in> messages" by (metis True isCommitted_def someI_ex t_def)
-        thus "ApplyCommit i\<^sub>0 t \<in> messages \<or> t = t\<^sub>0" by simp
-        from i have t': "ApplyCommit i\<^sub>0 t' \<in> ?messages'" by (metis insertI1 someI_ex t'_def)
-        thus "ApplyCommit i\<^sub>0 t' \<in> messages \<or> t' = t\<^sub>0" by blast
+        from i have "\<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto>" by (metis True isCommitted_def someI_ex t_def)
+        thus "\<langle> ApplyCommit i\<^sub>0 t \<rangle>\<leadsto> \<or> t = t\<^sub>0" by simp
+        from i have t': "\<langle> ApplyCommit i\<^sub>0 t' \<rangle>\<leadsto>'" 
+          by (metis isNewMessage_eq someI_ex t'_def)
+        thus "\<langle> ApplyCommit i\<^sub>0 t' \<rangle>\<leadsto> \<or> t' = t\<^sub>0" by simp
 
         fix t assume le: "t\<^sub>0 \<le> t"
         assume "\<exists>x. \<langle> ApplyRequest i\<^sub>0 t x \<rangle>\<leadsto>"
@@ -1488,7 +1489,7 @@ proof -
     show "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
       by (metis ApplyRequest_JoinResponse ApplyRequest_quorum JoinResponse_era Q'_eq v_eq)
 
-    show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
+    show "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto> \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
         by (metis ApplyCommit_quorum ApplyRequest_JoinResponse ApplyResponse_ApplyRequest JoinResponse_era Q'_eq Q_member_member assms(1) assms(2) prod.inject)
   qed
 qed
