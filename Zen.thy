@@ -409,12 +409,14 @@ locale zen =
   fixes isRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> routedMessages"
   fixes isRoutedMessageAnyDestination :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
-  defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. (s \<midarrow>\<langle> m \<rangle>\<rightarrow> d)"
+  defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
+  fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
+  defines "\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>"
   fixes messages :: "Message set"
     (* value proposed in a slot & a term *)
   defines "messages \<equiv> payload ` routedMessages"
   fixes v :: "nat \<Rightarrow> Term \<Rightarrow> Value"
-  defines "v i t \<equiv> THE x. ApplyRequest i t x \<in> messages"
+  defines "v i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     (* whether a slot is committed *)
   fixes isCommitted :: "nat \<Rightarrow> bool"
   defines "isCommitted i \<equiv> \<exists> t. ApplyCommit i t \<in> messages"
@@ -458,7 +460,7 @@ locale zen =
       \<Longrightarrow> s \<midarrow>\<langle> ApplyResponse i t' \<rangle>\<leadsto>"
   assumes JoinResponse_Some_ApplyRequest:
     "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>
-      \<Longrightarrow> ApplyRequest i t' x' \<in> messages"
+      \<Longrightarrow> \<langle> ApplyRequest i t' x' \<rangle>\<leadsto>"
   assumes JoinResponse_Some_max:
     "\<And>i s t t' t'' x'. \<lbrakk> s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>; t' < t''; t'' < t \<rbrakk>
       \<Longrightarrow> \<not> s \<midarrow>\<langle> ApplyResponse i t'' \<rangle>\<leadsto>"
@@ -466,21 +468,21 @@ locale zen =
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>
       \<Longrightarrow> \<exists> i' \<le> i. committedTo i' \<and> era\<^sub>t t \<le> era\<^sub>i i'"
   assumes ApplyRequest_era:
-    "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> era\<^sub>i i = era\<^sub>t t"
   assumes ApplyRequest_committedTo:
-    "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committedTo i"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> committedTo i"
   assumes ApplyRequest_quorum:
-    "\<And>i t x. ApplyRequest i t x \<in> messages
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>
       \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). (\<forall> n \<in> q. promised i n t) \<and>
             (prevAccepted i t q = {}
                 \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
   assumes ApplyRequest_function:
-    "\<And>i t x x'. \<lbrakk> ApplyRequest i t x \<in> messages; ApplyRequest i t x' \<in> messages \<rbrakk>
+    "\<And>i t x x'. \<lbrakk> \<langle> ApplyRequest i t x \<rangle>\<leadsto>; \<langle> ApplyRequest i t x' \<rangle>\<leadsto> \<rbrakk>
        \<Longrightarrow> x = x'"
   assumes finite_messages:
     "finite messages"
   assumes ApplyResponse_ApplyRequest:
-    "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists> x. ApplyRequest i t x \<in> messages"
+    "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   assumes ApplyCommit_quorum:
     "\<And>i t. ApplyCommit i t \<in> messages
                         \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> s \<in> q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
@@ -508,11 +510,11 @@ lemma (in zen) ApplyCommit_ApplyResponse:
 
 lemma (in zen) ApplyCommit_ApplyRequest:
   assumes "ApplyCommit i t \<in> messages"
-  shows "ApplyRequest i t (v i t) \<in> messages"
+  shows "\<langle> ApplyRequest i t (v i t) \<rangle>\<leadsto>"
   by (metis ApplyCommit_ApplyResponse ApplyResponse_ApplyRequest assms the_equality v_def ApplyRequest_function)
 
 lemma (in zen) ApplyRequest_JoinResponse:
-  assumes "ApplyRequest i t x \<in> messages"
+  assumes "\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   obtains i' s a where "i' \<le> i" "s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>"
   by (meson ApplyRequest_quorum Q_member_member assms promised_def)
 
@@ -679,13 +681,13 @@ lemma (in zen) zen_is_oneSlot:
     (\<lambda> s t. s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>
         \<or> (\<exists> i' < i. \<exists> a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>))
     (\<lambda> s t t'. \<exists> x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>)
-    (\<lambda> t. \<exists> x. ApplyRequest i t x \<in> messages)
+    (\<lambda> t. \<exists> x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>)
     (\<lambda> s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>)
     (\<lambda> t. ApplyCommit i t \<in> messages)"
 proof (unfold_locales, fold prevAccepted_def promised_long_def)
   fix t\<^sub>1 t\<^sub>2
-  assume "\<exists>x. ApplyRequest i t\<^sub>1 x \<in> messages"
-  then obtain x where t\<^sub>1: "ApplyRequest i t\<^sub>1 x \<in> messages" ..
+  assume "\<exists>x. \<langle> ApplyRequest i t\<^sub>1 x \<rangle>\<leadsto>"
+  then obtain x where t\<^sub>1: "\<langle> ApplyRequest i t\<^sub>1 x \<rangle>\<leadsto>" ..
   assume t\<^sub>2: "ApplyCommit i t\<^sub>2 \<in> messages"
   assume t\<^sub>2\<^sub>1: "t\<^sub>2 \<le> t\<^sub>1" hence "era\<^sub>t t\<^sub>2 \<le> era\<^sub>t t\<^sub>1"
     by (simp add: era\<^sub>t_mono)
@@ -710,12 +712,12 @@ next
   with j show "\<not> s \<midarrow>\<langle> ApplyResponse i t'' \<rangle>\<leadsto>" using JoinResponse_Some_max by blast
 next
   fix t
-  assume "\<exists>x. ApplyRequest i t x \<in> messages"
+  assume "\<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
   thus "\<exists>q\<in>(Q \<circ> era\<^sub>t) t. (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v i t = v i (maxTerm (prevAccepted i t q)))"
     using ApplyRequest_quorum by auto
 next
   fix s t assume "s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
-  thus "\<exists>x. ApplyRequest i t x \<in> messages"
+  thus "\<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     by (simp add: ApplyResponse_ApplyRequest)
 next
   fix t assume "ApplyCommit i t \<in> messages"
@@ -725,13 +727,14 @@ next
   fix t\<^sub>0
   define f where "f \<equiv> \<lambda> m. case m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
 
-  have "{t. \<exists>x. ApplyRequest i t x \<in> messages} \<subseteq> f ` messages"
+  have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` messages"
+    apply (unfold isMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def messages_def)
     using f_def image_iff by fastforce
 
   moreover have "finite (f ` messages)"
     by (simp add: finite_messages)
 
-  ultimately show "finite {t. \<exists>x. ApplyRequest i t x \<in> messages}"
+  ultimately show "finite {t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>}"
     using finite_subset by blast
 qed
 
@@ -740,8 +743,8 @@ text \<open>From this it follows that all committed values are equal.\<close>
 lemma (in zen) consistent:
   assumes "ApplyCommit  i t\<^sub>1 \<in> messages"
   assumes "ApplyCommit  i t\<^sub>2 \<in> messages"
-  assumes "ApplyRequest i t\<^sub>1 v\<^sub>1 \<in> messages"
-  assumes "ApplyRequest i t\<^sub>2 v\<^sub>2 \<in> messages"
+  assumes "\<langle> ApplyRequest i t\<^sub>1 v\<^sub>1 \<rangle>\<leadsto>"
+  assumes "\<langle> ApplyRequest i t\<^sub>2 v\<^sub>2 \<rangle>\<leadsto>"
   shows "v\<^sub>1 = v\<^sub>2"
 proof -
   from oneSlot.consistent [OF zen_is_oneSlot] assms
@@ -774,15 +777,19 @@ proof -
   have payload_eq: "payload ` ?routedMessages' = insert (JoinRequest t\<^sub>0) messages" (is "_ = ?messages'")
     by (auto simp add: messages_def)
 
-  define isNewRoutedMessage ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
+  define isNewRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?routedMessages'"
+
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
 
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i s t x. s \<midarrow>\<langle> ApplyRequest i t x \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
-    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isNewRoutedMessage_def)
+    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isMessage_def isNewRoutedMessage_def isNewMessage_def)
 
   from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
     ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
@@ -790,7 +797,7 @@ proof -
     JoinResponse_future ApplyCommit_quorum JoinResponse_Some_ApplyRequest
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewRoutedMessage_def isNewMessage_def)
                  apply (unfold payload_eq messages_simps)
                  apply (unfold era\<^sub>i_def v\<^sub>c_def v_def promised_def prevAccepted_def committedTo_def isCommitted_def Q_def reconfig_def)
     by (simp_all)
@@ -826,6 +833,13 @@ proof -
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent))"
     by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
+
+  have isNewMessage_eq [simp]:
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent)"
+    by (auto simp add: isNewMessage_def isMessage_def)
+
   define promised' where "\<And>i s t. promised' i s t \<equiv> \<exists>i'\<le>i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>'"
   have promised'I: "\<And>i s t. promised i s t \<Longrightarrow> promised' i s t" 
     by (auto simp add: promised'_def promised_def)
@@ -833,14 +847,14 @@ proof -
   have messages_simps:
     "\<And>i s t. s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>' = (s \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0))"
     "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
     by auto
 
   show ?thesis
     apply (unfold_locales)
-                 apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewRoutedMessage_def isNewMessage_def)
                  apply (unfold payload_eq messages_simps)
                  apply (fold isCommitted_def v_def prevAccepted_def)
                  apply (fold v\<^sub>c_def committedTo_def)
@@ -870,7 +884,7 @@ proof -
         by (intro exI [where x = i\<^sub>0], auto simp add: committedTo_def isCommitted_def)
     qed
   next
-    fix i t x assume "ApplyRequest i t x \<in> messages"
+    fix i t x assume "\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     from ApplyRequest_quorum [OF this]
     obtain q
       where q: "q\<in>Q (era\<^sub>t t)" "\<forall>n\<in>q. promised i n t"
@@ -891,7 +905,7 @@ value.}:\<close>
 lemma (in zen) send_JoinResponse_Some:
   assumes "\<forall> i > i\<^sub>0. \<forall> t. \<not> s\<^sub>0 \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
   assumes "s\<^sub>0 \<midarrow>\<langle> ApplyResponse i\<^sub>0 t\<^sub>0' \<rangle>\<leadsto>"
-  assumes "ApplyRequest i\<^sub>0 t\<^sub>0' x\<^sub>0' \<in> messages"
+  assumes "\<langle> ApplyRequest i\<^sub>0 t\<^sub>0' x\<^sub>0' \<rangle>\<leadsto>"
   assumes "t\<^sub>0' < t\<^sub>0"
   assumes "\<forall> t'. s\<^sub>0 \<midarrow>\<langle> ApplyResponse i\<^sub>0 t' \<rangle>\<leadsto> \<longrightarrow> t' \<le> t\<^sub>0'"
     (* first-uncommitted slot and the era is ok *)
@@ -911,6 +925,13 @@ proof -
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')))"
     by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
+
+  have isNewMessage_eq [simp]:
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0'))"
+    by (auto simp add: isNewMessage_def isMessage_def)
+
   define promised' where "\<And>i s t. promised' i s t \<equiv> \<exists>i'\<le>i. \<exists>a. s \<midarrow>\<langle> JoinResponse i' t a \<rangle>\<leadsto>'"
   have promised'I: "\<And>i s t. promised i s t \<Longrightarrow> promised' i s t" 
     by (auto simp add: promised'_def promised_def)
@@ -923,7 +944,7 @@ proof -
     "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>'
         = (s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>
           \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0'))"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
     by auto
@@ -932,10 +953,13 @@ proof -
     apply (unfold_locales)
                  apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewMessage_def)
                  apply (fold prevAccepted'_def)
                  apply (unfold messages_simps)
-                 apply (fold isCommitted_def v_def)
-                 apply (fold v\<^sub>c_def committedTo_def)
+                 apply (fold isCommitted_def)
+                 apply (fold committedTo_def)
+                 apply (fold v_def)
+                 apply (fold v\<^sub>c_def)
                  apply (fold era\<^sub>i_def)
                  apply (fold reconfig_def)
                  apply (fold Q_def promised'_def)
@@ -958,7 +982,7 @@ proof -
     show "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> s \<midarrow>\<langle> ApplyResponse i t' \<rangle>\<leadsto>" by auto
 
     from assms JoinResponse_Some_ApplyRequest
-    show "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> ApplyRequest i t' x' \<in> messages" by auto
+    show "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> \<langle> ApplyRequest i t' x' \<rangle>\<leadsto>" by auto
 
     from assms JoinResponse_Some_max
     show "\<And>i s t t' t'' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<or> (i, s, t, t', x') = (i\<^sub>0, s\<^sub>0, t\<^sub>0, t\<^sub>0', x\<^sub>0') \<Longrightarrow> t' < t'' \<Longrightarrow> t'' < t \<Longrightarrow> \<not> s \<midarrow>\<langle> ApplyResponse i t'' \<rangle>\<leadsto>"
@@ -966,7 +990,7 @@ proof -
 
   next
 
-    fix i t x assume "ApplyRequest i t x \<in> messages"
+    fix i t x assume "\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     from ApplyRequest_quorum [OF this]
     obtain q
       where q: "q\<in>Q (era\<^sub>t t)" "\<forall>n\<in>q. promised i n t"
@@ -1009,7 +1033,7 @@ value accepted in the greatest term amongst all @{term JoinResponse} messages, i
 \end{itemize} \<close>
 
 lemma (in zen) send_ApplyRequest:
-  assumes "\<forall> x. ApplyRequest i\<^sub>0 t\<^sub>0 x \<notin> messages"
+  assumes "\<forall> x. \<not> \<langle> ApplyRequest i\<^sub>0 t\<^sub>0 x \<rangle>\<leadsto>"
   assumes "\<forall> i < i\<^sub>0. \<exists> t. ApplyCommit i t \<in> messages"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
@@ -1032,14 +1056,21 @@ proof -
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0))"
     by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
+
+  have isNewMessage_eq [simp]:
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0)"
+    by (auto simp add: isNewMessage_def isMessage_def)
+
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0))"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = (\<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0))"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
     by auto
 
-  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
+  define v' where "\<And>i t. v' i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>'"
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
   define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
@@ -1051,11 +1082,11 @@ proof -
     show "?thesis i t"
     proof (cases "(i, t) = (i\<^sub>0, t\<^sub>0)")
       case False
-      hence eq: "\<And>x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)" by auto
+      hence eq: "\<And>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>" by auto
       from False show ?thesis by (unfold v'_def eq, auto simp add: v_def)
     next
-      case True with assms have eq: "\<And>x. (ApplyRequest i t x \<in> ?messages') = (x = x\<^sub>0)" by auto
-      from True show ?thesis by (unfold v'_def eq, auto)
+      case True with assms have eq: "\<And>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = (x = x\<^sub>0)" by auto
+      from True show ?thesis using eq by (unfold v'_def eq, auto)
     qed
   qed
 
@@ -1123,6 +1154,7 @@ proof -
     apply (unfold_locales)
                  apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewMessage_def)
                  apply (fold v'_def)
                  apply (fold v\<^sub>c'_def)
                  apply (unfold messages_simps)
@@ -1133,27 +1165,27 @@ proof -
                  apply (fold Q'_def promised_def prevAccepted_def)
     using  JoinResponse_future JoinResponse_None  JoinResponse_Some_lt JoinResponse_Some_ApplyResponse  JoinResponse_Some_max  finite_messages_insert
   proof -
-    from assms ApplyRequest_committedTo show committedTo: "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
+    from assms ApplyRequest_committedTo show committedTo: "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> committed\<^sub>< i" 
       by (auto simp add: committedTo_def isCommitted_def)
 
-    from assms ApplyRequest_function show "\<And>i t x x'. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> ApplyRequest i t x' \<in> messages \<or> (i, t, x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> x = x'"
+    from assms ApplyRequest_function show "\<And>i t x x'. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> \<langle> ApplyRequest i t x' \<rangle>\<leadsto> \<or> (i, t, x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> x = x'"
       by auto
 
-    from ApplyResponse_ApplyRequest show "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
+    from ApplyResponse_ApplyRequest show "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<Longrightarrow> \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by blast
 
-    from ApplyRequest_era era\<^sub>i_eq have "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+    from ApplyRequest_era era\<^sub>i_eq have "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       apply (auto simp add: committedTo_def isCommitted_def)
       using era\<^sub>i_eq isCommitted_committedTo isCommitted_def 
       by (simp add: ApplyRequest_committedTo)
 
-    with assms committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+    with assms committedTo show "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0) \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       by (metis Pair_inject era\<^sub>i_eq)
 
     show "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub>< i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
       using JoinResponse_era era\<^sub>i_eq by force
 
     from JoinResponse_Some_ApplyRequest
-    show "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<Longrightarrow> ApplyRequest i t' x' \<in> messages \<or> (i, t', x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by auto
+    show "\<And>i s t t' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<Longrightarrow> \<langle> ApplyRequest i t' x' \<rangle>\<leadsto> \<or> (i, t', x') = (i\<^sub>0, t\<^sub>0, x\<^sub>0)" by auto
 
   next
     fix i t
@@ -1166,10 +1198,10 @@ proof -
     ultimately show "\<exists>q\<in>Q' (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>" by simp
   next
     fix i t x
-    assume "ApplyRequest i t x \<in> messages \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)"
+    assume "\<langle> ApplyRequest i t x \<rangle>\<leadsto> \<or> (i, t, x) = (i\<^sub>0, t\<^sub>0, x\<^sub>0)"
     thus "\<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
     proof (elim disjE)
-      assume a: "ApplyRequest i t x \<in> messages"
+      assume a: "\<langle> ApplyRequest i t x \<rangle>\<leadsto>"
 
       from ApplyRequest_quorum [OF this]
       obtain q where q: "q \<in> Q (era\<^sub>t t)" "\<forall> n \<in> q. promised i n t"
@@ -1226,7 +1258,7 @@ text \<open>@{term "ApplyResponse i\<^sub>0 t\<^sub>0"} can be sent in response 
 as long as a @{term JoinResponse} for a later term has not been sent:\<close>
 
 lemma (in zen) send_ApplyResponse:
-  assumes "ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<in> messages"
+  assumes "\<langle> ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rangle>\<leadsto>"
   assumes "\<forall> i t a. s\<^sub>0 \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<longrightarrow> t \<le> t\<^sub>0"
   shows "zen (insert \<lparr> sender = s\<^sub>0, destination = anyDestination,
                        payload = ApplyResponse i\<^sub>0 t\<^sub>0 \<rparr> routedMessages)" (is "zen ?routedMessages'")
@@ -1241,9 +1273,16 @@ proof -
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = ApplyResponse i\<^sub>0 t\<^sub>0))"
     by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
+
+  have isNewMessage_eq [simp]:
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyResponse i\<^sub>0 t\<^sub>0)"
+    by (auto simp add: isNewMessage_def isMessage_def)
+
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = (s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0))"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages)"
     by auto
@@ -1252,6 +1291,7 @@ proof -
     apply (unfold_locales)
                  apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewMessage_def)
                  apply (unfold messages_simps)
                  apply (fold prevAccepted_def)
                  apply (fold isCommitted_def v_def)
@@ -1270,7 +1310,7 @@ proof -
       using JoinResponse_Some_ApplyResponse by blast
     show "\<And>i s t t' t'' x'. s \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto> \<Longrightarrow> t' < t'' \<Longrightarrow> t'' < t \<Longrightarrow> \<not> (s \<midarrow>\<langle> ApplyResponse i t'' \<rangle>\<leadsto> \<or> (i, s, t'') = (i\<^sub>0, s\<^sub>0, t\<^sub>0))"
       using JoinResponse_Some_max assms(2) not_le by blast
-    show "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>x. ApplyRequest i t x \<in> messages"
+    show "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
       using ApplyResponse_ApplyRequest assms(1) by blast
     show "\<And>i t. ApplyCommit i t \<in> messages \<Longrightarrow> \<exists>q\<in>Q (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto> \<or> (i, s, t) = (i\<^sub>0, s\<^sub>0, t\<^sub>0)"
       by (meson ApplyCommit_quorum)
@@ -1301,16 +1341,23 @@ proof -
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyCommit i\<^sub>0 t\<^sub>0))"
     by (auto simp add: isNewRoutedMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
 
+  define isNewMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
+
+  have isNewMessage_eq [simp]:
+    "\<And>m. \<langle> m \<rangle>\<leadsto>' = (\<langle> m \<rangle>\<leadsto> \<or> m = ApplyCommit i\<^sub>0 t\<^sub>0)"
+    by (auto simp add: isNewMessage_def isMessage_def)
+
   have messages_simps:
     "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>' = s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
-    "\<And>i t x. (ApplyRequest i t x \<in> ?messages') = (ApplyRequest i t x \<in> messages)"
+    "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. (ApplyCommit i t \<in> ?messages') = (ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0))"
     by auto
 
   define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. ApplyCommit i t \<in> ?messages'"
   define committedTo' ("committed\<^sub><'") where "\<And>i. committed\<^sub><' i \<equiv> \<forall>j < i. isCommitted' j"
-  define v' where "\<And>i t. v' i t \<equiv> THE x. ApplyRequest i t x \<in> ?messages'"
+  define v' where "\<And>i t. v' i t \<equiv> THE x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>'"
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. ApplyCommit i t \<in> ?messages')"
   define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
@@ -1354,8 +1401,8 @@ proof -
         thus "ApplyCommit i\<^sub>0 t' \<in> messages \<or> t' = t\<^sub>0" by blast
 
         fix t assume le: "t\<^sub>0 \<le> t"
-        assume "\<exists>x. ApplyRequest i\<^sub>0 t x \<in> messages"
-        then obtain x where "ApplyRequest i\<^sub>0 t x \<in> messages" by blast
+        assume "\<exists>x. \<langle> ApplyRequest i\<^sub>0 t x \<rangle>\<leadsto>"
+        then obtain x where "\<langle> ApplyRequest i\<^sub>0 t x \<rangle>\<leadsto>" by blast
 
         hence "era\<^sub>t t \<le> era\<^sub>i i\<^sub>0" using ApplyRequest_era by simp
         also from era have "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0" by simp
@@ -1413,6 +1460,7 @@ proof -
     apply (unfold_locales)
                  apply (unfold payload_eq)
                  apply (fold isNewRoutedMessage_def)
+                 apply (fold isNewMessage_def)
                  apply (fold isCommitted'_def)
                  apply (fold committedTo'_def)
                  apply (fold v'_def)
@@ -1427,17 +1475,17 @@ proof -
       JoinResponse_Some_max ApplyRequest_function finite_messages_insert ApplyResponse_ApplyRequest
       JoinResponse_Some_ApplyRequest
   proof -
-    from ApplyRequest_committedTo show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> committed\<^sub><' i" by (simp add: committedTo_eq)
+    from ApplyRequest_committedTo show "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub><' i" by (simp add: committedTo_eq)
 
     from JoinResponse_era era\<^sub>i_eq committedTo_eq
     show "\<And>i s t a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<Longrightarrow> \<exists>i'\<le>i. committed\<^sub><' i' \<and> era\<^sub>t t \<le> era\<^sub>i' i'"
       by force
 
-    from era\<^sub>i_eq show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
+    from era\<^sub>i_eq show "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> era\<^sub>i' i = era\<^sub>t t"
       using ApplyCommit_era era committedTo_current isCommitted_committedTo isCommitted_def 
       by (simp add: ApplyRequest_committedTo ApplyRequest_era)
 
-    show "\<And>i t x. ApplyRequest i t x \<in> messages \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
+    show "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto> \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). (\<forall>n\<in>q. promised i n t) \<and> (prevAccepted i t q = {} \<or> v' i t = v' i (maxTerm (prevAccepted i t q)))"
       by (metis ApplyRequest_JoinResponse ApplyRequest_quorum JoinResponse_era Q'_eq v_eq)
 
     show "\<And>i t. ApplyCommit i t \<in> messages \<or> (i, t) = (i\<^sub>0, t\<^sub>0) \<Longrightarrow> \<exists>q\<in>Q' (era\<^sub>t t). \<forall>s\<in>q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
