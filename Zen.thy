@@ -1610,6 +1610,7 @@ record NodeData =
   currentEra :: Era (* era of the localCheckpoint slot *)
   currentConfiguration :: Configuration (* configuration of the currentEra *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
+  (* acceptor data *)
   lastAccepted :: PreviousApplyResponse (* term and value that were last accepted in this slot, if any *)
   minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
   (* election data *)
@@ -1617,7 +1618,10 @@ record NodeData =
   electionVotes :: "Node set"
   electionWon :: bool
   electionValue :: PreviousApplyResponse
+  (* learner data *)
   applyRequestedInCurrentSlot :: bool
+  applyTerm :: Term
+  applyVotes :: "Node set"
 
 definition applyValue :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
@@ -1642,6 +1646,14 @@ fun combineApplyResponses :: "PreviousApplyResponse \<Rightarrow> PreviousApplyR
   | "combineApplyResponses par NoApplyResponseSent = par"
   | "combineApplyResponses (ApplyResponseSent t\<^sub>1 x\<^sub>1) (ApplyResponseSent t\<^sub>2 x\<^sub>2)
         = (if t\<^sub>1 < t\<^sub>2 then ApplyResponseSent t\<^sub>2 x\<^sub>2 else ApplyResponseSent t\<^sub>1 x\<^sub>1)"
+
+definition HandleClientRequest :: "NodeData \<Rightarrow> Value \<Rightarrow> (NodeData * RoutedMessage list)"
+  where "HandleClientRequest nd x \<equiv>
+    if electionWon nd \<and> \<not> applyRequestedInCurrentSlot nd
+    then ( nd \<lparr> applyRequestedInCurrentSlot := True \<rparr>
+         , [ \<lparr> sender = currentNode nd, destination = Broadcast,
+               payload = ApplyRequest (localCheckpoint nd) (electionTerm nd) x \<rparr> ] )
+    else (nd, [])"
 
 definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow> (NodeData * RoutedMessage list)"
   where
@@ -1671,22 +1683,25 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
                    nd1 = nd \<lparr> electionVotes := newVotes
                             , electionValue := combineApplyResponses (electionValue nd) a
                             , electionWon := isQuorum nd newVotes
-                            , electionTerm := t \<rparr>
+                            , electionTerm := t
+                            , applyRequestedInCurrentSlot := False \<rparr>
 
-                in (case (electionWon nd1, electionValue nd1) of
-                      (True, ApplyResponseSent _ x)
-                          \<Rightarrow> ( nd1 \<lparr> applyRequestedInCurrentSlot := True \<rparr>
-                             , broadcast (ApplyRequest (localCheckpoint nd) t x))
+                in (case electionValue nd1 of
+                      ApplyResponseSent _ x \<Rightarrow> HandleClientRequest nd1 x
                       | _ \<Rightarrow> (nd1, []))
 
       | ApplyRequest i t x \<Rightarrow>
           if minimumAcceptableTerm nd \<le> t
                 \<and> \<not> lastAcceptedGreaterTermThan t nd
+                \<and> localCheckpoint nd = i
           then ( nd \<lparr> lastAccepted := ApplyResponseSent t x \<rparr>
                , respond (ApplyResponse i t))
           else (nd, [])
 
-      | ApplyResponse i t \<Rightarrow> (nd, [])
+      | ApplyResponse i t \<Rightarrow>
+          if localCheckpoint nd = i
+          then (nd, [])
+          else (nd, [])
 
       | ApplyCommit i t \<Rightarrow> let
           nd' = if i = localCheckpoint nd
@@ -1695,7 +1710,8 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
                       if t = t'
                       then applyValue x'
                               nd \<lparr> localCheckpoint := i + 1
-                                 , lastAccepted := NoApplyResponseSent \<rparr>
+                                 , lastAccepted := NoApplyResponseSent
+                                 , applyRequestedInCurrentSlot := False \<rparr>
                       else nd
                   | NoApplyResponseSent \<Rightarrow> nd
                 else nd
