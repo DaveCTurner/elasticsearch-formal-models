@@ -406,9 +406,9 @@ record RoutedMessage =
 
 locale zen =
   fixes routedMessages :: "RoutedMessage set"
-  fixes isRoutedMessage :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [55])
+  fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow> _" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> routedMessages"
-  fixes isRoutedMessageAnyDestination :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
+  fixes isMessageFrom :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
   fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
   defines "\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>"
@@ -521,7 +521,7 @@ proof -
   fix t\<^sub>0
   define f :: "RoutedMessage \<Rightarrow> Term" where "f \<equiv> \<lambda> m. case payload m of JoinResponse _ _ (ApplyResponseSent t' _) \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
   have "prevAccepted i t ns \<subseteq> f ` routedMessages"
-    apply (simp add: prevAccepted_def f_def isRoutedMessageAnyDestination_def isRoutedMessage_def, intro subsetI)
+    apply (simp add: prevAccepted_def f_def isMessageFrom_def isMessageFromTo_def, intro subsetI)
     using image_iff by fastforce
   with finite_messages show ?thesis using finite_surj by auto
 qed
@@ -727,7 +727,7 @@ next
     where "f \<equiv> \<lambda> m. case payload m of ApplyRequest i t x \<Rightarrow> t | _ \<Rightarrow> t\<^sub>0"
 
   have "{t. \<exists>x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>} \<subseteq> f ` routedMessages"
-    apply (unfold isMessage_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    apply (unfold isMessage_def isMessageFrom_def isMessageFromTo_def)
     using f_def image_iff by fastforce
 
   moreover have "finite (f ` routedMessages)"
@@ -785,7 +785,7 @@ proof -
     "\<And>i t x. \<langle> ApplyRequest i t x \<rangle>\<leadsto>' = \<langle> ApplyRequest i t x \<rangle>\<leadsto>"
     "\<And>i s t. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>' = s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
     "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>' = \<langle> ApplyCommit i t \<rangle>\<leadsto>"
-    by (auto simp add: isRoutedMessageAnyDestination_def isRoutedMessage_def isMessage_def isMessageFrom'_def isMessage'_def)
+    by (auto simp add: isMessageFrom_def isMessageFromTo_def isMessage_def isMessageFrom'_def isMessage'_def)
 
   from ApplyResponse_ApplyRequest ApplyRequest_era ApplyRequest_quorum ApplyRequest_function
     ApplyRequest_committedTo JoinResponse_Some_lt JoinResponse_Some_ApplyResponse
@@ -824,7 +824,7 @@ proof -
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 NoApplyResponseSent))"
-    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isMessageFrom_def isMessageFromTo_def)
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
@@ -913,7 +913,7 @@ proof -
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = JoinResponse i\<^sub>0 t\<^sub>0 (ApplyResponseSent t\<^sub>0' x\<^sub>0')))"
-    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isMessageFrom_def isMessageFromTo_def)
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
@@ -1040,7 +1040,7 @@ proof -
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyRequest i\<^sub>0 t\<^sub>0 x\<^sub>0))"
-    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isMessageFrom_def isMessageFromTo_def)
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
@@ -1253,7 +1253,7 @@ proof -
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = s\<^sub>0 \<and> m = ApplyResponse i\<^sub>0 t\<^sub>0))"
-    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isMessageFrom_def isMessageFromTo_def)
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
@@ -1317,7 +1317,7 @@ proof -
 
   have isMessageFrom'_eq [simp]:
     "\<And>s m. s \<midarrow>\<langle> m \<rangle>\<leadsto>' = (s \<midarrow>\<langle> m \<rangle>\<leadsto> \<or> (s = anySender \<and> m = ApplyCommit i\<^sub>0 t\<^sub>0))"
-    by (auto simp add: isMessageFrom'_def isRoutedMessageAnyDestination_def isRoutedMessage_def)
+    by (auto simp add: isMessageFrom'_def isMessageFrom_def isMessageFromTo_def)
 
   define isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55]) where
     "\<And>m. \<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
