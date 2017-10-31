@@ -1758,6 +1758,22 @@ fun combineApplyResponses :: "PreviousApplyResponse \<Rightarrow> PreviousApplyR
   | "combineApplyResponses (ApplyResponseSent t\<^sub>1 x\<^sub>1) (ApplyResponseSent t\<^sub>2 x\<^sub>2)
         = (if t\<^sub>1 < t\<^sub>2 then ApplyResponseSent t\<^sub>2 x\<^sub>2 else ApplyResponseSent t\<^sub>1 x\<^sub>1)"
 
+lemma combineApplyResponses_p_none[simp]:
+  "combineApplyResponses par NoApplyResponseSent = par"
+  by (cases par, auto)
+
+lemma combineApplyResponses_eq_NoApplyResponseSent_1:
+  assumes "combineApplyResponses p1 p2 = NoApplyResponseSent"
+  shows "p1 = NoApplyResponseSent"
+  using assms
+  by (metis PreviousApplyResponse.exhaust combineApplyResponses.simps(3) combineApplyResponses_p_none)
+
+lemma combineApplyResponses_eq_NoApplyResponseSent_2:
+  assumes "combineApplyResponses p1 p2 = NoApplyResponseSent"
+  shows "p2 = NoApplyResponseSent"
+  using assms
+  by (metis combineApplyResponses.simps(1) combineApplyResponses_eq_NoApplyResponseSent_1)
+
 definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleClientValue x nd \<equiv>
@@ -1796,8 +1812,7 @@ definition handleJoinResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Ri
                    nd2 = nd1 \<lparr> electionVotes := newVotes
                              , electionValue := combineApplyResponses (electionValue nd1)
                                  (if i = localCheckpoint nd1 then a else NoApplyResponseSent)
-                             , electionWon := isQuorum nd1 newVotes
-                             , applyRequestedInCurrentSlot := False \<rparr>
+                             , electionWon := isQuorum nd1 newVotes \<rparr>
 
                 in (case electionValue nd2 of
                       ApplyResponseSent _ x \<Rightarrow> handleClientValue x nd2
@@ -1936,6 +1951,10 @@ proof -
       using zenImpl_axioms by blast
   }
   note noop = this
+
+  from `m \<in> messages`
+  have m: "(sender m) \<midarrow>\<langle> payload m \<rangle>\<rightarrow> (destination m)"
+    by (cases m, auto simp add: isMessageFromTo_def)
 
   define response :: "Message \<Rightarrow> RoutedMessage option"
     where
@@ -2207,6 +2226,13 @@ proof -
       qed
     next
       case (JoinResponse i t a)
+
+      from JoinResponse_not_broadcast m JoinResponse dest_ok
+      have m: "(sender m) \<midarrow>\<langle> JoinResponse i t a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+        apply (cases "destination m")
+        using isMessageTo_def apply fastforce
+        by (auto simp add: isMessageTo_def nd_def nodesIdentified)
+
       show ?thesis
       proof (cases "localCheckpoint nd < i
              \<or> t < electionTerm nd
@@ -2224,6 +2250,271 @@ proof -
           by auto
         hence False_eq: "(localCheckpoint nd < i \<or> t < electionTerm nd \<or> t = electionTerm nd \<and> electionWon nd \<or> era\<^sub>t t \<noteq> currentEra nd) = False"
           by auto
+
+        define nd1 where "nd1 \<equiv> if electionTerm nd = t
+                         then nd
+                         else nd \<lparr> electionVotes := {}
+                                 , electionTerm := t
+                                 , electionWon := False
+                                 , electionValue := NoApplyResponseSent
+                                 , applyRequestedInCurrentSlot := False
+                                 \<rparr>"
+        define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
+
+        have nodeState1_simps:
+          "\<And>n. currentNode (nodeState1 n) = currentNode (nodeState n)"
+          "\<And>n. localCheckpoint (nodeState1 n) = localCheckpoint (nodeState n)"
+          "\<And>n. currentEra (nodeState1 n) = currentEra (nodeState n)"
+          "\<And>n q. isQuorum (nodeState1 n) q = isQuorum (nodeState n) q"
+          "\<And>n q. lastAccepted (nodeState1 n) = lastAccepted (nodeState n)"
+          "\<And>n q. minimumAcceptableTerm (nodeState1 n) = minimumAcceptableTerm (nodeState n)"
+          by (auto simp add: nodeState1_def nd1_def nd_def isQuorum_def)
+
+        have zen1: "zenImpl messages nodeState1"
+        proof (cases "electionTerm nd = t")
+          case True
+          hence eq: "nodeState1 = nodeState" by (intro ext, auto simp add: nodeState1_def nd1_def nd_def)
+          show ?thesis
+            by (unfold eq, intro_locales) 
+        next
+          case False
+          show "zenImpl messages nodeState1"
+            apply (intro_locales, intro zenImpl_axioms.intro)
+                       apply (unfold nodeState1_simps)
+                       apply (fold isMessageFromTo_def isMessageFrom_def isMessage_def)
+                       apply (fold isCommitted_def v_def)
+                       apply (fold committedTo_def v\<^sub>c_def)
+                       apply (fold era\<^sub>i_def reconfig_def Q_def)
+            using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
+              isQuorum_localCheckpoint
+              nothingAcceptedInLaterSlots lastAccepted JoinResponse_minimumAcceptableTerm
+          proof -
+            fix n t' x assume p: "n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t' x \<rangle>\<leadsto>"
+            from ApplyRequest_electionTerm [OF this] False'
+            show "t' \<le> electionTerm (nodeState1 n)"
+              by (auto simp add: nodeState1_def nd1_def nd_def)
+            assume q: "\<not> applyRequestedInCurrentSlot (nodeState1 n)"
+            show "t' < electionTerm (nodeState1 n)"
+            proof (cases "n = n\<^sub>0")
+              case False
+              from q have "\<not> applyRequestedInCurrentSlot (nodeState n)" by (simp add: nodeState1_def False)
+              from ApplyRequest_electionTerm_applyRequested [OF p this]
+              show ?thesis
+                by (simp add: nodeState1_def False)
+            next
+              case True
+              from ApplyRequest_electionTerm [OF p] False False'
+              show ?thesis
+                by (simp add: nodeState1_def True nd1_def nd_def)
+            qed
+
+          next
+            from applyRequested_electionWon False
+            show "\<And>n. applyRequestedInCurrentSlot (nodeState1 n) \<Longrightarrow> electionWon (nodeState1 n)"
+              by (auto simp add: nodeState1_def nd1_def)
+
+            from electionVotes False
+            show "\<And>n n'. n' \<in> electionVotes (nodeState1 n)
+                   \<Longrightarrow> \<exists>i\<le>localCheckpoint (nodeState n).
+                          \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n)"
+              by (auto simp add: nodeState1_def nd1_def)
+
+            from prevAccepted_empty False
+            show "\<And>n. ({t'. \<exists>s\<in>electionVotes (nodeState1 n). \<exists>x'. s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<leadsto>} = {}) =
+                        (electionValue (nodeState1 n) = NoApplyResponseSent)"
+              by (auto simp add: nodeState1_def nd1_def prevAccepted_def)
+          qed
+        qed
+
+        define newVotes where "newVotes \<equiv> insert (sender m) (electionVotes nd1)"
+        define nd2 where "nd2 \<equiv> nd1 \<lparr> electionVotes := newVotes
+                                     , electionValue := combineApplyResponses (electionValue nd1)
+                                         (if i = localCheckpoint nd1 then a else NoApplyResponseSent)
+                                     , electionWon := isQuorum nd1 newVotes \<rparr>"
+        define nodeState2 where "\<And>n. nodeState2 n \<equiv> if n = n\<^sub>0 then nd2 else nodeState1 n"
+
+        have nodeState2_simps:
+          "\<And>n. currentNode (nodeState2 n) = currentNode (nodeState n)"
+          "\<And>n. localCheckpoint (nodeState2 n) = localCheckpoint (nodeState n)"
+          "\<And>n. currentEra (nodeState2 n) = currentEra (nodeState n)"
+          "\<And>n q. isQuorum (nodeState2 n) q = isQuorum (nodeState n) q"
+          "\<And>n q. lastAccepted (nodeState2 n) = lastAccepted (nodeState n)"
+          "\<And>n q. minimumAcceptableTerm (nodeState2 n) = minimumAcceptableTerm (nodeState n)"
+          "\<And>n q. electionTerm (nodeState2 n) = electionTerm (nodeState1 n)"
+          "\<And>n q. applyRequestedInCurrentSlot (nodeState2 n) = applyRequestedInCurrentSlot (nodeState1 n)"
+          by (auto simp add: nodeState2_def nd2_def nd_def nodeState1_def nd1_def isQuorum_def)
+
+        have "zenImpl messages nodeState2"
+          apply (intro_locales, intro zenImpl_axioms.intro)
+                     apply (unfold nodeState2_simps)
+                     apply (fold isMessageFromTo_def isMessageFrom_def isMessage_def)
+                     apply (fold isCommitted_def v_def)
+                     apply (fold committedTo_def v\<^sub>c_def)
+                     apply (fold era\<^sub>i_def reconfig_def Q_def)
+        proof -
+          from nodesIdentified show "\<And>n. currentNode (nodeState n) = n" .
+          from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))".
+          from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))" .
+          from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))" .
+          from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>" .
+          from lastAccepted show "\<And>n. case lastAccepted (nodeState n) of NoApplyResponseSent \<Rightarrow> \<forall>t. \<not> n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t \<rangle>\<leadsto>
+         | ApplyResponseSent t' x' \<Rightarrow>
+             t' \<le> minimumAcceptableTerm (nodeState n) \<and>
+             n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t' \<rangle>\<leadsto> \<and>
+             \<langle> ApplyRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto> \<and> (\<forall>t''. n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t'' \<rangle>\<leadsto> \<longrightarrow> t'' \<le> t')" .
+          from JoinResponse_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
+
+          from zenImpl.ApplyRequest_electionTerm [OF zen1]
+          show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> electionTerm (nodeState1 n)"
+            by (auto simp add: isMessageFrom_def isMessageFromTo_def nodeState1_simps)
+
+          from zenImpl.ApplyRequest_electionTerm_applyRequested [OF zen1]
+          show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequestedInCurrentSlot (nodeState1 n) \<Longrightarrow> t < electionTerm (nodeState1 n)"
+            by (auto simp add: isMessageFrom_def isMessageFromTo_def nodeState1_simps)
+
+        next
+          fix n
+          assume a: "applyRequestedInCurrentSlot (nodeState1 n)"
+          show "electionWon (nodeState2 n)"
+          proof (cases "n = n\<^sub>0")
+            case False with applyRequested_electionWon a
+            show ?thesis by (simp add: nodeState1_def nodeState2_def)
+          next
+            case True
+            with a have p: "electionTerm nd = t" 
+              by (cases "electionTerm nd = t", auto simp add: nodeState1_def nd1_def)
+
+            with False' have "\<not> electionWon nd" by simp
+            moreover from a p have "applyRequestedInCurrentSlot nd"
+              by (simp add: nodeState1_def True nd1_def)
+            with applyRequested_electionWon have "electionWon nd" by (simp add: nd_def)
+            ultimately show ?thesis by simp
+          qed
+
+        next
+          fix n n'
+          assume a: "n' \<in> electionVotes (nodeState2 n)"
+
+          show "\<exists>i\<le>localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n)"
+          proof (cases "n = n\<^sub>0")
+            case False with electionVotes a show ?thesis by (simp add: nodeState2_def nodeState1_def)
+          next
+            case True
+            from a have "n' = sender m \<or> (n' \<in> electionVotes (nodeState n) \<and> electionTerm nd = t)"
+              by (cases "electionTerm nd = t",
+                  auto simp add: True nodeState2_def nd2_def nodeState1_def newVotes_def nd1_def nd_def)
+            thus ?thesis
+            proof (elim disjE conjE)
+              assume "n' \<in> electionVotes (nodeState n)" "electionTerm nd = t"
+              with electionVotes
+              show ?thesis
+                by (auto simp add: nodeState1_def nd1_def nd_def)
+            next
+              assume n': "n' = sender m"
+              show ?thesis
+              proof (intro exI conjI)
+                from False' show "i \<le> localCheckpoint (nodeState n)" by (simp add: True nd_def)
+                from m show "n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n)"
+                  by (simp add: n' nodeState1_def nd1_def True)
+              qed
+            qed
+          qed
+
+        next
+          fix n
+          show "({t'. \<exists>s\<in>electionVotes (nodeState2 n). \<exists>x'. s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<leadsto>} = {}) =
+         (electionValue (nodeState2 n) = NoApplyResponseSent)" (is "(?A = {}) = _")
+          proof (cases "n = n\<^sub>0")
+            case False
+            with prevAccepted_empty show ?thesis
+              by (auto simp add: prevAccepted_def nodeState2_def nodeState1_def)
+          next
+            case True note n_eq = this
+
+            have t: "t = electionTerm (nodeState1 n)"
+              by (simp add: nodeState1_def True nd1_def)
+            have electionVotes_eq: "electionVotes (nodeState2 n) = insert (sender m) (electionVotes (nodeState1 n))"
+              by (simp add: nodeState2_def n_eq nd2_def newVotes_def nodeState1_def)
+
+            show ?thesis
+            proof (intro iffI equalityI subsetI)
+              assume a: "?A = {}"
+
+              have "electionValue (nodeState2 n) = electionValue (nodeState1 n)"
+              proof (cases "i = localCheckpoint nd")
+                case True
+                from m a have "a = NoApplyResponseSent"
+                  by (cases a, auto simp add: True nodeState2_def nd2_def nd_def t n_eq newVotes_def isMessageFrom_def)
+                thus ?thesis
+                  by (cases "electionValue nd1", simp_all add: nodeState2_def n_eq nd2_def nodeState1_def)
+              next
+                case False
+                then show ?thesis
+                  by (cases "electionValue nd", simp_all add: nodeState2_def nd2_def n_eq nd1_def nodeState1_def)
+              qed
+              also from a have "electionValue (nodeState1 n) = NoApplyResponseSent"
+                apply (intro iffD1 [OF zenImpl.prevAccepted_empty [OF zen1]])
+                by (auto simp add: nodeState1_simps isMessageFrom_def isMessageFromTo_def electionVotes_eq)
+
+              finally show "electionValue (nodeState2 n) = NoApplyResponseSent" .
+            next
+              fix t' assume "t' \<in> ?A"
+              then obtain s x' where s: "s \<in> electionVotes (nodeState2 n)"
+                and x': "s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
+                by (auto simp add: t)
+
+              assume ev2: "electionValue (nodeState2 n) = NoApplyResponseSent"
+
+              have ev2_eq: "electionValue (nodeState2 n)
+                         = combineApplyResponses (electionValue nd1)
+                                                 (if i = localCheckpoint nd1 then a else NoApplyResponseSent)"
+                by (auto simp add: nodeState2_def n_eq nd2_def)
+
+              with ev2 have ev2: "... = NoApplyResponseSent" by simp
+
+              have ev1: "electionValue nd1 = NoApplyResponseSent"
+                by (intro combineApplyResponses_eq_NoApplyResponseSent_1 [OF ev2]) 
+
+              from combineApplyResponses_eq_NoApplyResponseSent_2 [OF ev2]
+              have a: "i = localCheckpoint nd1 \<Longrightarrow> a = NoApplyResponseSent" by simp
+
+              from s electionVotes_eq have "s = sender m \<or> s \<in> electionVotes (nodeState1 n)"
+                by auto
+
+              thus "t' : {}"
+              proof (elim disjE)
+                assume "s \<in> electionVotes (nodeState1 n)"
+                with zenImpl.prevAccepted_empty [OF zen1, of n] x'
+                have "electionValue (nodeState1 n) \<noteq> NoApplyResponseSent"
+                  by (auto simp add: nodeState1_simps isMessageFrom_def isMessageFromTo_def t)
+                with ev1 show ?thesis by (simp add: nodeState1_def n_eq)
+              next
+                assume "s = sender m"
+                show ?thesis
+                proof (cases "i = localCheckpoint nd1")
+                  case True
+                  from x'
+                  have "(sender m) \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
+                    by (simp add: `s = sender m` True nd1_def nd_def n_eq)
+                  moreover from m have "(sender m) \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
+                  ultimately have "a = ApplyResponseSent t' x'" by (intro JoinResponse_func)
+                  with a True show ?thesis by simp
+                next
+
+                  note JoinResponse_minimumAcceptableTerm [OF x'] m
+                  
+
+                with electionValue_eq show ?thesis by simp
+              next
+                case False
+
+
+                from a show ?thesis proof (simp add: nodeState2_def True n_eq nd2_def nodeState1_simps nd1_def)
+
+  using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
+              isQuorum_localCheckpoint
+              nothingAcceptedInLaterSlots lastAccepted JoinResponse_minimumAcceptableTerm
+          from zen.
 
 (* TODO update these defs to match the code *)
 
