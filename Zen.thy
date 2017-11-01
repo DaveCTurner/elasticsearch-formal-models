@@ -2405,10 +2405,23 @@ proof -
                           \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n)"
               by (auto simp add: nodeState1_def nd1_def ensureElectionTerm_def)
 
-            from prevAccepted_empty False
-            show "\<And>n. ({t'. \<exists>s\<in>electionVotes (nodeState1 n). \<exists>x'. s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<leadsto>} = {}) =
-                        (electionValue (nodeState1 n) = NoApplyResponseSent)"
-              by (auto simp add: nodeState1_def nd1_def prevAccepted_def ensureElectionTerm_def)
+            from electionValue_None False
+            show "\<And>n n'. electionValue (nodeState1 n) = NoApplyResponseSent \<Longrightarrow>
+                 n' \<in> electionVotes (nodeState1 n) \<Longrightarrow>
+                 (n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) NoApplyResponseSent \<rangle>\<rightarrow> (OneNode n)) \<or>
+                 (\<exists>i<localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n))"
+              apply (auto simp add: nodeState1_def nd1_def prevAccepted_def ensureElectionTerm_def)
+              by blast
+
+            from electionValue_Some False
+            show "\<And>n t' x'. electionValue (nodeState1 n) = ApplyResponseSent t' x' \<Longrightarrow>
+                \<exists>n'\<in>electionVotes (nodeState1 n).
+                   (n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)) \<and>
+                   (\<forall>n''\<in>electionVotes (nodeState1 n).
+                       \<forall>t'' x''. (n'' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)) \<longrightarrow> t'' \<le> t')"
+              apply (auto simp add: nodeState1_def nd1_def prevAccepted_def ensureElectionTerm_def)
+              by blast
+
           next
             fix n
             assume electionWon: "electionWon (nodeState1 n)"
@@ -2527,6 +2540,285 @@ proof -
 
         next
           fix n
+          have [simp]: "isQuorum nd1 newVotes = isQuorum nd newVotes"
+            by (auto simp add: nd1_def ensureElectionTerm_def isQuorum_def)
+
+          from zenImpl.electionWon_isQuorum [OF zen1, where n = n]
+          show "electionWon (nodeState2 n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState2 n))"
+            by (cases "n = n\<^sub>0", simp_all add: nodeState2_def nd2 nd_def nodeState1_def)
+        
+        next
+          fix n n'
+          assume None2: "electionValue (nodeState2 n) = NoApplyResponseSent"
+          hence None1: "electionValue (nodeState1 n) = NoApplyResponseSent"
+            by (cases "n = n\<^sub>0", cases "i = localCheckpoint nd1",
+                auto simp add: nodeState2_def nd2 nodeState1_def combineApplyResponses_eq_NoApplyResponseSent_1)
+
+          assume "n' \<in> electionVotes (nodeState2 n)"
+          hence "n' \<in> electionVotes (nodeState1 n) \<or> (n = n\<^sub>0 \<and> n' = sender m)"
+            by (cases "n = n\<^sub>0", auto simp add: nodeState2_def nd2 newVotes_def nodeState1_def)
+
+          thus "(n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) NoApplyResponseSent \<rangle>\<rightarrow> (OneNode n)) \<or>
+            (\<exists>i<localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n))"
+          proof (elim disjE conjE)
+            assume "n' \<in> electionVotes (nodeState1 n)"
+            from zenImpl.electionValue_None [OF zen1 None1 this]
+            show ?thesis
+              by (auto simp add: isMessageFromTo_def nodeState1_simps)
+          next
+            assume eqs: "n = n\<^sub>0" "n' = sender m"
+            show ?thesis
+            proof (cases "i = localCheckpoint nd1")
+              case False
+              show ?thesis
+              proof (intro disjI2 exI conjI)
+                from False False'
+                show "i < localCheckpoint (nodeState n)"
+                  by (cases "electionTerm nd = t", auto simp add: eqs nd_def nd1_def ensureElectionTerm_def)
+
+                from m show "n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState1 n)) a \<rangle>\<rightarrow> (OneNode n)"
+                  by (auto simp add: eqs nodeState1_def nd1_def ensureElectionTerm_def)
+              qed
+            next
+              case True
+              have localCheckpoint1: "localCheckpoint nd1 = localCheckpoint nd"
+                by (simp add: nd1_def ensureElectionTerm_def)
+
+              have electionTerm1: "electionTerm nd1 = t"
+                by (simp add: nd1_def ensureElectionTerm_def)
+
+              from None2 combineApplyResponses_eq_NoApplyResponseSent_2
+              have a: "a = NoApplyResponseSent"
+                by (simp add: eqs nodeState2_def nd2 True)
+
+              from m
+              show ?thesis
+                by (simp add: eqs electionTerm1 nodeState1_def True localCheckpoint1 nd_def a)
+            qed
+          qed
+
+        next
+          fix n t' x'
+          assume electionValue2: "electionValue (nodeState2 n) = ApplyResponseSent t' x'"
+
+          show "\<exists>n'\<in>electionVotes (nodeState2 n).
+                  (n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)) \<and>
+                  (\<forall>n''\<in>electionVotes (nodeState2 n). \<forall>t'' x''. (n'' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)) \<longrightarrow> t'' \<le> t')"
+          proof (cases "n = n\<^sub>0")
+            case False
+            from electionValue2 have "electionValue (nodeState n) = ApplyResponseSent t' x'"
+              by (simp add: nodeState2_def nodeState1_def False)
+            from electionValue_Some [OF this] False
+            show ?thesis
+              by (simp add: nodeState2_def nodeState1_def)
+          next
+            case True note n_eq = this
+
+            have electionVotes2: "electionVotes (nodeState2 n) = insert (sender m) (electionVotes nd1)"
+              by (simp add: nodeState2_def n_eq nd2 newVotes_def)
+            have localCheckpoint1:
+              "localCheckpoint (nodeState1 n) = localCheckpoint nd"
+              "localCheckpoint nd1 = localCheckpoint nd"
+              by (simp_all add: nodeState1_def n_eq nd1_def ensureElectionTerm_def)
+            have electionTerm1: "electionTerm (nodeState1 n) = t"
+              by (simp add: nodeState1_def n_eq nd1_def ensureElectionTerm_def)
+
+            show ?thesis
+            proof (cases "i = localCheckpoint nd1")
+              case False
+
+              from electionValue2
+              have electionValue1: "electionValue nd1 = ApplyResponseSent t' x'"
+                by (simp add: nodeState2_def n_eq nd2 False)
+
+              hence "electionValue (nodeState1 n\<^sub>0) = ApplyResponseSent t' x'"
+                by (simp add: nodeState1_def)
+
+              from zenImpl.electionValue_Some [OF zen1 this] electionTerm1
+              obtain n' where n'_vote: "n' \<in> electionVotes nd1"
+                and n'_sent: "n' \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                and n'_max: "\<And>n'' t'' x''. \<lbrakk> n'' \<in> electionVotes nd1;
+                 n'' \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n\<^sub>0) \<rbrakk> \<Longrightarrow> t'' \<le> t'"
+                by (auto simp add: n_eq nodeState1_def localCheckpoint1 isMessageFromTo_def)
+
+              show ?thesis
+              proof (intro bexI conjI ballI impI allI)
+                from n'_vote electionVotes2 show "n' \<in> electionVotes (nodeState2 n)"
+                  by (auto simp add: nodeState2_def)
+                from n'_sent electionTerm1
+                show "n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+                  by (auto simp add: nd_def n_eq)
+
+                fix n'' t'' x''
+                assume n''_vote: "n'' \<in> electionVotes (nodeState2 n)"
+                assume n''_sent: "n'' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)"
+
+                from n''_vote electionVotes2 have "n'' = sender m \<or> n'' \<in> electionVotes nd1" by simp
+                thus "t'' \<le> t'"
+                proof (elim disjE)
+                  assume n'': "n'' = sender m"
+                  have "i = localCheckpoint nd"
+                  proof (intro JoinResponse_slot_function)
+                    from m show "n''\<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto>"
+                      by (auto simp add: isMessageFrom_def n'')
+                    from n''_sent electionTerm1
+                    show "n'' \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t'' x'') \<rangle>\<leadsto>"
+                      by (auto simp add: isMessageFrom_def n_eq nd_def)
+                  qed
+                  with False show ?thesis by (cases "electionTerm nd = t", auto simp add: nd1_def ensureElectionTerm_def)
+                next
+                  assume n''_vote: "n'' \<in> electionVotes nd1"
+                  from n''_sent electionTerm1
+                  show ?thesis
+                    by (intro n'_max [OF n''_vote], auto simp add: n_eq nd_def)
+                qed
+              qed
+            next
+              case True
+              note i = this
+
+              from electionValue2
+              have combine: "combineApplyResponses (electionValue nd1) a = ApplyResponseSent t' x'"
+                by (simp add: nodeState2_def n_eq nd2 i)
+
+              show ?thesis
+              proof (cases a)
+                case NoApplyResponseSent
+
+                from combine have "electionValue (nodeState1 n) = ApplyResponseSent t' x'"
+                  by (simp add: NoApplyResponseSent nodeState1_def n_eq)
+                from zenImpl.electionValue_Some [OF zen1 this] electionTerm1
+                obtain n' where n'_vote: "n' \<in> electionVotes nd1"
+                  and n'_sent: "n' \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                  and n'_max: "\<And>n'' t'' x''. \<lbrakk> n'' \<in> electionVotes nd1;
+                 n'' \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n\<^sub>0) \<rbrakk> \<Longrightarrow> t'' \<le> t'"
+                  by (auto simp add: n_eq nodeState1_def localCheckpoint1 isMessageFromTo_def)
+
+                show ?thesis
+                proof (intro bexI conjI ballI allI impI)
+                  from n'_vote electionVotes2 show "n' \<in> electionVotes (nodeState2 n)" by auto
+                  from n'_sent electionTerm1 show "n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+                    by (simp add: nd_def n_eq)
+                next
+                  fix n'' t'' x''
+                  assume n''_vote: "n'' \<in> electionVotes (nodeState2 n)"
+                    and n''_sent: "n'' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)"
+                  from n''_vote electionVotes2
+                  have "n'' = sender m \<or> n'' \<in> electionVotes nd1" by simp
+                  thus "t'' \<le> t'"
+                  proof (elim disjE)
+                    assume n''_vote: "n'' \<in> electionVotes nd1"
+                    from n''_sent electionTerm1
+                    show ?thesis
+                      by (intro n'_max [OF n''_vote], simp add: n_eq nd_def)
+                  next
+                    assume n''_eq: "n'' = sender m"
+                    from n''_sent electionTerm1
+                    have m': "(sender m) \<midarrow>\<langle> JoinResponse (localCheckpoint nd) t (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                      by (simp add: n''_eq n_eq nd_def)
+
+                    from m m'
+                    have localCheckpoint_eq: "localCheckpoint nd = i"
+                      by (intro JoinResponse_slot_function, auto simp add: isMessageFrom_def)
+
+                    from m m' localCheckpoint_eq
+                    have "a = ApplyResponseSent t'' x''"
+                      by (intro JoinResponse_func, auto simp add: isMessageFrom_def)
+
+                    with NoApplyResponseSent show ?thesis by simp
+                  qed
+                qed
+
+              next
+                case (ApplyResponseSent t'' x'') note a = this
+
+                show ?thesis
+                proof (cases "electionValue (nodeState1 n)")
+                  case NoApplyResponseSent
+
+                  from electionValue2 NoApplyResponseSent have "a = ApplyResponseSent t' x' \<and> i = localCheckpoint nd1"
+                    by (cases "i = localCheckpoint nd1", auto simp add: nodeState2_def n_eq nd2 nodeState1_def)
+                  hence a: "a = ApplyResponseSent t' x'" and i: "i = localCheckpoint nd"
+                    by (auto simp add: localCheckpoint1)
+
+                  show ?thesis
+                  proof (intro bexI conjI ballI allI impI)
+                    from electionVotes2 show "sender m \<in> electionVotes (nodeState2 n)" by simp
+                    from m electionTerm1 show "(sender m) \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+                      by (simp add: i a n_eq nd_def)
+
+                    fix n''' t''' x'''
+                    assume "n''' \<in> electionVotes (nodeState2 n)"
+                      "n''' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t''' x''') \<rangle>\<rightarrow> (OneNode n)"
+
+                    with electionVotes2 electionTerm1 n_eq i
+                    have n'''_vote: "n''' \<in> electionVotes (nodeState1 n) \<or> n''' = sender m"
+                      and n'''_sent: "n''' \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t''' x''') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                      by (auto simp add: nd_def nodeState1_def)
+
+                    from n'''_vote
+                    show "t''' \<le> t'"
+                    proof (elim disjE)
+                      assume n''': "n''' = sender m"
+                      have "ApplyResponseSent t''' x''' = ApplyResponseSent t' x'"
+                      proof (intro JoinResponse_func)
+                        from n'''_sent show "n''' \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t''' x''') \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
+                        from m a n''' show "n''' \<midarrow>\<langle> JoinResponse i t (ApplyResponseSent t' x') \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
+                      qed
+                      thus ?thesis by simp
+                    next
+                      assume n'''_vote: "n''' \<in> electionVotes (nodeState1 n)"
+
+                      from zenImpl.electionValue_None [OF zen1 NoApplyResponseSent this]
+                        localCheckpoint1 electionTerm1 i
+                      have "n''' \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto> \<or> (\<exists> i' < i. \<exists> a'. n''' \<midarrow>\<langle> JoinResponse i' t a' \<rangle>\<leadsto>)"
+                        by (auto simp add: isMessageFrom_def isMessageFromTo_def)
+                      thus ?thesis
+                      proof (elim disjE exE conjE)
+                        assume "n''' \<midarrow>\<langle> JoinResponse i t NoApplyResponseSent \<rangle>\<leadsto>"
+                        with n'''_sent have "NoApplyResponseSent = ApplyResponseSent t''' x'''"
+                          by (intro JoinResponse_func, auto simp add: isMessageFrom_def)
+                        thus ?thesis by simp
+                      next
+                        fix i' a'
+                        assume "n''' \<midarrow>\<langle> JoinResponse i' t a' \<rangle>\<leadsto>"
+                        with n'''_sent have "i = i'"
+                          by (intro JoinResponse_slot_function, auto simp add: isMessageFrom_def)
+                        moreover assume "i' < i"
+                        ultimately show ?thesis by simp
+                      qed
+                    qed
+                  qed
+                next
+                  case (ApplyResponseSent t''' x''')
+
+                  with a electionValue2 i
+                  have False
+                  proof (simp_all add: nodeState2_def n_eq nd2 nodeState1_def)
+
+
+
+(*  \<lparr>sender = n''', destination = OneNode n, payload = JoinResponse (localCheckpoint (nodeState1 n)) (electionTerm (nodeState1 n)) NoApplyResponseSent\<rparr> \<in> messages \<or>
+  (\<exists>i<localCheckpoint (nodeState1 n). \<exists>a. \<lparr>sender = n''', destination = OneNode n, payload = JoinResponse i (electionTerm (nodeState1 n)) a\<rparr> \<in> messages)
+ *)
+
+
+
+
+                then show ?thesis sorry
+              next
+                case (ApplyResponseSent t''' x''')
+                then show ?thesis sorry
+              qed
+
+                  note JoinResponse_slot_function [OF m]
+
+              show ?thesis
+
+            note m
+
+
+          fix n
           show "({t'. \<exists>s\<in>electionVotes (nodeState2 n). \<exists>x'. s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<leadsto>} = {}) =
          (electionValue (nodeState2 n) = NoApplyResponseSent)" (is "(?A = {}) = _")
           proof (cases "n = n\<^sub>0")
@@ -2614,15 +2906,6 @@ proof -
               qed
             qed simp
           qed
-
-        next
-          fix n
-          have [simp]: "isQuorum nd1 newVotes = isQuorum nd newVotes"
-            by (auto simp add: nd1_def ensureElectionTerm_def isQuorum_def)
-
-          from zenImpl.electionWon_isQuorum [OF zen1, where n = n]
-          show "electionWon (nodeState2 n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState2 n))"
-            by (cases "n = n\<^sub>0", simp_all add: nodeState2_def nd2 nd_def nodeState1_def)
         qed
 
         define broadcast' :: "(NodeData * Message option) \<Rightarrow> (NodeData * RoutedMessage option)" where
