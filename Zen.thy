@@ -1727,7 +1727,7 @@ record NodeData =
   electionWon :: bool
   electionValue :: PreviousApplyResponse
   (* learner data *)
-  applyRequestedInCurrentSlot :: bool
+  applyRequested :: bool (* whether an ApplyRequest has been sent with slot=localCheckpoint and term=electionTerm *)
   applyTerm :: Term
   applyVotes :: "Node set"
 
@@ -1777,8 +1777,8 @@ lemma combineApplyResponses_eq_NoApplyResponseSent_2:
 definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleClientValue x nd \<equiv>
-        if electionWon nd \<and> \<not> applyRequestedInCurrentSlot nd
-              then ( nd \<lparr> applyRequestedInCurrentSlot := True \<rparr>
+        if electionWon nd \<and> \<not> applyRequested nd
+              then ( nd \<lparr> applyRequested := True \<rparr>
                    , Some (ApplyRequest (localCheckpoint nd) (electionTerm nd) x) )
               else (nd, None)"
 
@@ -1799,7 +1799,7 @@ definition ensureElectionTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> Node
                                         , electionTerm := t
                                         , electionWon := False
                                         , electionValue := NoApplyResponseSent
-                                        , applyRequestedInCurrentSlot := False
+                                        , applyRequested := False
                                         \<rparr>"
 
 definition addElectionVote :: "Node \<Rightarrow> nat => PreviousApplyResponse \<Rightarrow> NodeData \<Rightarrow> NodeData"
@@ -1818,7 +1818,7 @@ definition sendElectionValueIfAppropriate :: "NodeData \<Rightarrow> (NodeData *
       \<equiv> if electionWon nd
           then case electionValue nd of
             ApplyResponseSent _ x
-              \<Rightarrow> ( nd \<lparr> applyRequestedInCurrentSlot := True \<rparr>
+              \<Rightarrow> ( nd \<lparr> applyRequested := True \<rparr>
                  , Some (ApplyRequest (localCheckpoint nd) (electionTerm nd) x) )
             | _ \<Rightarrow> (nd, None)
           else (nd, None)"
@@ -1865,7 +1865,7 @@ definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \
               then applyValue x'
                       nd \<lparr> localCheckpoint := i + 1
                          , lastAccepted := NoApplyResponseSent
-                         , applyRequestedInCurrentSlot := False \<rparr>
+                         , applyRequested := False \<rparr>
               else nd
           | NoApplyResponseSent \<Rightarrow> nd
         else nd"
@@ -1884,7 +1884,7 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       , electionVotes = {}
       , electionWon = False
       , electionValue = NoApplyResponseSent
-      , applyRequestedInCurrentSlot = True
+      , applyRequested = True
       , applyTerm = SOME t. False
       , applyVotes = {}
       \<rparr>"
@@ -1934,10 +1934,10 @@ locale zenImpl = zen +
         \<Longrightarrow> t \<le> electionTerm (nodeState n)"
   assumes ApplyRequest_electionTerm_applyRequested:
     "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto>
-        \<Longrightarrow> \<not> applyRequestedInCurrentSlot (nodeState n)
+        \<Longrightarrow> \<not> applyRequested (nodeState n)
         \<Longrightarrow> t < electionTerm (nodeState n)"
   assumes applyRequested_electionWon:
-    "\<And>n. applyRequestedInCurrentSlot (nodeState n) \<Longrightarrow> electionWon (nodeState n)"
+    "\<And>n. applyRequested (nodeState n) \<Longrightarrow> electionWon (nodeState n)"
   assumes electionVotes:
     "\<And> n n'. n' \<in> electionVotes (nodeState n)
       \<Longrightarrow> \<exists> i \<le> localCheckpoint (nodeState n). \<exists> a.
@@ -2100,7 +2100,7 @@ proof -
           "\<And>n. electionWon (nodeState' n) = electionWon (nodeState n)"
           "\<And>n. electionVotes (nodeState' n) = electionVotes (nodeState n)"
           "\<And>n. electionValue (nodeState' n) = electionValue (nodeState n)"
-          "\<And>n. applyRequestedInCurrentSlot (nodeState' n) = applyRequestedInCurrentSlot (nodeState n)"
+          "\<And>n. applyRequested (nodeState' n) = applyRequested (nodeState n)"
           by (auto simp add: nodeState'_def nd_def isQuorum_def)
 
         have "\<And>s d i t. (\<lparr>sender = s, destination = d, payload = ApplyCommit i t\<rparr> \<in> messages')
@@ -2132,8 +2132,8 @@ proof -
           from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))" .
           from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>".
           from ApplyRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> electionTerm (nodeState n)".
-          from ApplyRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequestedInCurrentSlot (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
-          from applyRequested_electionWon show "\<And>n. applyRequestedInCurrentSlot (nodeState n) \<Longrightarrow> electionWon (nodeState n)" .
+          from ApplyRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequested (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
+          from applyRequested_electionWon show "\<And>n. applyRequested (nodeState n) \<Longrightarrow> electionWon (nodeState n)" .
           from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))" .
           from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState n))" .
           from electionVotes show "\<And>n n'. n' \<in> electionVotes (nodeState n) \<Longrightarrow>
@@ -2318,7 +2318,7 @@ proof -
         define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
 
         from False' applyRequested_electionWon
-        have applyRequested1: "\<not> applyRequestedInCurrentSlot nd1"
+        have applyRequested1: "\<not> applyRequested nd1"
           by (auto simp add: nd1_def ensureElectionTerm_def nd_def)
 
         have nodeState1_simps:
@@ -2353,11 +2353,11 @@ proof -
             from ApplyRequest_electionTerm [OF this] False'
             show "t' \<le> electionTerm (nodeState1 n)"
               by (auto simp add: nodeState1_def nd1_def nd_def ensureElectionTerm_def)
-            assume q: "\<not> applyRequestedInCurrentSlot (nodeState1 n)"
+            assume q: "\<not> applyRequested (nodeState1 n)"
             show "t' < electionTerm (nodeState1 n)"
             proof (cases "n = n\<^sub>0")
               case False
-              from q have "\<not> applyRequestedInCurrentSlot (nodeState n)" by (simp add: nodeState1_def False)
+              from q have "\<not> applyRequested (nodeState n)" by (simp add: nodeState1_def False)
               from ApplyRequest_electionTerm_applyRequested [OF p this]
               show ?thesis
                 by (simp add: nodeState1_def False)
@@ -2370,7 +2370,7 @@ proof -
 
           next
             from applyRequested_electionWon False
-            show "\<And>n. applyRequestedInCurrentSlot (nodeState1 n) \<Longrightarrow> electionWon (nodeState1 n)"
+            show "\<And>n. applyRequested (nodeState1 n) \<Longrightarrow> electionWon (nodeState1 n)"
               by (auto simp add: nodeState1_def nd1_def ensureElectionTerm_def)
 
             from electionVotes False
@@ -2419,7 +2419,7 @@ proof -
           "\<And>n q. lastAccepted (nodeState2 n) = lastAccepted (nodeState n)"
           "\<And>n q. minimumAcceptableTerm (nodeState2 n) = minimumAcceptableTerm (nodeState n)"
           "\<And>n q. electionTerm (nodeState2 n) = electionTerm (nodeState1 n)"
-          "\<And>n q. applyRequestedInCurrentSlot (nodeState2 n) = applyRequestedInCurrentSlot (nodeState1 n)"
+          "\<And>n q. applyRequested (nodeState2 n) = applyRequested (nodeState1 n)"
           by (auto simp add: nodeState2_def nd2 nd1_def nd_def isQuorum_def nodeState1_simps ensureElectionTerm_def nodeState1_def)
 
         have zen2: "zenImpl messages nodeState2"
@@ -2448,12 +2448,12 @@ proof -
             by (auto simp add: isMessageFrom_def isMessageFromTo_def nodeState1_simps)
 
           from zenImpl.ApplyRequest_electionTerm_applyRequested [OF zen1]
-          show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequestedInCurrentSlot (nodeState1 n) \<Longrightarrow> t < electionTerm (nodeState1 n)"
+          show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequested (nodeState1 n) \<Longrightarrow> t < electionTerm (nodeState1 n)"
             by (auto simp add: isMessageFrom_def isMessageFromTo_def nodeState1_simps)
 
         next
           fix n
-          assume a: "applyRequestedInCurrentSlot (nodeState1 n)"
+          assume a: "applyRequested (nodeState1 n)"
           show "electionWon (nodeState2 n)"
           proof (cases "n = n\<^sub>0")
             case False with applyRequested_electionWon a
@@ -2464,7 +2464,7 @@ proof -
               by (cases "electionTerm nd = t", auto simp add: nodeState1_def nd1_def ensureElectionTerm_def)
 
             with False' have "\<not> electionWon nd" by simp
-            moreover from a p have "applyRequestedInCurrentSlot nd"
+            moreover from a p have "applyRequested nd"
               by (simp add: nodeState1_def True nd1_def ensureElectionTerm_def)
             with applyRequested_electionWon have "electionWon nd" by (simp add: nd_def)
             ultimately show ?thesis by simp
@@ -2645,13 +2645,13 @@ proof -
             have isQuorum2: "isQuorum nd2 = isQuorum nd"
               by (auto simp add: nd2 nd1_def isQuorum_def ensureElectionTerm_def)
 
-            from applyRequested1 have applyRequested2: "\<not> applyRequestedInCurrentSlot nd2"
+            from applyRequested1 have applyRequested2: "\<not> applyRequested nd2"
               by (auto simp add: nd2 addElectionVote_def)
 
             have currentNode2: "currentNode nd2 = n\<^sub>0"
               by (simp add: nd2 nd1_def ensureElectionTerm_def nd_def nodesIdentified)
 
-            hence result: "result = (nd2 \<lparr> applyRequestedInCurrentSlot := True \<rparr>,
+            hence result: "result = (nd2 \<lparr> applyRequested := True \<rparr>,
                             Some \<lparr> sender = n\<^sub>0, destination = Broadcast,
                                     payload = ApplyRequest (localCheckpoint nd2) t x' \<rparr>)"
               by (simp add: result broadcast'_def sendElectionValueIfAppropriate_def True ApplyResponseSent electionTerm2)
