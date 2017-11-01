@@ -1942,6 +1942,8 @@ locale zenImpl = zen +
     "\<And> n n'. n' \<in> electionVotes (nodeState n)
       \<Longrightarrow> \<exists> i \<le> localCheckpoint (nodeState n). \<exists> a.
         n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n)"
+  assumes electionWon_isQuorum:
+    "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState n))"
   assumes prevAccepted_empty:
     "\<And> n. (prevAccepted (localCheckpoint (nodeState n))
                          (electionTerm (nodeState n))
@@ -2133,7 +2135,7 @@ proof -
           from ApplyRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequestedInCurrentSlot (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
           from applyRequested_electionWon show "\<And>n. applyRequestedInCurrentSlot (nodeState n) \<Longrightarrow> electionWon (nodeState n)" .
           from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))" .
-
+          from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState n))" .
           from electionVotes show "\<And>n n'. n' \<in> electionVotes (nodeState n) \<Longrightarrow>
             \<exists>i\<le>localCheckpoint (nodeState n). \<exists>a. \<lparr>sender = n', destination = OneNode n, payload = JoinResponse i (electionTerm (nodeState n)) a\<rparr> \<in> messages'"
             apply (auto simp add: isMessageFrom_def messages'_def result response_def isMessageFromTo_def nd_def)
@@ -2381,6 +2383,21 @@ proof -
             show "\<And>n. ({t'. \<exists>s\<in>electionVotes (nodeState1 n). \<exists>x'. s \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState1 n)) (ApplyResponseSent t' x') \<rangle>\<leadsto>} = {}) =
                         (electionValue (nodeState1 n) = NoApplyResponseSent)"
               by (auto simp add: nodeState1_def nd1_def prevAccepted_def ensureElectionTerm_def)
+          next
+            fix n
+            assume electionWon: "electionWon (nodeState1 n)"
+            show "isQuorum (nodeState n) (electionVotes (nodeState1 n))"
+            proof (cases "n = n\<^sub>0")
+              case False
+              with electionWon electionWon_isQuorum show ?thesis by (simp add: nodeState1_def)
+            next
+              case True
+
+              from electionWon have "nd1 = nd"
+                by (cases "electionTerm nd = t", auto simp add: nodeState1_def True nd1_def ensureElectionTerm_def)
+              with electionWon electionWon_isQuorum show ?thesis
+                by (simp add: nodeState1_def True nd_def)
+            qed
           qed
         qed
 
@@ -2571,6 +2588,15 @@ proof -
               qed
             qed simp
           qed
+
+        next
+          fix n
+          have [simp]: "isQuorum nd1 newVotes = isQuorum nd newVotes"
+            by (auto simp add: nd1_def ensureElectionTerm_def isQuorum_def)
+
+          from zenImpl.electionWon_isQuorum [OF zen1, where n = n]
+          show "electionWon (nodeState2 n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState2 n))"
+            by (cases "n = n\<^sub>0", simp_all add: nodeState2_def nd2 nd_def nodeState1_def)
         qed
 
         define broadcast' :: "(NodeData * Message option) \<Rightarrow> (NodeData * RoutedMessage option)" where
@@ -2616,6 +2642,9 @@ proof -
             have electionTerm2: "electionTerm nd2 = t"
               by (auto simp add: nd2 nd1_def ensureElectionTerm_def)
 
+            have isQuorum2: "isQuorum nd2 = isQuorum nd"
+              by (auto simp add: nd2 nd1_def isQuorum_def ensureElectionTerm_def)
+
             from applyRequested1 have applyRequested2: "\<not> applyRequestedInCurrentSlot nd2"
               by (auto simp add: nd2 addElectionVote_def)
 
@@ -2642,7 +2671,21 @@ proof -
                 by (auto simp add: isMessage_def isMessageFrom_def isMessageFromTo_def nodeState2_def)
 
               from False' eraMatchesLocalCheckpoint [where n = n\<^sub>0] localCheckpoint2
-              show "era\<^sub>t t = era\<^sub>i (localCheckpoint nd2)"
+              show era_eq: "era\<^sub>t t = era\<^sub>i (localCheckpoint nd2)"
                 by (simp add: nd_def)
 
-              note isQuorum_localCheckpoint [where n = n\<^sub>0]
+              from zenImpl.electionWon_isQuorum [OF zen2, where n = n\<^sub>0] True
+              have "electionVotes nd2 \<in> { q. isQuorum nd2 q }"
+                by (simp add: nd2_def nodeState2_def) 
+
+              also from isQuorum_localCheckpoint [where n = n\<^sub>0] have "... = Q (era\<^sub>i (localCheckpoint nd))"
+                by (unfold nd_def isQuorum2)
+
+              also from era_eq have "... = Q (era\<^sub>t t)" by (simp add: localCheckpoint2)
+
+              finally show "electionVotes nd2 \<in> Q (era\<^sub>t t)" .
+
+              from zenImpl.electionVotes [OF zen2, where n = n\<^sub>0]
+              show "\<forall>s\<in>electionVotes nd2. \<exists>i\<le>localCheckpoint nd2. \<exists>a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                by (auto simp add: nodeState2_def isMessageFromTo_def electionTerm2)
+
