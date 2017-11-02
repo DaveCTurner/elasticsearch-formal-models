@@ -2880,3 +2880,54 @@ proof -
               show "\<forall>s\<in>electionVotes nd2. \<exists>i\<le>localCheckpoint nd2. \<exists>a. s \<midarrow>\<langle> JoinResponse i t a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
                 by (auto simp add: nodeState2_def isMessageFromTo_def electionTerm2)
 
+              show "prevAccepted (localCheckpoint nd2) t (electionVotes nd2) \<noteq> {} \<longrightarrow> x' = v (localCheckpoint nd2) (maxTerm (prevAccepted (localCheckpoint nd2) t (electionVotes nd2)))"
+              proof (intro impI)
+                assume nonempty: "prevAccepted (localCheckpoint nd2) t (electionVotes nd2) \<noteq> {}" (is "?T \<noteq> {}")
+
+                define t'' where "t'' = maxTerm ?T"
+                have t''_mem: "t'' \<in> ?T"
+                  by (unfold t''_def, intro maxTerm_mem finite_prevAccepted nonempty)
+
+                have t''_max: "\<And>t'''. t''' \<in> ?T \<Longrightarrow> t''' \<le> t''"
+                  by (unfold t''_def, intro maxTerm_max finite_prevAccepted)
+
+                from t''_mem obtain s x'' where s_vote: "s \<in> electionVotes nd2"
+                  and s_send: "s \<midarrow>\<langle> JoinResponse (localCheckpoint nd2) t (ApplyResponseSent t'' x'') \<rangle>\<leadsto>"
+                  by (auto simp add: prevAccepted_def)
+
+                show "x' = v (localCheckpoint nd2) t''"
+                proof (intro ApplyRequest_function)
+                  define P where "\<And>x. P x \<equiv> \<langle> ApplyRequest (localCheckpoint nd2) t'' x \<rangle>\<leadsto>"
+                  have v_The: "v (localCheckpoint nd2) t'' = (THE x. P x)"
+                    by (simp add: P_def v_def)
+
+                  have "P (v (localCheckpoint nd2) t'')"
+                  proof (unfold v_The, intro theI [of P], unfold P_def)
+                    from JoinResponse_Some_ApplyRequest [OF s_send]
+                    show a1: "\<langle> ApplyRequest (localCheckpoint nd2) t'' x'' \<rangle>\<leadsto>" .
+                    fix x'''
+                    assume a2: "\<langle> ApplyRequest (localCheckpoint nd2) t'' x''' \<rangle>\<leadsto>"
+                    show "x''' = x''"
+                      by (intro ApplyRequest_function [OF a2 a1])
+                  qed
+
+                  thus "\<langle> ApplyRequest (localCheckpoint nd2) t'' (v (localCheckpoint nd2) t'') \<rangle>\<leadsto>"
+                    by (simp add: P_def)
+
+                  from ApplyResponseSent zenImpl.electionValue_Some [OF zen2, where n = n\<^sub>0] electionTerm2
+                  obtain s' where s'_vote: "s' \<in> electionVotes nd2"
+                    and s'_send: "s' \<midarrow>\<langle> JoinResponse (localCheckpoint nd2) t (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                    by (auto simp add: nodeState2_def isMessageFromTo_def)
+
+                  from s'_vote s'_send have "t' \<le> t''"
+                    by (intro t''_max, auto simp add: prevAccepted_def isMessageFrom_def)
+                  moreover have "t'' \<le> t'"
+                  proof (intro zenImpl.electionValue_Some_max [OF zen2, where n = n\<^sub>0])
+                    from ApplyResponseSent
+                    show "electionValue (nodeState2 n\<^sub>0) = ApplyResponseSent t' x'"
+                      by (simp add: nodeState2_def)
+
+                    from s_vote show "s \<in> electionVotes (nodeState2 n\<^sub>0)" by (simp add: nodeState2_def)
+
+
+
