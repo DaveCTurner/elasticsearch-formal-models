@@ -2929,5 +2929,27 @@ proof -
 
                     from s_vote show "s \<in> electionVotes (nodeState2 n\<^sub>0)" by (simp add: nodeState2_def)
 
+                    from zenImpl.electionVotes [OF zen2 this] electionTerm2
+                    obtain i' a' where s1: "s \<midarrow>\<langle> JoinResponse i' t a' \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+                      by (auto simp add: isMessageFromTo_def nodeState2_def)
 
+                    from s_send obtain d where
+                      s2: "s \<midarrow>\<langle> JoinResponse (localCheckpoint nd2) t (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> d" by (auto simp add: isMessageFrom_def)
+
+                    have "d = OneNode n\<^sub>0"
+                      by (intro JoinResponse_unique_destination [OF s2 s1])
+
+                    with s2 electionTerm2 show "\<lparr>sender = s, destination = OneNode n\<^sub>0, payload = JoinResponse (localCheckpoint (nodeState2 n\<^sub>0)) (electionTerm (nodeState2 n\<^sub>0)) (ApplyResponseSent t'' x'')\<rparr> \<in> messages"
+                      by (auto simp add: isMessageFromTo_def nodeState2_def)
+                  qed
+                  ultimately have t_eq: "t'' = t'" by simp
+
+                  show "\<langle> ApplyRequest (localCheckpoint nd2) t'' x' \<rangle>\<leadsto>"
+                  proof (intro JoinResponse_Some_ApplyRequest, unfold t_eq)
+                    from s'_send show "s' \<midarrow>\<langle> JoinResponse (localCheckpoint nd2) t (ApplyResponseSent t' x') \<rangle>\<leadsto>"
+                      by (auto simp add: isMessageFrom_def)
+                  qed
+                qed
+              qed
+            qed
 
