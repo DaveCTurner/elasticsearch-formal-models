@@ -500,7 +500,7 @@ locale zen =
     "\<And>i t. \<langle> ApplyCommit i t \<rangle>\<leadsto>
                         \<Longrightarrow> \<exists> q \<in> Q (era\<^sub>t t). \<forall> s \<in> q. s \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>"
 
-declare [[goals_limit = 20]]
+declare [[goals_limit = 30]]
 
 subsection \<open>Utility lemmas\<close>
 
@@ -2563,7 +2563,6 @@ next
       \<or> (s, i, t', a, d) = (n\<^sub>0, localCheckpoint nd, t, lastAccepted nd, OneNode (sender message)))"
     by (unfold isMessageFromTo'_def isMessageFromTo_def, auto simp add: messages')
 
-
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
   have v\<^sub>c_eq[simp]: "v\<^sub>c' = v\<^sub>c" by (intro ext, auto simp add: v\<^sub>c'_def v\<^sub>c_def)
   have isCommitted_eq[simp]: "isCommitted' = isCommitted" by (intro ext, auto simp add: isCommitted'_def isCommitted_def)
@@ -2782,6 +2781,139 @@ next
     qed
   qed
 qed
+
+lemma (in zenStep) ensureElectionTerm_invariants:
+  fixes t
+  assumes t: "electionTerm nd \<le> t"
+  assumes nd': "nd' = ensureElectionTerm t nd"
+  assumes messages': "messages' = messages"
+  shows "zenImpl messages' nodeState'"
+proof (cases "electionTerm nd = t")
+  case True
+  hence "nodeState' = nodeState"
+    by (intro ext, unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+  with zenImpl_axioms messages' show ?thesis by simp
+next
+  case False
+
+  have message_simps[simp]:
+    "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
+    "\<And>p d. (\<langle> p \<rangle>\<rightarrow>' d) = (\<langle> p \<rangle>\<rightarrow> d)"
+    "\<And>s p. (s \<midarrow>\<langle> p \<rangle>\<leadsto>') = (s \<midarrow>\<langle> p \<rangle>\<leadsto>)"
+    "\<And>p. (\<langle> p \<rangle>\<leadsto>') = (\<langle> p \<rangle>\<leadsto>)"
+    by (unfold isMessageFromTo'_def isMessageTo'_def isMessageFrom'_def isMessage'_def,
+        auto simp add: messages' isMessageFromTo_def isMessageTo_def isMessageFrom_def isMessage_def)
+
+  have property_simps[simp]:
+    "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
+    "\<And>n. localCheckpoint (nodeState' n) = localCheckpoint (nodeState n)"
+    "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
+    "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
+    "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
+    "\<And>n. minimumAcceptableTerm (nodeState' n) = minimumAcceptableTerm (nodeState n)"
+    "electionTerm (nodeState' n\<^sub>0) = t"
+    "electionWon (nodeState' n\<^sub>0) = False"
+    "electionVotes (nodeState' n\<^sub>0) = {}"
+    "electionValue (nodeState' n\<^sub>0) = NoApplyResponseSent"
+    "applyRequested (nodeState' n\<^sub>0) = False"
+    using False
+    by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' ensureElectionTerm_def)
+
+  have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
+  have v\<^sub>c_eq[simp]: "v\<^sub>c' = v\<^sub>c" by (intro ext, auto simp add: v\<^sub>c'_def v\<^sub>c_def)
+  have isCommitted_eq[simp]: "isCommitted' = isCommitted" by (intro ext, auto simp add: isCommitted'_def isCommitted_def)
+  have committedTo_eq[simp]: "committed\<^sub><' = committed\<^sub><" by (intro ext, auto simp add: committedTo'_def committedTo_def)
+  have era\<^sub>i_eq[simp]: "era\<^sub>i' = era\<^sub>i" by (intro ext, auto simp add: era\<^sub>i'_def era\<^sub>i_def)
+  have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
+  have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
+
+  show "zenImpl messages' nodeState'"
+    apply (intro zenImplI)
+                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq)
+      (*      using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
+              isQuorum_localCheckpoint JoinResponse_slot_function
+              nothingAcceptedInLaterSlots JoinResponse_minimumAcceptableTerm *)
+  proof -
+    from zen_axioms show "zen messages'" by (simp add: messages')
+    from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))".
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))".
+    from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))".
+    from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> ApplyResponse i t \<rangle>\<leadsto>" .
+    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoApplyResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t \<rangle>\<leadsto>" .
+    from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = ApplyResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)" .
+    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = ApplyResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = ApplyResponseSent t' x' \<Longrightarrow> \<langle> ApplyRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = ApplyResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> ApplyResponse (localCheckpoint (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
+    from JoinResponse_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
+    from JoinResponse_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinResponse i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinResponse i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
+
+    from applyRequested_electionWon show "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+
+    from electionVotes False show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (localCheckpoint (nodeState n)) n' n (electionTerm (nodeState' n))"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def promised'_def)
+
+    from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState' n))"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+
+    from electionWon_era False show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i (localCheckpoint (nodeState n))"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+
+    from electionValue_None False show " \<And>n n'. electionValue (nodeState' n) = NoApplyResponseSent \<Longrightarrow>
+            n' \<in> electionVotes (nodeState' n) \<Longrightarrow>
+            (n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) NoApplyResponseSent \<rangle>\<rightarrow> (OneNode n))
+                \<or> (\<exists>i<localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinResponse i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow> (OneNode n))"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def, blast)
+
+    from electionValue_Some show "\<And>n t' x'. electionValue (nodeState' n) = ApplyResponseSent t' x'
+      \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) (ApplyResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+
+    fix n
+    from electionValue_Some_max False show "\<And>t' x' n'' t'' x''. electionValue (nodeState' n) = ApplyResponseSent t' x'
+      \<Longrightarrow> n'' \<in> electionVotes (nodeState' n)
+      \<Longrightarrow> n'' \<midarrow>\<langle> JoinResponse (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) (ApplyResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)
+      \<Longrightarrow> t'' \<le> t'"
+      by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+
+    fix t' x'
+    assume sent: "n \<midarrow>\<langle> ApplyRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>"
+
+    show "t' \<le> electionTerm (nodeState' n)"
+    proof (cases "n = n\<^sub>0")
+      case False
+      with ApplyRequest_electionTerm sent show ?thesis
+        by (unfold nodeState'_def, auto)
+    next
+      case True
+      with ApplyRequest_electionTerm sent have "t' \<le> electionTerm nd" by (simp add: nd_def)
+      also note t
+      also have "t = electionTerm (nodeState' n)" by (simp add: True)
+      finally show ?thesis .
+    qed
+
+    assume not_requested: "\<not> applyRequested (nodeState' n)"
+    show "t' < electionTerm (nodeState' n)"
+    proof (cases "n = n\<^sub>0")
+      case False
+      with ApplyRequest_electionTerm_applyRequested sent not_requested show ?thesis
+        by (unfold nodeState'_def, auto)
+    next
+      case True
+      with ApplyRequest_electionTerm sent have "t' \<le> electionTerm nd" by (simp add: nd_def)
+      also from t False have "... < t" by simp
+      also have "t = electionTerm (nodeState' n)" by (simp add: True)
+      finally show ?thesis .
+    qed
+  qed
+qed
+
+
+
+
+
+
 
 
 
