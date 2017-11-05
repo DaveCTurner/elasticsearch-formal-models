@@ -1982,6 +1982,7 @@ locale zenStep = zenImpl +
   fixes messages' :: "RoutedMessage set"
   fixes message :: RoutedMessage
   assumes message: "message \<in> messages"
+  assumes messages_subset: "messages \<subseteq> messages'"
 
 definition (in zenStep) nd :: NodeData
   where "nd \<equiv> nodeState n\<^sub>0"
@@ -2080,6 +2081,19 @@ fun (in zenStep) send :: "(Message \<Rightarrow> RoutedMessage) \<Rightarrow> ('
   where
     "send f (_, None) = messages"
   | "send f (_, Some m) = insert (f m) messages"
+
+lemma (in zenStep)
+  assumes "zenImpl messages' nodeState'"
+  shows "zenStep messages' nodeState' messages' message"
+proof (intro_locales)
+  from assms
+  show "zen messages'" "zenImpl_axioms messages' nodeState'"
+    by (simp_all add: zenImpl_def)
+
+  from message messages_subset
+  show "zenStep_axioms messages' messages' message"
+    by (intro zenStep_axioms.intro, auto)
+qed
 
 lemma (in zenStep) handleClientValue_invariants:
   fixes x
