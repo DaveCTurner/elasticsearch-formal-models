@@ -1727,7 +1727,6 @@ record NodeData =
   electionValue :: PreviousPublishResponse
   (* learner data *)
   applyRequested :: bool (* whether an PublishRequest has been sent with slot=firstUncommittedSlot and term=currentTerm *)
-  applyTerm :: Term
   applyVotes :: "Node set"
 
 definition applyValue :: "Value \<Rightarrow> NodeData \<Rightarrow> NodeData"
@@ -1798,6 +1797,7 @@ definition ensureElectionTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> Node
                                         , electionWon := False
                                         , electionValue := NoPublishResponseSent
                                         , applyRequested := False
+                                        , applyVotes := {}
                                         \<rparr>"
 
 definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
@@ -1851,10 +1851,10 @@ definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \
 definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishResponse s i t nd \<equiv>
-        if firstUncommittedSlot nd = i \<and> applyTerm nd \<le> t
-        then let oldVotes = if applyTerm nd = t then applyVotes nd else {};
-                 newVotes = insert s oldVotes
-             in (nd \<lparr> applyTerm := t, applyVotes := newVotes \<rparr>,
+        if firstUncommittedSlot nd = i \<and> currentTerm nd \<le> t
+        then let nd1 = ensureElectionTerm t nd;
+                 newVotes = insert s (applyVotes nd1)
+             in (nd1 \<lparr> applyVotes := newVotes \<rparr>,
                  if isQuorum nd newVotes then Some (ApplyCommit i t) else None)
         else (nd, None)"
 
@@ -1888,7 +1888,6 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       , electionWon = False
       , electionValue = NoPublishResponseSent
       , applyRequested = True
-      , applyTerm = SOME t. False
       , applyVotes = {}
       \<rparr>"
 
