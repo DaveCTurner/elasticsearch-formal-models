@@ -1788,9 +1788,9 @@ definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (Nod
     "handleClientValue x nd \<equiv>
       if electionValue nd = NoPublishResponseSent then publishValue x nd else (nd, None)"
 
-definition ensureElectionTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition ensureCurrentTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
-    "ensureElectionTerm t nd \<equiv> if currentTerm nd = t
+    "ensureCurrentTerm t nd \<equiv> if currentTerm nd = t
                                 then nd
                                 else nd \<lparr> electionVotes := {}
                                         , currentTerm := t
@@ -1803,7 +1803,7 @@ definition ensureElectionTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> Node
 definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleStartJoin t nd \<equiv> if currentTerm nd < t \<and> era\<^sub>t t = currentEra nd
-          then ( ensureElectionTerm t nd
+          then ( ensureCurrentTerm t nd
                , Some (JoinRequest (firstUncommittedSlot nd)
                                      t
                                     (lastAccepted nd)))
@@ -1834,7 +1834,7 @@ definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rig
              \<or> (t = currentTerm nd \<and> electionWon nd)
              \<or> era\<^sub>t t \<noteq> currentEra nd
           then (nd, None)
-          else let nd1 = ensureElectionTerm t nd;
+          else let nd1 = ensureCurrentTerm t nd;
                    nd2 = addElectionVote s i a nd1
                in sendElectionValueIfAppropriate nd2"
 
@@ -1852,7 +1852,7 @@ definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \
   where
     "handlePublishResponse s i t nd \<equiv>
         if firstUncommittedSlot nd = i \<and> currentTerm nd \<le> t
-        then let nd1 = ensureElectionTerm t nd;
+        then let nd1 = ensureCurrentTerm t nd;
                  newVotes = insert s (applyVotes nd1)
              in (nd1 \<lparr> applyVotes := newVotes \<rparr>,
                  if isQuorum nd newVotes then Some (ApplyCommit i t) else None)
@@ -1910,8 +1910,8 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
           | Reboot \<Rightarrow> (handleReboot nd, None)
         else (nd, None)"
 
-lemma currentTerm_ensureElectionTerm[simp]: "currentTerm (ensureElectionTerm t nd) = t"
-  by (auto simp add: ensureElectionTerm_def)
+lemma currentTerm_ensureCurrentTerm[simp]: "currentTerm (ensureCurrentTerm t nd) = t"
+  by (auto simp add: ensureCurrentTerm_def)
 
 locale zenImpl = zen +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
@@ -2517,15 +2517,15 @@ next
   qed
 qed
 
-lemma (in zenStep) ensureElectionTerm_invariants:
+lemma (in zenStep) ensureCurrentTerm_invariants:
   assumes t: "currentTerm nd \<le> t"
-  assumes nd': "nd' = ensureElectionTerm t nd"
+  assumes nd': "nd' = ensureCurrentTerm t nd"
   assumes messages': "messages' = messages"
   shows "zenImpl messages' nodeState'"
 proof (cases "currentTerm nd = t")
   case True
   hence "nodeState' = nodeState"
-    by (intro ext, unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+    by (intro ext, unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
   with zenImpl_axioms messages' show ?thesis by simp
 next
   case False
@@ -2550,7 +2550,7 @@ next
     "electionValue (nodeState' n\<^sub>0) = NoPublishResponseSent"
     "applyRequested (nodeState' n\<^sub>0) = False"
     using False
-    by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' ensureElectionTerm_def)
+    by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' ensureCurrentTerm_def)
 
   have currentTerm_increases: "\<And>n. currentTerm (nodeState n) \<le> currentTerm (nodeState' n)"
     using nd_def nodeState'_def property_simps(6) t by auto
@@ -2585,33 +2585,33 @@ next
       using order_trans by blast
 
     from applyRequested_electionWon show "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     from electionVotes False show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState' n))"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def promised'_def)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def promised'_def)
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState' n))"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     from electionWon_era False show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState' n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     from electionValue_None False show " \<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow>
             n' \<in> electionVotes (nodeState' n) \<Longrightarrow>
             (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
                 \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState' n)) a \<rangle>\<rightarrow> (OneNode n))"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def, blast)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def, blast)
 
     from electionValue_Some show "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x'
       \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
-      by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     fix n
     from electionValue_Some_max False show "\<And>t' x' n'' t'' x''. electionValue (nodeState' n) = PublishResponseSent t' x'
       \<Longrightarrow> n'' \<in> electionVotes (nodeState' n)
       \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)
       \<Longrightarrow> t'' \<le> t'"
-      by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     fix t' x'
     assume sent: "n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>"
@@ -2902,12 +2902,12 @@ next
   hence new_term: "currentTerm nd < t" 
     and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
 
-  from True have nd': "nd' = ensureElectionTerm t nd"
+  from True have nd': "nd' = ensureCurrentTerm t nd"
     by (simp add: nd' result_def handleStartJoin_def)
 
   from message new_term nd'
   have zenImpl1: "zenImpl messages nodeState'"
-    by (intro zenStep.ensureElectionTerm_invariants, intro_locales, intro zenStep_axioms.intro, simp_all)
+    by (intro zenStep.ensureCurrentTerm_invariants, intro_locales, intro zenStep_axioms.intro, simp_all)
 
   with message messages_subset
   have zenStep1: "zenStep messages nodeState' messages' message"
@@ -2925,10 +2925,10 @@ next
   proof (intro zenStep.sendJoinRequest_invariants [OF zenStep1], unfold nd'_eq currentTerm_nd')
     from True
     show "messages' = send response (nd', Some (JoinRequest (firstUncommittedSlot nd') t (lastAccepted nd')))"
-      by (auto simp add: messages' result_def handleStartJoin_def nd' ensureElectionTerm_def)
+      by (auto simp add: messages' result_def handleStartJoin_def nd' ensureCurrentTerm_def)
 
     from era_eq show "era\<^sub>t t = currentEra nd'"
-      by (simp add: nd' ensureElectionTerm_def)
+      by (simp add: nd' ensureCurrentTerm_def)
 
     show "nd' = nd'" by simp
 
@@ -2947,7 +2947,7 @@ next
     fix t' x'
     assume lastAccepted_Some: "lastAccepted nd' = PublishResponseSent t' x'"
     hence "lastAccepted (nodeState n\<^sub>0) = PublishResponseSent t' x'"
-      by (cases "currentTerm nd = t", auto simp add: nd' ensureElectionTerm_def nd_def)
+      by (cases "currentTerm nd = t", auto simp add: nd' ensureCurrentTerm_def nd_def)
     from lastAccepted_Some_term [OF this] new_term
     show "t' < t" by (simp add: nd_def)
   qed
@@ -3283,7 +3283,7 @@ proof -
           show "fst (handleStartJoin t nd) = fst (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))" by simp
 
           from True show "messages' = zenStep.send messages (zenStep.response n\<^sub>0 m) (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))"
-            by (auto simp add: messages'_def result respond'_def handleStartJoin_def ensureElectionTerm_def)
+            by (auto simp add: messages'_def result respond'_def handleStartJoin_def ensureCurrentTerm_def)
         qed
         moreover have "nodeState' = zenStep.nodeState' nodeState n\<^sub>0 (fst (handleStartJoin t nd))"
           unfolding nodeState'_def result_def ProcessMessage_def dest_True StartJoin
@@ -3325,7 +3325,7 @@ proof -
         hence False_eq: "(firstUncommittedSlot nd < i \<or> t < currentTerm nd \<or> t = currentTerm nd \<and> electionWon nd \<or> era\<^sub>t t \<noteq> currentEra nd) = False"
           by auto
 
-        define nd1 where "nd1 \<equiv> ensureElectionTerm t nd"
+        define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
         define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
 
         have nodeState1: "nodeState1 = zenStep.nodeState' nodeState n\<^sub>0 nd1"
@@ -3336,7 +3336,7 @@ proof -
 
         have zenImpl1: "zenImpl messages nodeState1"
           unfolding nodeState1
-        proof (intro zenStep.ensureElectionTerm_invariants)
+        proof (intro zenStep.ensureCurrentTerm_invariants)
           from `m \<in> messages`
           show "zenStep messages nodeState messages m"
             by (intro_locales, intro zenStep_axioms.intro, simp_all)
@@ -3344,7 +3344,7 @@ proof -
           from `currentTerm nd \<le> t` show "currentTerm (zenStep.nd nodeState n\<^sub>0) \<le> t"
             by (simp add: zenStep.nd_def [OF zenStep])
 
-          show "nd1 = ensureElectionTerm t (zenStep.nd nodeState n\<^sub>0)"
+          show "nd1 = ensureCurrentTerm t (zenStep.nd nodeState n\<^sub>0)"
             by (simp add: zenStep.nd_def [OF zenStep] nd1_def)
         qed simp
 
@@ -3362,17 +3362,17 @@ proof -
           by (simp add: zenStep.nd_def [OF zenStep1] nodeState1_def)
 
         have currentTerm_nd1[simp]: "currentTerm nd1 = t"
-          by (simp add: nd1_def ensureElectionTerm_def)
+          by (simp add: nd1_def ensureCurrentTerm_def)
 
         have currentEra_nd1[simp]: "currentEra nd1 = currentEra nd"
-          by (simp add: nd1_def ensureElectionTerm_def)
+          by (simp add: nd1_def ensureCurrentTerm_def)
 
         have firstUncommittedSlot_nd1[simp]: "firstUncommittedSlot nd1 = firstUncommittedSlot nd"
-          by (simp add: nd1_def ensureElectionTerm_def)
+          by (simp add: nd1_def ensureCurrentTerm_def)
 
         from False'
         have electionWon_nd1[simp]: "\<not> electionWon nd1"
-          by (simp add: nd1_def ensureElectionTerm_def)
+          by (simp add: nd1_def ensureCurrentTerm_def)
 
         have zenImpl2: "zenImpl messages nodeState2"
           unfolding nodeState2
@@ -3452,7 +3452,7 @@ proof -
             have currentNode2[simp]: "currentNode nd2 = currentNode nd1"
               by (simp add: nd2_def addElectionVote_def Let_def)
             have currentNode1[simp]: "currentNode nd1 = currentNode nd"
-              by (simp add: nd1_def ensureElectionTerm_def)
+              by (simp add: nd1_def ensureCurrentTerm_def)
 
             show ?thesis
               unfolding nodeState'
