@@ -1720,7 +1720,7 @@ record NodeData =
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
   lastAccepted :: PreviousPublishResponse (* term and value that were last accepted in this slot, if any *)
-  minimumAcceptableTerm :: Term (* greatest term for which a promise was sent *)
+  currentTerm :: Term (* greatest term for which a promise was sent *)
   (* election data *)
   electionTerm :: Term (* term of JoinRequests being collected *)
   electionVotes :: "Node set" (* set of nodes that have sent a JoinRequest for the current electionTerm *)
@@ -1792,8 +1792,8 @@ definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (Nod
 
 definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
-    "handleStartJoin t nd \<equiv> if minimumAcceptableTerm nd < t \<and> era\<^sub>t t = currentEra nd
-          then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
+    "handleStartJoin t nd \<equiv> if currentTerm nd < t \<and> era\<^sub>t t = currentEra nd
+          then ( nd \<lparr> currentTerm := t \<rparr>
                , Some (JoinRequest (firstUncommittedSlot nd)
                                      t
                                     (lastAccepted nd)))
@@ -1842,7 +1842,7 @@ definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rig
 definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishRequest i t x nd \<equiv>
-          if minimumAcceptableTerm nd \<le> t
+          if currentTerm nd \<le> t
                 \<and> \<not> lastAcceptedGreaterTermThan t nd
                 \<and> firstUncommittedSlot nd = i
           then ( nd \<lparr> lastAccepted := PublishResponseSent t x \<rparr>
@@ -1884,7 +1884,7 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       , currentConfiguration = currentConfiguration nd
       , currentClusterState = currentClusterState nd
       , lastAccepted = lastAccepted nd
-      , minimumAcceptableTerm = minimumAcceptableTerm nd
+      , currentTerm = currentTerm nd
       , electionTerm = SOME t. False
       , electionVotes = {}
       , electionWon = False
@@ -1926,7 +1926,7 @@ locale zenImpl = zen +
   assumes lastAccepted_None: "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent
     \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>"
   assumes lastAccepted_Some_term: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
-  \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)"
+  \<Longrightarrow> t' \<le> currentTerm (nodeState n)"
   assumes lastAccepted_Some_sent: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
   \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>"
   assumes lastAccepted_Some_value: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
@@ -1934,8 +1934,8 @@ locale zenImpl = zen +
   assumes lastAccepted_Some_max: "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x'
   \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto>
   \<Longrightarrow> t'' \<le> t'"
-  assumes JoinRequest_minimumAcceptableTerm:
-    "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)"
+  assumes JoinRequest_currentTerm:
+    "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)"
   assumes JoinRequest_slot_function:
     "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'"
   
@@ -2037,11 +2037,11 @@ lemma (in zenStep)
   assumes "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))"
   assumes "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'"
   assumes "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'"
-  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState' n)"
+  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> currentTerm (nodeState' n)"
   assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>'"
   assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t' x' \<rangle>\<leadsto>'"
   assumes "\<And>n t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'"
-  assumes "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState' n)"
+  assumes "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
   assumes "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto>' \<Longrightarrow> i = i'"
   assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)"
   assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)"
@@ -2447,7 +2447,7 @@ next
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from lastAccepted_Some_term
-    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState' n)"
+    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> currentTerm (nodeState' n)"
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from lastAccepted_Some_sent
@@ -2465,8 +2465,8 @@ next
       by (unfold nodeState'_def, cases "n = n\<^sub>0", auto simp add: nd' message_simps nd_def)
 
   next
-    from JoinRequest_minimumAcceptableTerm
-    show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState' n)"
+    from JoinRequest_currentTerm
+    show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from JoinRequest_slot_function
@@ -2524,7 +2524,7 @@ lemma (in zenStep) handleStartJoin_invariants:
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send response result"
   shows "zenImpl messages' nodeState'"
-proof (cases "minimumAcceptableTerm nd < t \<and> era\<^sub>t t = currentEra nd")
+proof (cases "currentTerm nd < t \<and> era\<^sub>t t = currentEra nd")
   case False
   hence result: "result = (nd, None)" by (simp add: result_def handleStartJoin_def)
   have "messages' = messages" by (auto simp add: messages' result)
@@ -2534,10 +2534,10 @@ proof (cases "minimumAcceptableTerm nd < t \<and> era\<^sub>t t = currentEra nd"
   ultimately show ?thesis by simp
 next
   case True
-  hence new_term: "minimumAcceptableTerm nd < t" 
+  hence new_term: "currentTerm nd < t" 
     and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
 
-  have result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
+  have result: "result = (nd \<lparr>currentTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
     by (simp add: result_def handleStartJoin_def True)
 
   have messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = OneNode (sender message),
@@ -2622,7 +2622,7 @@ next
           qed
         qed
 
-        from JoinRequest_minimumAcceptableTerm new_term
+        from JoinRequest_currentTerm new_term
         show "\<forall>i a. \<not> n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>"
           using nd_def nodesIdentified by fastforce
       qed
@@ -2643,7 +2643,7 @@ next
         show "\<forall>i>firstUncommittedSlot nd. \<forall>t. \<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
           by (simp add: nd_def nodesIdentified)
 
-        from JoinRequest_minimumAcceptableTerm new_term
+        from JoinRequest_currentTerm new_term
         show "\<forall>i a. \<not> n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>"
           using nd_def nodesIdentified by fastforce
 
@@ -2694,15 +2694,15 @@ next
   next
     fix n t' x'
     assume lastAccepted: "lastAccepted (nodeState' n) = PublishResponseSent t' x'"
-    show "t' \<le> minimumAcceptableTerm (nodeState' n)"
+    show "t' \<le> currentTerm (nodeState' n)"
     proof (cases "n = n\<^sub>0")
       case False
       with lastAccepted_Some_term lastAccepted show ?thesis by (unfold nodeState'_def, simp)
     next
       case True
       with lastAccepted_Some_term lastAccepted
-      have "t' \<le> minimumAcceptableTerm (nodeState n\<^sub>0)" by simp
-      also from new_term have "... < minimumAcceptableTerm (nodeState' n)"
+      have "t' \<le> currentTerm (nodeState n\<^sub>0)" by simp
+      also from new_term have "... < currentTerm (nodeState' n)"
         by (unfold nodeState'_def, simp add: True nd' result nd_def)
       finally show ?thesis by simp
     qed
@@ -2710,10 +2710,10 @@ next
   next
     fix n i t' a
     assume sent: "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<leadsto>'"
-    show "t' \<le> minimumAcceptableTerm (nodeState' n)"
+    show "t' \<le> currentTerm (nodeState' n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with JoinRequest_minimumAcceptableTerm sent
+      with JoinRequest_currentTerm sent
       show ?thesis by (auto simp add: nodeState'_def isMessageFrom_def isMessageFrom'_def JoinRequest')
     next
       case True
@@ -2721,14 +2721,14 @@ next
       proof (unfold isMessageFrom'_def JoinRequest' True, elim exE disjE)
         fix d
         assume "n\<^sub>0 \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d"
-        hence "t' \<le> minimumAcceptableTerm (nodeState n\<^sub>0)"
-          using JoinRequest_minimumAcceptableTerm isMessageFrom_def by blast     
-        also from new_term have "... < minimumAcceptableTerm (nodeState' n\<^sub>0)"
+        hence "t' \<le> currentTerm (nodeState n\<^sub>0)"
+          using JoinRequest_currentTerm isMessageFrom_def by blast     
+        also from new_term have "... < currentTerm (nodeState' n\<^sub>0)"
           by (unfold nodeState'_def, simp add: True nd' result nd_def)
         finally show "t' \<le> ..." by simp
       next
         fix d assume "(n\<^sub>0, i, t', a, d) = (n\<^sub>0, firstUncommittedSlot nd, t, lastAccepted nd, OneNode (sender message))"
-        thus "t' \<le> minimumAcceptableTerm (nodeState' n\<^sub>0)"
+        thus "t' \<le> currentTerm (nodeState' n\<^sub>0)"
           by (unfold nodeState'_def, simp add: nd' result)
       qed
     qed
@@ -2755,12 +2755,12 @@ next
     next
       assume "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d" "(n, i', t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       hence "n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
-      from JoinRequest_minimumAcceptableTerm [OF this] new_term
+      from JoinRequest_currentTerm [OF this] new_term
       show ?thesis by (simp add: nd_def)
     next
       assume "n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d'" "(n, i, t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       hence "n\<^sub>0 \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
-      from JoinRequest_minimumAcceptableTerm [OF this] new_term
+      from JoinRequest_currentTerm [OF this] new_term
       show ?thesis by (simp add: nd_def)
     qed
 
@@ -2792,7 +2792,7 @@ next
       from electionVotes [OF this] eq
       obtain i a where a: "n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>"
         by (auto simp add: isMessageFrom_def)
-      from JoinRequest_minimumAcceptableTerm [OF this] new_term
+      from JoinRequest_currentTerm [OF this] new_term
       show ?thesis by (simp add: nd_def)
     qed
   qed
@@ -2825,7 +2825,7 @@ next
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
-    "\<And>n. minimumAcceptableTerm (nodeState' n) = minimumAcceptableTerm (nodeState n)"
+    "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
     "electionTerm (nodeState' n\<^sub>0) = t"
     "electionWon (nodeState' n\<^sub>0) = False"
     "electionVotes (nodeState' n\<^sub>0) = {}"
@@ -2847,7 +2847,7 @@ next
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq)
       (*      using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
               isQuorum_firstUncommittedSlot JoinRequest_slot_function
-              nothingAcceptedInLaterSlots JoinRequest_minimumAcceptableTerm *)
+              nothingAcceptedInLaterSlots JoinRequest_currentTerm *)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -2856,11 +2856,11 @@ next
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
     from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
-    from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)" .
+    from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> currentTerm (nodeState n)" .
     from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>" .
     from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>" .
     from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
-    from JoinRequest_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
+    from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
 
     from applyRequested_electionWon show "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)"
@@ -2947,7 +2947,7 @@ proof -
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
-    "\<And>n. minimumAcceptableTerm (nodeState' n) = minimumAcceptableTerm (nodeState n)"
+    "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
     "\<And>n. electionTerm (nodeState' n) = electionTerm (nodeState n)"
     "\<And>n. applyRequested (nodeState' n) = applyRequested (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' addElectionVote_def Let_def)
@@ -2966,7 +2966,7 @@ proof -
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq)
       (*      using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
               isQuorum_firstUncommittedSlot JoinRequest_slot_function
-              nothingAcceptedInLaterSlots JoinRequest_minimumAcceptableTerm *)
+              nothingAcceptedInLaterSlots JoinRequest_currentTerm *)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -2975,11 +2975,11 @@ proof -
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
     from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
-    from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)" .
+    from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> currentTerm (nodeState n)" .
     from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>" .
     from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>" .
     from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
-    from JoinRequest_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
+    from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> electionTerm (nodeState n)" .
     from PublishRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequested (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
@@ -3226,7 +3226,7 @@ proof -
     proof (cases "payload m")
       case (StartJoin t)
       show ?thesis
-      proof (cases "minimumAcceptableTerm nd < t \<and> era\<^sub>t t = currentEra nd")
+      proof (cases "currentTerm nd < t \<and> era\<^sub>t t = currentEra nd")
         case False
         hence "result = (nd, None)"
           unfolding result_def ProcessMessage_def Let_def dest_True StartJoin
@@ -3234,20 +3234,20 @@ proof -
         thus ?thesis by (intro noop)
       next
         case True
-        hence new_term: "minimumAcceptableTerm nd < t" and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
+        hence new_term: "currentTerm nd < t" and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
 
-        have handleStartJoin[simp]: "handleStartJoin t nd = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
+        have handleStartJoin[simp]: "handleStartJoin t nd = (nd \<lparr>currentTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
           by (simp add: handleStartJoin_def True)
 
-        hence result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some \<lparr> sender = n\<^sub>0, destination = OneNode (sender m), payload = JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd) \<rparr>)"
+        hence result: "result = (nd \<lparr>currentTerm := t\<rparr>, Some \<lparr> sender = n\<^sub>0, destination = OneNode (sender m), payload = JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd) \<rparr>)"
           unfolding result_def ProcessMessage_def Let_def dest_True StartJoin by simp
 
         note zenStep.nodeState'_def zenStep.response_def zenStep.send.simps zenStep.nd_def
         note [simp] = this [OF zenStep]
 
-        have "zenImpl messages' (zenStep.nodeState' nodeState n\<^sub>0 (nd \<lparr>minimumAcceptableTerm := t\<rparr>))"
+        have "zenImpl messages' (zenStep.nodeState' nodeState n\<^sub>0 (nd \<lparr>currentTerm := t\<rparr>))"
           by (intro zenStep.handleStartJoin_invariants [OF zenStep, where t = t], simp_all add: messages'_def result)
-        moreover have "zenStep.nodeState' nodeState n\<^sub>0 (nd \<lparr>minimumAcceptableTerm := t\<rparr>) = nodeState'"
+        moreover have "zenStep.nodeState' nodeState n\<^sub>0 (nd \<lparr>currentTerm := t\<rparr>) = nodeState'"
           by (auto simp add: nodeState'_def result)
         ultimately show ?thesis by simp
       qed
