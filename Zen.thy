@@ -1714,8 +1714,8 @@ section \<open>Per-node model\<close>
 
 record NodeData =
   currentNode :: Node (* identity of this node *)
-  localCheckpoint :: nat (* all slots strictly below this one are committed *)
-  currentEra :: Era (* era of the localCheckpoint slot *)
+  firstUncommittedSlot :: nat (* all slots strictly below this one are committed *)
+  currentEra :: Era (* era of the firstUncommittedSlot slot *)
   currentConfiguration :: Configuration (* configuration of the currentEra *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
@@ -1727,7 +1727,7 @@ record NodeData =
   electionWon :: bool
   electionValue :: PreviousPublishResponse
   (* learner data *)
-  applyRequested :: bool (* whether an PublishRequest has been sent with slot=localCheckpoint and term=electionTerm *)
+  applyRequested :: bool (* whether an PublishRequest has been sent with slot=firstUncommittedSlot and term=electionTerm *)
   applyTerm :: Term
   applyVotes :: "Node set"
 
@@ -1782,14 +1782,14 @@ definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (Nod
     "handleClientValue x nd \<equiv>
         if electionWon nd \<and> \<not> applyRequested nd
               then ( nd \<lparr> applyRequested := True \<rparr>
-                   , Some (PublishRequest (localCheckpoint nd) (electionTerm nd) x) )
+                   , Some (PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x) )
               else (nd, None)"
 
 definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleStartJoin t nd \<equiv> if minimumAcceptableTerm nd < t \<and> era\<^sub>t t = currentEra nd
           then ( nd \<lparr> minimumAcceptableTerm := t \<rparr>
-               , Some (JoinRequest (localCheckpoint nd)
+               , Some (JoinRequest (firstUncommittedSlot nd)
                                      t
                                     (lastAccepted nd)))
           else (nd, None)"
@@ -1810,7 +1810,7 @@ definition addElectionVote :: "Node \<Rightarrow> nat => PreviousPublishResponse
     "addElectionVote s i a nd \<equiv> let newVotes = insert s (electionVotes nd)
       in nd \<lparr> electionVotes := newVotes
             , electionValue := combinePublishResponses (electionValue nd)
-                                                     (if i = localCheckpoint nd
+                                                     (if i = firstUncommittedSlot nd
                                                         then a
                                                         else NoPublishResponseSent)
             , electionWon := isQuorum nd newVotes \<rparr>"
@@ -1825,7 +1825,7 @@ definition sendElectionValueIfAppropriate :: "NodeData \<Rightarrow> (NodeData *
 definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> PreviousPublishResponse \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleJoinRequest s i t a nd \<equiv>
-         if localCheckpoint nd < i
+         if firstUncommittedSlot nd < i
              \<or> t < electionTerm nd
              \<or> (t = electionTerm nd \<and> electionWon nd)
              \<or> era\<^sub>t t \<noteq> currentEra nd
@@ -1839,7 +1839,7 @@ definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \
     "handlePublishRequest i t x nd \<equiv>
           if minimumAcceptableTerm nd \<le> t
                 \<and> \<not> lastAcceptedGreaterTermThan t nd
-                \<and> localCheckpoint nd = i
+                \<and> firstUncommittedSlot nd = i
           then ( nd \<lparr> lastAccepted := PublishResponseSent t x \<rparr>
                , Some (PublishResponse i t))
           else (nd, None)"
@@ -1847,7 +1847,7 @@ definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \
 definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishResponse s i t nd \<equiv>
-        if localCheckpoint nd = i \<and> applyTerm nd \<le> t
+        if firstUncommittedSlot nd = i \<and> applyTerm nd \<le> t
         then let oldVotes = if applyTerm nd = t then applyVotes nd else {};
                  newVotes = insert s oldVotes
              in (nd \<lparr> applyTerm := t, applyVotes := newVotes \<rparr>,
@@ -1857,12 +1857,12 @@ definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \
 definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "handleApplyCommit i t nd \<equiv> 
-        if i = localCheckpoint nd
+        if i = firstUncommittedSlot nd
         then case lastAccepted nd of
             PublishResponseSent t' x' \<Rightarrow>
               if t = t'
               then applyValue x'
-                      nd \<lparr> localCheckpoint := i + 1
+                      nd \<lparr> firstUncommittedSlot := i + 1
                          , lastAccepted := NoPublishResponseSent
                          , applyRequested := False
                          , electionValue := NoPublishResponseSent \<rparr>
@@ -1874,7 +1874,7 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
   where
     "handleReboot nd \<equiv> 
       \<lparr> currentNode = currentNode nd
-      , localCheckpoint = localCheckpoint nd
+      , firstUncommittedSlot = firstUncommittedSlot nd
       , currentEra = currentEra nd
       , currentConfiguration = currentConfiguration nd
       , currentClusterState = currentClusterState nd
@@ -1911,23 +1911,23 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
 locale zenImpl = zen +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
-  assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))"
-  assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))"
-  assumes isQuorum_localCheckpoint:
-    "\<And>n. { q. isQuorum (nodeState n) q } = Q (era\<^sub>i (localCheckpoint (nodeState n)))"
+  assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
+  assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
+  assumes isQuorum_firstUncommittedSlot:
+    "\<And>n. { q. isQuorum (nodeState n) q } = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))"
   assumes nothingAcceptedInLaterSlots:
-    "\<And>i n t. localCheckpoint (nodeState n) < i
+    "\<And>i n t. firstUncommittedSlot (nodeState n) < i
     \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
   assumes lastAccepted_None: "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent
-    \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t \<rangle>\<leadsto>"
+    \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>"
   assumes lastAccepted_Some_term: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
   \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)"
   assumes lastAccepted_Some_sent: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
-  \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t' \<rangle>\<leadsto>"
+  \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>"
   assumes lastAccepted_Some_value: "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x'
-  \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>"
+  \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>"
   assumes lastAccepted_Some_max: "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x'
-  \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t'' \<rangle>\<leadsto>
+  \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto>
   \<Longrightarrow> t'' \<le> t'"
   assumes JoinRequest_minimumAcceptableTerm:
     "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)"
@@ -1935,40 +1935,40 @@ locale zenImpl = zen +
     "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'"
   
   assumes PublishRequest_electionTerm:
-    "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto>
+    "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto>
         \<Longrightarrow> t \<le> electionTerm (nodeState n)"
   assumes PublishRequest_electionTerm_applyRequested:
-    "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto>
+    "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto>
         \<Longrightarrow> \<not> applyRequested (nodeState n)
         \<Longrightarrow> t < electionTerm (nodeState n)"
   assumes applyRequested_electionWon:
     "\<And>n. applyRequested (nodeState n) \<Longrightarrow> electionWon (nodeState n)"
   assumes electionVotes:
     "\<And> n n'. n' \<in> electionVotes (nodeState n)
-      \<Longrightarrow> \<exists> i \<le> localCheckpoint (nodeState n). \<exists> a.
+      \<Longrightarrow> \<exists> i \<le> firstUncommittedSlot (nodeState n). \<exists> a.
         n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n)"
   assumes electionWon_isQuorum:
     "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState n))"
   assumes electionWon_era:
-    "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState n)) = era\<^sub>i (localCheckpoint (nodeState n))"
+    "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
 
   assumes electionValue_None: "\<And>n n'.
     \<lbrakk> electionValue (nodeState n) = NoPublishResponseSent; n' \<in> electionVotes (nodeState n) \<rbrakk>
-    \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n))
+    \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                            (electionTerm (nodeState n))
                            NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
-    \<or> (\<exists> i < localCheckpoint (nodeState n). \<exists> a.
+    \<or> (\<exists> i < firstUncommittedSlot (nodeState n). \<exists> a.
         n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
   assumes electionValue_Some: "\<And>n t' x'.
     \<lbrakk> electionValue (nodeState n) = PublishResponseSent t' x' \<rbrakk>
     \<Longrightarrow> \<exists> n' \<in> electionVotes (nodeState n).
-         (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n))
+         (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                                (electionTerm (nodeState n))
                                (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n))"
   assumes electionValue_Some_max: "\<And>n t' x' n'' t'' x''.
     \<lbrakk> electionValue (nodeState n) = PublishResponseSent t' x';
       n'' \<in> electionVotes (nodeState n);
-      n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n))
+      n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                                 (electionTerm (nodeState n))
                                 (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n) \<rbrakk>
     \<Longrightarrow> t'' \<le> t'"
@@ -2027,26 +2027,26 @@ definition (in zenStep) prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> N
 lemma (in zenStep)
   assumes "zen messages'"
   assumes "\<And>n. currentNode (nodeState' n) = n"
-  assumes "\<And>n. committed\<^sub><' (localCheckpoint (nodeState' n))"
-  assumes "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (localCheckpoint (nodeState' n))"
-  assumes "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (localCheckpoint (nodeState' n)))"
-  assumes "\<And>i n t. localCheckpoint (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'"
-  assumes "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t \<rangle>\<leadsto>'"
+  assumes "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))"
+  assumes "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
+  assumes "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))"
+  assumes "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'"
+  assumes "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'"
   assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState' n)"
-  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t' \<rangle>\<leadsto>'"
-  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState' n)) t' x' \<rangle>\<leadsto>'"
-  assumes "\<And>n t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'"
+  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>'"
+  assumes "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t' x' \<rangle>\<leadsto>'"
+  assumes "\<And>n t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'"
   assumes "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState' n)"
   assumes "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto>' \<Longrightarrow> i = i'"
-  assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)"
-  assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)"
+  assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)"
+  assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)"
   assumes "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)"
-  assumes "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (localCheckpoint (nodeState' n)) n' n (electionTerm (nodeState' n))"
+  assumes "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (electionTerm (nodeState' n))"
   assumes "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (electionVotes (nodeState' n))"
-  assumes "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (localCheckpoint (nodeState' n))"
-  assumes "\<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow> n' \<in> electionVotes (nodeState' n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n)) \<or> (\<exists>i<localCheckpoint (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n))"
-  assumes "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
-  assumes "\<And>n t' x' n'' t'' x''. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n'' \<in> electionVotes (nodeState' n) \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow> t'' \<le> t'"
+  assumes "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
+  assumes "\<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow> n' \<in> electionVotes (nodeState' n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n)) \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n))"
+  assumes "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
+  assumes "\<And>n t' x' n'' t'' x''. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n'' \<in> electionVotes (nodeState' n) \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow> t'' \<le> t'"
   shows zenImplI: "zenImpl messages' nodeState'"
   apply (intro_locales, intro assms, intro zenImpl_axioms.intro)
                  apply (fold isMessageFromTo'_def)
@@ -2110,10 +2110,10 @@ proof (cases "electionWon nd \<and> \<not> applyRequested nd")
 next
   case True note won = this
   hence result: "result = (nd \<lparr>applyRequested := True\<rparr>,
-                           Some (PublishRequest (localCheckpoint nd) (electionTerm nd) x))"
+                           Some (PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x))"
     by (simp add: result_def handleClientValue_def)
 
-  have messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = PublishRequest (localCheckpoint nd) (electionTerm nd) x\<rparr> messages"
+  have messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x\<rparr> messages"
     by (simp add: messages' result broadcast_def)
 
   have message_simps:
@@ -2135,27 +2135,27 @@ next
   from electionWon_era True eraMatchesLocalCheckpoint
   have era_eq:
     "era\<^sub>t (electionTerm nd) = currentEra nd" 
-    "era\<^sub>i (localCheckpoint nd) = currentEra nd" by (simp_all add: nd_def)
+    "era\<^sub>i (firstUncommittedSlot nd) = currentEra nd" by (simp_all add: nd_def)
 
   have PublishRequest': "\<And>s d i t x'. (s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow>' d) = ((s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow> d)
-          \<or> (s, d, i, t, x') = (n\<^sub>0, Broadcast, localCheckpoint nd, electionTerm nd, x))"
+          \<or> (s, d, i, t, x') = (n\<^sub>0, Broadcast, firstUncommittedSlot nd, electionTerm nd, x))"
     by (auto simp add: isMessageFromTo'_def, auto simp add: messages' isMessageFromTo_def)
 
-  have fresh_request: "\<And>x. \<not> \<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x \<rangle>\<leadsto>"
+  have fresh_request: "\<And>x. \<not> \<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x \<rangle>\<leadsto>"
   proof (intro notI)
     fix x'
-    assume "\<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x' \<rangle>\<leadsto>"
+    assume "\<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x' \<rangle>\<leadsto>"
     with True obtain s d where
-      s: "s \<midarrow>\<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x' \<rangle>\<rightarrow> d"
+      s: "s \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x' \<rangle>\<rightarrow> d"
       by (auto simp add: isMessage_def isMessageFrom_def)
 
-    with PublishRequest_quorum [where s = s and i = "localCheckpoint nd" and t = "electionTerm nd" and x = x']
-    obtain q where q: "q \<in> Q (currentEra nd)" and promised: "\<And>n. n \<in> q \<Longrightarrow> promised (localCheckpoint nd) n s (electionTerm nd)"
+    with PublishRequest_quorum [where s = s and i = "firstUncommittedSlot nd" and t = "electionTerm nd" and x = x']
+    obtain q where q: "q \<in> Q (currentEra nd)" and promised: "\<And>n. n \<in> q \<Longrightarrow> promised (firstUncommittedSlot nd) n s (electionTerm nd)"
       by (auto simp add: era_eq isMessageFrom_def, blast)
 
     from won have "isQuorum nd (electionVotes nd)"
       by (unfold nd_def, intro electionWon_isQuorum, simp)
-    with isQuorum_localCheckpoint [of n\<^sub>0]
+    with isQuorum_firstUncommittedSlot [of n\<^sub>0]
     have "electionVotes nd \<in> Q (currentEra nd)" using nd_def era_eq by auto
 
     from q this Q_intersects have "q \<inter> electionVotes nd \<noteq> {}"
@@ -2173,7 +2173,7 @@ next
     ultimately have "OneNode s = OneNode n\<^sub>0"
       by (intro JoinRequest_unique_destination)
 
-    with s have "n\<^sub>0 \<midarrow>\<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x' \<rangle>\<leadsto>"
+    with s have "n\<^sub>0 \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x' \<rangle>\<leadsto>"
       by (auto simp add: isMessageFrom_def)
 
     hence "electionTerm nd < electionTerm (nodeState n\<^sub>0)"
@@ -2183,11 +2183,11 @@ next
     thus False by (simp add: nd_def)
   qed
 
-  have v_eq: "\<And>i t. v' i t = (if (i, t) = (localCheckpoint nd, electionTerm nd) then x else v i t)"
+  have v_eq: "\<And>i t. v' i t = (if (i, t) = (firstUncommittedSlot nd, electionTerm nd) then x else v i t)"
   proof -
     fix i t
     show "?thesis i t"
-    proof (cases "(i, t) = (localCheckpoint nd, electionTerm nd)")
+    proof (cases "(i, t) = (firstUncommittedSlot nd, electionTerm nd)")
       case False
       with PublishRequest'
       show ?thesis
@@ -2202,7 +2202,7 @@ next
 
         fix x'
         assume "\<langle> PublishRequest i t x' \<rangle>\<leadsto>'"
-        with True have "\<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x' \<rangle>\<leadsto> \<or> x' = x"
+        with True have "\<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x' \<rangle>\<leadsto> \<or> x' = x"
           by (auto simp add: isMessage'_def isMessage_def isMessageFrom'_def isMessageFrom_def PublishRequest')
         with fresh_request show "x' = x" by simp
       qed
@@ -2226,7 +2226,7 @@ next
       thus ?thesis by (unfold t_def, intro someI)
     qed
     from ApplyCommit_PublishRequest [OF this] fresh_request
-    have ne: "(i, t) \<noteq> (localCheckpoint nd, electionTerm nd)" by (intro notI, simp)
+    have ne: "(i, t) \<noteq> (firstUncommittedSlot nd, electionTerm nd)" by (intro notI, simp)
 
     have "v\<^sub>c' i = v' i t" by (simp add: v\<^sub>c'_def t_def message_simps)
     also from ne have "... = v i t" by (auto simp add: v_eq)
@@ -2282,10 +2282,10 @@ next
 
   have nd': "nd' = nd \<lparr> applyRequested := True \<rparr>" by (simp add: nd' result)
 
-  have localCheckpoint: "\<And>n. localCheckpoint (nodeState' n) = localCheckpoint (nodeState n)"
+  have firstUncommittedSlot: "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
 
-  have era_localCheckpoint: "\<And>n. era\<^sub>i' (localCheckpoint (nodeState n)) = era\<^sub>i (localCheckpoint (nodeState n))"
+  have era_firstUncommittedSlot: "\<And>n. era\<^sub>i' (firstUncommittedSlot (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
     by (intro era\<^sub>i_eq committedToLocalCheckpoint)
 
   show ?thesis
@@ -2293,28 +2293,28 @@ next
     show "zen messages'"
     proof (unfold messages', intro send_PublishRequest allI impI notI ballI)
       from PublishRequest_electionTerm_applyRequested True
-      show "\<And>x. n\<^sub>0 \<midarrow>\<langle> PublishRequest (localCheckpoint nd) (electionTerm nd) x \<rangle>\<leadsto> \<Longrightarrow> False"
+      show "\<And>x. n\<^sub>0 \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x \<rangle>\<leadsto> \<Longrightarrow> False"
         by (auto simp add: isMessageFrom_def isMessageFromTo_def nd_def)
 
       from committedToLocalCheckpoint [where n = n\<^sub>0]
-      show "\<And>i. i < localCheckpoint nd \<Longrightarrow> \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
+      show "\<And>i. i < firstUncommittedSlot nd \<Longrightarrow> \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
         by (auto simp add: isMessage_def isMessageFrom_def isMessageFromTo_def nd_def committedTo_def isCommitted_def)
 
       from electionWon_era True
-      show era_eq: "era\<^sub>t (electionTerm nd) = era\<^sub>i (localCheckpoint nd)" by (simp add: nd_def)
+      show era_eq: "era\<^sub>t (electionTerm nd) = era\<^sub>i (firstUncommittedSlot nd)" by (simp add: nd_def)
 
       from True electionWon_isQuorum
       have "isQuorum nd (electionVotes nd)"
         by (simp add: nd_def)
-      with isQuorum_localCheckpoint era_eq
+      with isQuorum_firstUncommittedSlot era_eq
       show "electionVotes nd \<in> Q (era\<^sub>t (electionTerm nd))"
         by (auto simp add: nd_def)
 
       from electionVotes
-      show "\<And>s. s \<in> electionVotes nd \<Longrightarrow> \<exists>i\<le>localCheckpoint nd. \<exists>a. s \<midarrow>\<langle> JoinRequest i (electionTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+      show "\<And>s. s \<in> electionVotes nd \<Longrightarrow> \<exists>i\<le>firstUncommittedSlot nd. \<exists>a. s \<midarrow>\<langle> JoinRequest i (electionTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
         by (auto simp add: nd_def)
 
-      assume nonempty: "prevAccepted (localCheckpoint nd) (electionTerm nd) (electionVotes nd) \<noteq> {}" (is "?T \<noteq> {}")
+      assume nonempty: "prevAccepted (firstUncommittedSlot nd) (electionTerm nd) (electionVotes nd) \<noteq> {}" (is "?T \<noteq> {}")
 
       define t' where "t' = maxTerm ?T"
       have t'_mem: "t' \<in> ?T"
@@ -2324,7 +2324,7 @@ next
         by (unfold t'_def, intro maxTerm_max finite_prevAccepted)
 
       from t'_mem obtain s x' where s_vote: "s \<in> electionVotes nd"
-        and s_send: "s \<midarrow>\<langle> JoinRequest (localCheckpoint nd) (electionTerm nd) (PublishResponseSent t' x') \<rangle>\<leadsto>"
+        and s_send: "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot nd) (electionTerm nd) (PublishResponseSent t' x') \<rangle>\<leadsto>"
         by (auto simp add: prevAccepted_def)
 
       obtain t where electionValue: "electionValue nd = PublishResponseSent t x"
@@ -2336,16 +2336,16 @@ next
         from electionValue_None [OF this]
         show ?thesis
         proof (elim disjE exE conjE)
-          assume "s \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+          assume "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
           hence "PublishResponseSent t' x' = NoPublishResponseSent"
             by (intro JoinRequest_value_function [OF s_send], auto simp add: nd_def isMessageFrom_def)
           thus ?thesis by simp
         next
           fix i' a'
           assume "s \<midarrow>\<langle> JoinRequest i' (electionTerm (nodeState n\<^sub>0)) a' \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
-          hence "localCheckpoint nd = i'"
+          hence "firstUncommittedSlot nd = i'"
             by (intro JoinRequest_slot_function [OF s_send], auto simp add: nd_def isMessageFrom_def)
-          moreover assume "i' < localCheckpoint (nodeState n\<^sub>0)"
+          moreover assume "i' < firstUncommittedSlot (nodeState n\<^sub>0)"
           ultimately show ?thesis by (simp add: nd_def)
         qed
       next
@@ -2354,28 +2354,28 @@ next
           by (intro that, simp)
       qed
 
-      show "x = v (localCheckpoint nd) t'"
+      show "x = v (firstUncommittedSlot nd) t'"
       proof (intro PublishRequest_function)
-        define P where "\<And>x. P x \<equiv> \<langle> PublishRequest (localCheckpoint nd) t' x \<rangle>\<leadsto>"
-        have v_The: "v (localCheckpoint nd) t' = (THE x. P x)"
+        define P where "\<And>x. P x \<equiv> \<langle> PublishRequest (firstUncommittedSlot nd) t' x \<rangle>\<leadsto>"
+        have v_The: "v (firstUncommittedSlot nd) t' = (THE x. P x)"
           by (simp add: P_def v_def)
 
-        have "P (v (localCheckpoint nd) t')"
+        have "P (v (firstUncommittedSlot nd) t')"
         proof (unfold v_The, intro theI [of P], unfold P_def)
           from JoinRequest_Some_PublishRequest [OF s_send]
-          show a1: "\<langle> PublishRequest (localCheckpoint nd) t' x' \<rangle>\<leadsto>" .
+          show a1: "\<langle> PublishRequest (firstUncommittedSlot nd) t' x' \<rangle>\<leadsto>" .
           fix x''
-          assume a2: "\<langle> PublishRequest (localCheckpoint nd) t' x'' \<rangle>\<leadsto>"
+          assume a2: "\<langle> PublishRequest (firstUncommittedSlot nd) t' x'' \<rangle>\<leadsto>"
           show "x'' = x'"
             by (intro PublishRequest_function [OF a2 a1])
         qed
 
-        thus "\<langle> PublishRequest (localCheckpoint nd) t' (v (localCheckpoint nd) t') \<rangle>\<leadsto>"
+        thus "\<langle> PublishRequest (firstUncommittedSlot nd) t' (v (firstUncommittedSlot nd) t') \<rangle>\<leadsto>"
           by (simp add: P_def)
 
         from electionValue_Some [where n = n\<^sub>0] electionValue
         obtain s' where s'_vote: "s' \<in> electionVotes nd"
-          and s'_send: "s' \<midarrow>\<langle> JoinRequest (localCheckpoint nd) (electionTerm nd) (PublishResponseSent t x) \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+          and s'_send: "s' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot nd) (electionTerm nd) (PublishResponseSent t x) \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
           by (auto simp add: nd_def)
 
         from s'_vote s'_send have "t \<le> t'"
@@ -2393,19 +2393,19 @@ next
             by (auto simp add: isMessageFromTo_def nd_def)
 
           from s_send obtain d where
-            s2: "s \<midarrow>\<langle> JoinRequest (localCheckpoint nd) (electionTerm nd) (PublishResponseSent t' x') \<rangle>\<rightarrow> d" by (auto simp add: isMessageFrom_def)
+            s2: "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot nd) (electionTerm nd) (PublishResponseSent t' x') \<rangle>\<rightarrow> d" by (auto simp add: isMessageFrom_def)
 
           have "d = OneNode n\<^sub>0"
             by (intro JoinRequest_unique_destination [OF s2 s1])
 
-          with s2 show "s \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+          with s2 show "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
             by (auto simp add: isMessageFromTo_def nd_def)
         qed
         ultimately have t_eq: "t' = t" by simp
 
-        show "\<langle> PublishRequest (localCheckpoint nd) t' x \<rangle>\<leadsto>"
+        show "\<langle> PublishRequest (firstUncommittedSlot nd) t' x \<rangle>\<leadsto>"
         proof (intro JoinRequest_Some_PublishRequest, unfold t_eq)
-          from s'_send show "s' \<midarrow>\<langle> JoinRequest (localCheckpoint nd) (electionTerm nd) (PublishResponseSent t x) \<rangle>\<leadsto>"
+          from s'_send show "s' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot nd) (electionTerm nd) (PublishResponseSent t x) \<rangle>\<leadsto>"
             by (auto simp add: isMessageFrom_def)
         qed
       qed
@@ -2416,29 +2416,29 @@ next
       by (unfold nodeState'_def, auto simp add: nd_def)
 
     from committedToLocalCheckpoint nd'
-    show "\<And>n. committed\<^sub><' (localCheckpoint (nodeState' n))"
+    show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def committedTo_eq)
 
     from era\<^sub>i_eq committedToLocalCheckpoint nd' era_eq eraMatchesLocalCheckpoint
-    show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (localCheckpoint (nodeState' n))"
+    show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd')
 
   next
     fix n
     have "{q. isQuorum (nodeState' n) q} = {q. isQuorum (nodeState n) q}"
       by (unfold nodeState'_def, simp add: isQuorum_def nd' nd_def)
-    also note isQuorum_localCheckpoint
-    also have "Q (era\<^sub>i (localCheckpoint (nodeState n))) = Q' (era\<^sub>i' (localCheckpoint (nodeState' n)))"
-      by (unfold localCheckpoint era_localCheckpoint, intro sym [OF Q_eq] committedToLocalCheckpoint)
-    finally show "{q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (localCheckpoint (nodeState' n)))".
+    also note isQuorum_firstUncommittedSlot
+    also have "Q (era\<^sub>i (firstUncommittedSlot (nodeState n))) = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))"
+      by (unfold firstUncommittedSlot era_firstUncommittedSlot, intro sym [OF Q_eq] committedToLocalCheckpoint)
+    finally show "{q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))".
 
     from nothingAcceptedInLaterSlots
-    show "\<And>i t. localCheckpoint (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'"
+    show "\<And>i t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'"
       by (cases "n = n\<^sub>0", unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
   next
     from lastAccepted_None
-    show "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t \<rangle>\<leadsto>'"
+    show "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'"
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from lastAccepted_Some_term
@@ -2446,17 +2446,17 @@ next
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from lastAccepted_Some_sent
-    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t' \<rangle>\<leadsto>'"
+    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>'"
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from lastAccepted_Some_value nodeState'_def isMessage'_def isMessageFrom'_def PublishRequest' isMessage_def isMessageFrom_def nd' nd_def
-    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState' n)) t' x' \<rangle>\<leadsto>'"
+    show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t' x' \<rangle>\<leadsto>'"
       by (auto, meson, meson)      
 
   next
     fix n
     from lastAccepted_Some_max
-    show "\<And>t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'"
+    show "\<And>t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'"
       by (unfold nodeState'_def, cases "n = n\<^sub>0", auto simp add: nd' message_simps nd_def)
 
   next
@@ -2469,11 +2469,11 @@ next
       by (unfold nodeState'_def message_simps, auto simp add: nd' nd_def)
 
     from PublishRequest_electionTerm
-    show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)"
+    show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)"
       by (unfold nodeState'_def isMessageFrom'_def PublishRequest', auto simp add: nd' nd_def isMessageFrom_def, blast, blast)
 
     from PublishRequest_electionTerm_applyRequested
-    show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)"
+    show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)"
       by (unfold nodeState'_def isMessageFrom'_def PublishRequest', auto simp add: nd' nd_def isMessageFrom_def, blast)
 
     from applyRequested_electionWon won
@@ -2481,32 +2481,32 @@ next
       by (unfold nodeState'_def, auto simp add: nd_def nd')
 
     from electionVotes
-    show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (localCheckpoint (nodeState' n)) n' n (electionTerm (nodeState' n))"
+    show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (electionTerm (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd' promised'_def message_simps)
 
     from electionWon_isQuorum
     show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (electionVotes (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd' isQuorum_def)
 
-    from electionWon_era era_localCheckpoint
-    show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (localCheckpoint (nodeState' n))"
+    from electionWon_era era_firstUncommittedSlot
+    show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd')
 
     from electionValue_None
     show "\<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow> n' \<in> electionVotes (nodeState' n)
-      \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n))
-        \<or> (\<exists>i<localCheckpoint (nodeState' n). \<exists>a. (n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n)))"
+      \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n))
+        \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. (n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n)))"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps, blast, blast)
 
     from electionValue_Some
     show "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x'
-      \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
+      \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps)
 
     fix n
     from electionValue_Some_max
     show "\<And>t' x' n'' t'' x''. electionValue (nodeState' n) = PublishResponseSent t' x'
-      \<Longrightarrow> n'' \<in> electionVotes (nodeState' n) \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n)
+      \<Longrightarrow> n'' \<in> electionVotes (nodeState' n) \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n)
       \<Longrightarrow> t'' \<le> t'"
       by (unfold nodeState'_def, cases "n = n\<^sub>0", auto simp add: nd' nd_def message_simps)
   qed
@@ -2532,17 +2532,17 @@ next
   hence new_term: "minimumAcceptableTerm nd < t" 
     and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
 
-  have result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (localCheckpoint nd) t (lastAccepted nd)))"
+  have result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
     by (simp add: result_def handleStartJoin_def True)
 
   have messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = OneNode (sender message),
-                                               payload = JoinRequest (localCheckpoint nd) t (lastAccepted nd)\<rparr> messages"
+                                               payload = JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)\<rparr> messages"
     by (simp add: messages' result response_def)
 
   from result
   have property_simps[simp]:
     "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
-    "\<And>n. localCheckpoint (nodeState' n) = localCheckpoint (nodeState n)"
+    "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
@@ -2571,7 +2571,7 @@ next
 
   have JoinRequest': "\<And>s d i t' a. (s \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow>' d) =
     ((s \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d)
-      \<or> (s, i, t', a, d) = (n\<^sub>0, localCheckpoint nd, t, lastAccepted nd, OneNode (sender message)))"
+      \<or> (s, i, t', a, d) = (n\<^sub>0, firstUncommittedSlot nd, t, lastAccepted nd, OneNode (sender message)))"
     by (unfold isMessageFromTo'_def isMessageFromTo_def, auto simp add: messages')
 
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
@@ -2588,30 +2588,30 @@ next
     proof (cases "lastAccepted nd")
       case NoPublishResponseSent
       hence messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = OneNode (sender message),
-                                               payload = JoinRequest (localCheckpoint nd) t NoPublishResponseSent\<rparr> messages"
+                                               payload = JoinRequest (firstUncommittedSlot nd) t NoPublishResponseSent\<rparr> messages"
         by (simp add: messages')
 
       show ?thesis
       proof (unfold messages', intro send_JoinRequest_None)
         from committedToLocalCheckpoint
-        show "\<forall>i<localCheckpoint nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
+        show "\<forall>i<firstUncommittedSlot nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
           by (simp add: nd_def committedTo_def isCommitted_def)
 
         from True eraMatchesLocalCheckpoint
-        show "era\<^sub>t t = era\<^sub>i (localCheckpoint nd)"
+        show "era\<^sub>t t = era\<^sub>i (firstUncommittedSlot nd)"
           by (simp add: nd_def)
 
-        show "\<forall>i\<ge>localCheckpoint nd. \<forall>t. \<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
+        show "\<forall>i\<ge>firstUncommittedSlot nd. \<forall>t. \<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
         proof (intro allI impI)
           fix i t
-          assume le: "localCheckpoint nd \<le> i"
+          assume le: "firstUncommittedSlot nd \<le> i"
           show "\<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
-          proof (cases "i \<le> localCheckpoint nd")
+          proof (cases "i \<le> firstUncommittedSlot nd")
             case False
-            with le have lt: "localCheckpoint nd < i" by simp
+            with le have lt: "firstUncommittedSlot nd < i" by simp
             with nothingAcceptedInLaterSlots show ?thesis by (simp add: nd_def nodesIdentified)
           next
-            case True with le have eq: "i = localCheckpoint nd" by simp
+            case True with le have eq: "i = firstUncommittedSlot nd" by simp
             from lastAccepted_None [of n\<^sub>0] NoPublishResponseSent show ?thesis
               by (simp add: nd_def eq nodesIdentified)
           qed
@@ -2625,17 +2625,17 @@ next
     next
       case (PublishResponseSent t' x')
       hence messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = OneNode (sender message),
-                                               payload = JoinRequest (localCheckpoint nd) t (PublishResponseSent t' x')\<rparr> messages"
+                                               payload = JoinRequest (firstUncommittedSlot nd) t (PublishResponseSent t' x')\<rparr> messages"
         by (simp add: messages')
 
       show ?thesis
       proof (unfold messages', intro send_JoinRequest_Some)
         from committedToLocalCheckpoint
-        show "\<forall>i<localCheckpoint nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
+        show "\<forall>i<firstUncommittedSlot nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
           by (simp add: nd_def committedTo_def isCommitted_def)
 
         from nothingAcceptedInLaterSlots
-        show "\<forall>i>localCheckpoint nd. \<forall>t. \<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
+        show "\<forall>i>firstUncommittedSlot nd. \<forall>t. \<not> n\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
           by (simp add: nd_def nodesIdentified)
 
         from JoinRequest_minimumAcceptableTerm new_term
@@ -2643,47 +2643,47 @@ next
           using nd_def nodesIdentified by fastforce
 
         from lastAccepted_Some_sent [of n\<^sub>0] lastAccepted_Some_value [of n\<^sub>0] lastAccepted_Some_max [of n\<^sub>0] PublishResponseSent
-        show "n\<^sub>0 \<midarrow>\<langle> PublishResponse (localCheckpoint nd) t' \<rangle>\<leadsto>"
-          "\<langle> PublishRequest (localCheckpoint nd) t' x' \<rangle>\<leadsto>"
-          "\<forall>t''. n\<^sub>0 \<midarrow>\<langle> PublishResponse (localCheckpoint nd) t'' \<rangle>\<leadsto> \<longrightarrow> t'' \<le> t'"
+        show "n\<^sub>0 \<midarrow>\<langle> PublishResponse (firstUncommittedSlot nd) t' \<rangle>\<leadsto>"
+          "\<langle> PublishRequest (firstUncommittedSlot nd) t' x' \<rangle>\<leadsto>"
+          "\<forall>t''. n\<^sub>0 \<midarrow>\<langle> PublishResponse (firstUncommittedSlot nd) t'' \<rangle>\<leadsto> \<longrightarrow> t'' \<le> t'"
           by (simp_all add: nd_def)
 
         from lastAccepted_Some_term [of n\<^sub>0] PublishResponseSent new_term
         show "t' < t" by (auto simp add: nd_def, fastforce)
 
         from True eraMatchesLocalCheckpoint
-        show "era\<^sub>t t = era\<^sub>i (localCheckpoint nd)"
+        show "era\<^sub>t t = era\<^sub>i (firstUncommittedSlot nd)"
           by (simp add: nd_def)
       qed
     qed
 
     from nodesIdentified show "\<And>n. currentNode (nodeState' n) = n" by simp
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (localCheckpoint (nodeState' n))" by simp
-    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (localCheckpoint (nodeState' n))" by simp
-    from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'" by simp
-    from PublishRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)" by simp
-    from PublishRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)" by simp
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))" by simp
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
+    from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'" by simp
+    from PublishRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> electionTerm (nodeState' n)" by simp
+    from PublishRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> \<not> applyRequested (nodeState' n) \<Longrightarrow> t < electionTerm (nodeState' n)" by simp
     from applyRequested_electionWon show "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)" by simp
-    from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (localCheckpoint (nodeState' n)))" by simp
+    from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))" by simp
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (electionVotes (nodeState' n))" by simp
-    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t \<rangle>\<leadsto>'" by simp
-    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t' \<rangle>\<leadsto>'" by simp
-    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState' n)) t' x' \<rangle>\<leadsto>'" by simp
-    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'" by simp
-    from electionWon_era show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (localCheckpoint (nodeState' n))" by simp
+    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState' n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'" by simp
+    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>'" by simp
+    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t' x' \<rangle>\<leadsto>'" by simp
+    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t'' \<rangle>\<leadsto>' \<Longrightarrow> t'' \<le> t'" by simp
+    from electionWon_era show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
 
-    from electionVotes show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (localCheckpoint (nodeState' n)) n' n (electionTerm (nodeState' n))"
+    from electionVotes show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (electionTerm (nodeState' n))"
       by (auto simp add: promised'_def JoinRequest', blast)
 
     from electionValue_None
     show "\<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow>
             n' \<in> electionVotes (nodeState' n) \<Longrightarrow>
-            (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n))
-         \<or> (\<exists>i<localCheckpoint (nodeState' n). \<exists>a. (n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n)))"
+            (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow>' (OneNode n))
+         \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. (n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n)))"
       by (auto simp add: JoinRequest')
 
     from electionValue_Some JoinRequest' property_simps message_simps
-    show "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
+    show "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x' \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow>' (OneNode n)"
       by metis
 
   next
@@ -2722,7 +2722,7 @@ next
           by (unfold nodeState'_def, simp add: True nd' result nd_def)
         finally show "t' \<le> ..." by simp
       next
-        fix d assume "(n\<^sub>0, i, t', a, d) = (n\<^sub>0, localCheckpoint nd, t, lastAccepted nd, OneNode (sender message))"
+        fix d assume "(n\<^sub>0, i, t', a, d) = (n\<^sub>0, firstUncommittedSlot nd, t, lastAccepted nd, OneNode (sender message))"
         thus "t' \<le> minimumAcceptableTerm (nodeState' n\<^sub>0)"
           by (unfold nodeState'_def, simp add: nd' result)
       qed
@@ -2731,10 +2731,10 @@ next
   next
     fix n i i' t' a a'
     assume "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<leadsto>'"
-    then obtain d where d: "(n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d) \<or> (n, i, t') = (n\<^sub>0, localCheckpoint nd, t)"
+    then obtain d where d: "(n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d) \<or> (n, i, t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       by (auto simp add: JoinRequest' isMessageFrom'_def)
     assume "n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<leadsto>'"
-    then obtain d' where d': "(n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d') \<or> (n, i', t') = (n\<^sub>0, localCheckpoint nd, t)"
+    then obtain d' where d': "(n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d') \<or> (n, i', t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       by (auto simp add: JoinRequest' isMessageFrom'_def)
 
     from d d'
@@ -2743,17 +2743,17 @@ next
       show "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d' \<Longrightarrow> i = i'"
         by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def)
 
-      show "(n, i, t') = (n\<^sub>0, localCheckpoint nd, t)
-              \<Longrightarrow> (n, i', t') = (n\<^sub>0, localCheckpoint nd, t)
+      show "(n, i, t') = (n\<^sub>0, firstUncommittedSlot nd, t)
+              \<Longrightarrow> (n, i', t') = (n\<^sub>0, firstUncommittedSlot nd, t)
               \<Longrightarrow> i = i'" by simp
 
     next
-      assume "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d" "(n, i', t') = (n\<^sub>0, localCheckpoint nd, t)"
+      assume "n \<midarrow>\<langle> JoinRequest i t' a \<rangle>\<rightarrow> d" "(n, i', t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       hence "n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
       from JoinRequest_minimumAcceptableTerm [OF this] new_term
       show ?thesis by (simp add: nd_def)
     next
-      assume "n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d'" "(n, i, t') = (n\<^sub>0, localCheckpoint nd, t)"
+      assume "n \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<rightarrow> d'" "(n, i, t') = (n\<^sub>0, firstUncommittedSlot nd, t)"
       hence "n\<^sub>0 \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def)
       from JoinRequest_minimumAcceptableTerm [OF this] new_term
       show ?thesis by (simp add: nd_def)
@@ -2765,15 +2765,15 @@ next
     hence a: "electionValue (nodeState n) = PublishResponseSent t' x'" by simp
     from electionValue_Some [OF a]
     obtain n' where n': "n' \<in> electionVotes (nodeState n)"
-      "n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)" by auto
+      "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)" by auto
 
     fix n'' t'' x''
     assume "n'' \<in> electionVotes (nodeState' n)" hence n'': "n'' \<in> electionVotes (nodeState n)" by simp
-    assume n''_msg: "n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n)"
+    assume n''_msg: "n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow>' (OneNode n)"
 
-    from n''_msg have "(n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n))
-              \<or> (n'', localCheckpoint (nodeState n), electionTerm (nodeState n), PublishResponseSent t'' x'', OneNode n) = 
-                (n\<^sub>0, localCheckpoint nd, t, lastAccepted nd, OneNode (sender message))"
+    from n''_msg have "(n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n))
+              \<or> (n'', firstUncommittedSlot (nodeState n), electionTerm (nodeState n), PublishResponseSent t'' x'', OneNode n) = 
+                (n\<^sub>0, firstUncommittedSlot nd, t, lastAccepted nd, OneNode (sender message))"
       (is "?D1 \<or> ?D2")
       by (simp add: JoinRequest')
 
@@ -2816,7 +2816,7 @@ next
 
   have property_simps[simp]:
     "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
-    "\<And>n. localCheckpoint (nodeState' n) = localCheckpoint (nodeState n)"
+    "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
@@ -2841,54 +2841,54 @@ next
     apply (intro zenImplI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq)
       (*      using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
-              isQuorum_localCheckpoint JoinRequest_slot_function
+              isQuorum_firstUncommittedSlot JoinRequest_slot_function
               nothingAcceptedInLaterSlots JoinRequest_minimumAcceptableTerm *)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))".
-    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))".
-    from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))".
-    from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
-    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t \<rangle>\<leadsto>" .
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
+    from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
+    from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
+    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
     from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)" .
-    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t' \<rangle>\<leadsto>" .
-    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>" .
-    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
+    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
     from JoinRequest_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
 
     from applyRequested_electionWon show "\<And>n. applyRequested (nodeState' n) \<Longrightarrow> electionWon (nodeState' n)"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
 
-    from electionVotes False show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (localCheckpoint (nodeState n)) n' n (electionTerm (nodeState' n))"
+    from electionVotes False show "\<And>n n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (electionTerm (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def promised'_def)
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (electionVotes (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
 
-    from electionWon_era False show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i (localCheckpoint (nodeState n))"
+    from electionWon_era False show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState' n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
 
     from electionValue_None False show " \<And>n n'. electionValue (nodeState' n) = NoPublishResponseSent \<Longrightarrow>
             n' \<in> electionVotes (nodeState' n) \<Longrightarrow>
-            (n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
-                \<or> (\<exists>i<localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow> (OneNode n))"
+            (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState' n)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
+                \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState' n)) a \<rangle>\<rightarrow> (OneNode n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def, blast)
 
     from electionValue_Some show "\<And>n t' x'. electionValue (nodeState' n) = PublishResponseSent t' x'
-      \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+      \<Longrightarrow> \<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState' n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
 
     fix n
     from electionValue_Some_max False show "\<And>t' x' n'' t'' x''. electionValue (nodeState' n) = PublishResponseSent t' x'
       \<Longrightarrow> n'' \<in> electionVotes (nodeState' n)
-      \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)
+      \<Longrightarrow> n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState' n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)
       \<Longrightarrow> t'' \<le> t'"
       by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: nd' ensureElectionTerm_def nd_def)
 
     fix t' x'
-    assume sent: "n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>"
+    assume sent: "n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>"
 
     show "t' \<le> electionTerm (nodeState' n)"
     proof (cases "n = n\<^sub>0")
@@ -2925,7 +2925,7 @@ lemma (in zenStep) addElectionVote_invariants:
   assumes not_won: "\<not> electionWon nd"
   assumes sent: "s \<midarrow>\<langle> JoinRequest i (electionTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
   assumes era: "era\<^sub>t (electionTerm nd) = currentEra nd"
-  assumes slot: "i \<le> localCheckpoint nd"
+  assumes slot: "i \<le> firstUncommittedSlot nd"
   shows "zenImpl messages' nodeState'"
 proof -
   have message_simps[simp]:
@@ -2938,7 +2938,7 @@ proof -
 
   have property_simps[simp]:
     "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
-    "\<And>n. localCheckpoint (nodeState' n) = localCheckpoint (nodeState n)"
+    "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAccepted (nodeState' n) = lastAccepted (nodeState n)"
@@ -2960,24 +2960,24 @@ proof -
     apply (intro zenImplI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq)
       (*      using nodesIdentified committedToLocalCheckpoint eraMatchesLocalCheckpoint
-              isQuorum_localCheckpoint JoinRequest_slot_function
+              isQuorum_firstUncommittedSlot JoinRequest_slot_function
               nothingAcceptedInLaterSlots JoinRequest_minimumAcceptableTerm *)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (localCheckpoint (nodeState n))".
-    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (localCheckpoint (nodeState n))".
-    from isQuorum_localCheckpoint show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (localCheckpoint (nodeState n)))".
-    from nothingAcceptedInLaterSlots show "\<And>i n t. localCheckpoint (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
-    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t \<rangle>\<leadsto>" .
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
+    from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
+    from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
+    from lastAccepted_None show "\<And>n t. lastAccepted (nodeState n) = NoPublishResponseSent \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
     from lastAccepted_Some_term show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> t' \<le> minimumAcceptableTerm (nodeState n)" .
-    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t' \<rangle>\<leadsto>" .
-    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (localCheckpoint (nodeState n)) t' x' \<rangle>\<leadsto>" .
-    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (localCheckpoint (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
+    from lastAccepted_Some_sent show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_value show "\<And>n t' x'. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t' x' \<rangle>\<leadsto>" .
+    from lastAccepted_Some_max show "\<And>n t' x' t''. lastAccepted (nodeState n) = PublishResponseSent t' x' \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto> \<Longrightarrow> t'' \<le> t'" .
     from JoinRequest_minimumAcceptableTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> minimumAcceptableTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
-    from PublishRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> electionTerm (nodeState n)" .
-    from PublishRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (localCheckpoint (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequested (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
+    from PublishRequest_electionTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> electionTerm (nodeState n)" .
+    from PublishRequest_electionTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> \<not> applyRequested (nodeState n) \<Longrightarrow> t < electionTerm (nodeState n)" .
 
     from applyRequested_electionWon not_won
     show "\<And>n. applyRequested (nodeState n) \<Longrightarrow> electionWon (nodeState' n)"
@@ -2989,19 +2989,19 @@ proof -
 
     fix n
     from electionWon_era era eraMatchesLocalCheckpoint
-    show "electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState n)) = era\<^sub>i (localCheckpoint (nodeState n))"
+    show "electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (electionTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
       by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: nd_def nd' addElectionVote_def Let_def)
 
     from electionVotes slot sent
-    show "\<And>n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised (localCheckpoint (nodeState n)) n' n (electionTerm (nodeState n))"
+    show "\<And>n'. n' \<in> electionVotes (nodeState' n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState n)) n' n (electionTerm (nodeState n))"
       by (cases "n = n\<^sub>0", unfold nodeState'_def, auto simp add: promised_def nd' addElectionVote_def Let_def nd_def)
 
     fix n'
     assume electionValue': "electionValue (nodeState' n) = NoPublishResponseSent"
     assume n'_vote: "n' \<in> electionVotes (nodeState' n)"
 
-    show "(n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState n)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
-               \<or> (\<exists>i<localCheckpoint (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
+    show "(n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState n)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n))
+               \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (electionTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
     proof (cases "n = n\<^sub>0")
       case False with electionValue_None electionValue' n'_vote show ?thesis
         by (unfold nodeState'_def, auto)
@@ -3009,7 +3009,7 @@ proof -
       case True note n_eq = this
 
       from electionValue'
-      have combine_None: "combinePublishResponses (electionValue nd) (if i = localCheckpoint nd then a else NoPublishResponseSent) = NoPublishResponseSent"
+      have combine_None: "combinePublishResponses (electionValue nd) (if i = firstUncommittedSlot nd then a else NoPublishResponseSent) = NoPublishResponseSent"
         by (unfold nodeState'_def, simp add: n_eq nd' addElectionVote_def Let_def)
 
       from combinePublishResponses_eq_NoPublishResponseSent_1 [OF this]
@@ -3025,7 +3025,7 @@ proof -
       next
         assume n': "n' = s"
         show ?thesis
-        proof (cases "i = localCheckpoint nd")
+        proof (cases "i = firstUncommittedSlot nd")
           case False with sent slot show ?thesis by (auto simp add: n_eq nd_def n')
         next
           case True
@@ -3040,7 +3040,7 @@ proof -
     fix n t' x'
     assume electionValue': "electionValue (nodeState' n) = PublishResponseSent t' x'"
 
-    show "\<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
+    show "\<exists>n'\<in>electionVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t' x') \<rangle>\<rightarrow> (OneNode n)"
     proof (cases "n = n\<^sub>0")
       case False
       with electionValue_Some electionValue' show ?thesis by (unfold nodeState'_def, auto)
@@ -3054,14 +3054,14 @@ proof -
         case False
 
         from electionValue'
-        have combine_Some: "combinePublishResponses (electionValue nd) (if i = localCheckpoint nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
+        have combine_Some: "combinePublishResponses (electionValue nd) (if i = firstUncommittedSlot nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
           by (unfold nodeState'_def, simp add: n_eq nd' addElectionVote_def Let_def)
 
-        have "PublishResponseSent t' x' \<in> { electionValue nd, if i = localCheckpoint nd then a else NoPublishResponseSent }"
+        have "PublishResponseSent t' x' \<in> { electionValue nd, if i = firstUncommittedSlot nd then a else NoPublishResponseSent }"
           by (fold combine_Some, intro combinePublishResponses_range)
 
-        with False have eqs: "i = localCheckpoint nd" "a = PublishResponseSent t' x'"
-          by (cases "i = localCheckpoint nd", auto)
+        with False have eqs: "i = firstUncommittedSlot nd" "a = PublishResponseSent t' x'"
+          by (cases "i = firstUncommittedSlot nd", auto)
 
         from sent show ?thesis
           by (unfold nodeState'_def, auto simp add: n_eq nd' addElectionVote_def Let_def eqs nd_def)
@@ -3072,7 +3072,7 @@ proof -
     fix n t' x' n'' t'' x''
     assume electionValue': "electionValue (nodeState' n) = PublishResponseSent t' x'"
     assume n''_vote: "n'' \<in> electionVotes (nodeState' n)"
-    assume n''_sent: "n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)"
+    assume n''_sent: "n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (electionTerm (nodeState n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)"
 
     show "t'' \<le> t'"
     proof (cases "n = n\<^sub>0")
@@ -3085,10 +3085,10 @@ proof -
         unfolding nodeState'_def by (auto simp add: n_eq nd' addElectionVote_def Let_def)
 
       from electionValue'
-      have combine_Some: "combinePublishResponses (electionValue nd) (if i = localCheckpoint nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
+      have combine_Some: "combinePublishResponses (electionValue nd) (if i = firstUncommittedSlot nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
         by (unfold nodeState'_def, simp add: n_eq nd' addElectionVote_def Let_def)
 
-      have PublishResponseSent_mem: "PublishResponseSent t' x' \<in> { electionValue nd, if i = localCheckpoint nd then a else NoPublishResponseSent }"
+      have PublishResponseSent_mem: "PublishResponseSent t' x' \<in> { electionValue nd, if i = firstUncommittedSlot nd then a else NoPublishResponseSent }"
         by (fold combine_Some, intro combinePublishResponses_range)
 
       show ?thesis
@@ -3103,7 +3103,7 @@ proof -
         next
           assume n'': "n'' = s"
           with sent n''_sent
-          have i: "i = localCheckpoint nd"
+          have i: "i = firstUncommittedSlot nd"
             by (intro JoinRequest_slot_function, auto simp add: n_eq isMessageFrom_def nd_def)
           from n'' i sent n''_sent have a: "a = PublishResponseSent t'' x''"
             by (intro JoinRequest_value_function, auto simp add: n_eq isMessageFrom_def nd_def)
@@ -3112,8 +3112,8 @@ proof -
       next
         case False
 
-        from PublishResponseSent_mem False have eqs: "i = localCheckpoint nd" "a = PublishResponseSent t' x'"
-          by (cases "i = localCheckpoint nd", auto)
+        from PublishResponseSent_mem False have eqs: "i = firstUncommittedSlot nd" "a = PublishResponseSent t' x'"
+          by (cases "i = firstUncommittedSlot nd", auto)
 
         from n''_vote show ?thesis
         proof (elim disjE)
@@ -3132,7 +3132,7 @@ proof -
 
             from electionValue_None [OF this] show ?thesis
             proof (elim disjE exE conjE)
-              assume "n'' \<midarrow>\<langle> JoinRequest (localCheckpoint (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+              assume "n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (electionTerm (nodeState n\<^sub>0)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
               with n''_sent have "NoPublishResponseSent = PublishResponseSent t'' x''"
                 by (intro JoinRequest_value_function, auto simp add: n_eq isMessageFrom_def)
               thus ?thesis by simp
@@ -3140,7 +3140,7 @@ proof -
               fix i' a'
               assume "n'' \<midarrow>\<langle> JoinRequest i' (electionTerm (nodeState n\<^sub>0)) a' \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
               with n''_sent have "i' = i" by (intro JoinRequest_slot_function, auto simp add: n_eq isMessageFrom_def eqs nd_def)
-              moreover assume "i' < localCheckpoint (nodeState n\<^sub>0)"
+              moreover assume "i' < firstUncommittedSlot (nodeState n\<^sub>0)"
               ultimately show ?thesis by (simp add: eqs nd_def)
             qed
 
@@ -3231,10 +3231,10 @@ proof -
         case True
         hence new_term: "minimumAcceptableTerm nd < t" and era_eq: "era\<^sub>t t = currentEra nd" by simp_all
 
-        have handleStartJoin[simp]: "handleStartJoin t nd = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (localCheckpoint nd) t (lastAccepted nd)))"
+        have handleStartJoin[simp]: "handleStartJoin t nd = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some (JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd)))"
           by (simp add: handleStartJoin_def True)
 
-        hence result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some \<lparr> sender = n\<^sub>0, destination = OneNode (sender m), payload = JoinRequest (localCheckpoint nd) t (lastAccepted nd) \<rparr>)"
+        hence result: "result = (nd \<lparr>minimumAcceptableTerm := t\<rparr>, Some \<lparr> sender = n\<^sub>0, destination = OneNode (sender m), payload = JoinRequest (firstUncommittedSlot nd) t (lastAccepted nd) \<rparr>)"
           unfolding result_def ProcessMessage_def Let_def dest_True StartJoin by simp
 
         note zenStep.nodeState'_def zenStep.response_def zenStep.send.simps zenStep.nd_def
@@ -3263,7 +3263,7 @@ proof -
         by auto
 
       show ?thesis
-      proof (cases "localCheckpoint nd < i
+      proof (cases "firstUncommittedSlot nd < i
              \<or> t < electionTerm nd
              \<or> (t = electionTerm nd \<and> electionWon nd)
              \<or> era\<^sub>t t \<noteq> currentEra nd")
@@ -3274,11 +3274,11 @@ proof -
         thus ?thesis by (intro noop)
       next
         case False
-        hence False': "i \<le> localCheckpoint nd" "electionTerm nd \<le> t"
+        hence False': "i \<le> firstUncommittedSlot nd" "electionTerm nd \<le> t"
                       "electionTerm nd = t \<Longrightarrow> \<not> electionWon nd"
                       "era\<^sub>t t = currentEra nd"
           by auto
-        hence False_eq: "(localCheckpoint nd < i \<or> t < electionTerm nd \<or> t = electionTerm nd \<and> electionWon nd \<or> era\<^sub>t t \<noteq> currentEra nd) = False"
+        hence False_eq: "(firstUncommittedSlot nd < i \<or> t < electionTerm nd \<or> t = electionTerm nd \<and> electionWon nd \<or> era\<^sub>t t \<noteq> currentEra nd) = False"
           by auto
 
         define nd1 where "nd1 \<equiv> ensureElectionTerm t nd"
@@ -3323,7 +3323,7 @@ proof -
         have currentEra_nd1[simp]: "currentEra nd1 = currentEra nd"
           by (simp add: nd1_def ensureElectionTerm_def)
 
-        have localCheckpoint_nd1[simp]: "localCheckpoint nd1 = localCheckpoint nd"
+        have firstUncommittedSlot_nd1[simp]: "firstUncommittedSlot nd1 = firstUncommittedSlot nd"
           by (simp add: nd1_def ensureElectionTerm_def)
 
         from False'
@@ -3332,7 +3332,7 @@ proof -
 
         have zenImpl2: "zenImpl messages nodeState2"
           unfolding nodeState2
-          using `era\<^sub>t t = currentEra nd` `i \<le> localCheckpoint nd`
+          using `era\<^sub>t t = currentEra nd` `i \<le> firstUncommittedSlot nd`
         proof (intro zenStep.addElectionVote_invariants)
           from `m \<in> messages` zenImpl1
           show "zenStep messages nodeState1 messages m"
@@ -3393,10 +3393,10 @@ proof -
           next
             case True
 
-            have handleClientValue_nd2: "handleClientValue x' nd2 = (nd2\<lparr>applyRequested := True\<rparr>, Some (PublishRequest (localCheckpoint nd2) (electionTerm nd2) x'))"
+            have handleClientValue_nd2: "handleClientValue x' nd2 = (nd2\<lparr>applyRequested := True\<rparr>, Some (PublishRequest (firstUncommittedSlot nd2) (electionTerm nd2) x'))"
               by (simp add: handleClientValue_def True not_requested)
 
-            have result': "result = (nd2\<lparr>applyRequested := True\<rparr>, Some \<lparr>sender = currentNode nd2, destination = Broadcast, payload = PublishRequest (localCheckpoint nd2) (electionTerm nd2) x'\<rparr>)"
+            have result': "result = (nd2\<lparr>applyRequested := True\<rparr>, Some \<lparr>sender = currentNode nd2, destination = Broadcast, payload = PublishRequest (firstUncommittedSlot nd2) (electionTerm nd2) x'\<rparr>)"
               by (simp add: result handleClientValue_nd2 broadcast'_def)
 
             have nd2[simp]: "zenStep.nd nodeState2 n\<^sub>0 = nd2"
@@ -3447,9 +3447,9 @@ proof -
         thus ?thesis by (intro noop)
       next
         case True
-        hence handleClientValue: "handleClientValue x nd = (nd \<lparr> applyRequested := True \<rparr>, Some (PublishRequest (localCheckpoint nd) (electionTerm nd) x))"
+        hence handleClientValue: "handleClientValue x nd = (nd \<lparr> applyRequested := True \<rparr>, Some (PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x))"
           by (simp add: handleClientValue_def)
-        hence result: "result = (nd \<lparr> applyRequested := True \<rparr>, Some \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = PublishRequest (localCheckpoint nd) (electionTerm nd) x\<rparr>)"
+        hence result: "result = (nd \<lparr> applyRequested := True \<rparr>, Some \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = PublishRequest (firstUncommittedSlot nd) (electionTerm nd) x\<rparr>)"
           by (simp add: result broadcast'_def)
 
         note zenStep.nodeState'_def [OF zenStep]
