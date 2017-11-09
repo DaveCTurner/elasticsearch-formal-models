@@ -4,6 +4,9 @@ session "elasticsearch-isabelle" = "HOL" +
     (* Foo *)
     (* Bar *)
   theories
+    Preliminaries
+    Implementation
+    OneSlot
     Zen
   document_files
     "root.tex"
