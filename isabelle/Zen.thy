@@ -2510,111 +2510,139 @@ proof -
           unfolding nodeState'_def
           apply (simp add: n_eq nd' addElectionVote_def Let_def nd_def)
           by presburger
+        hence i: "i = firstUncommittedSlot nd" and "a \<noteq> None" by simp_all
+        then obtain t' where a: "a = Some t'" by auto
+
+        from a_lastAcceptedTerm a obtain t where t: "lastAcceptedTerm nd = Some t" and t't: "t' \<le> t"
+          apply (cases "lastAcceptedTerm nd", simp_all)
+          by (metis eq_iff max_def)
 
         have "joinVotes (nodeState' n) = insert s (joinVotes nd)"
           unfolding nodeState'_def
           by (simp add: n_eq nd' addElectionVote_def Let_def)
 
-        from electionValue'
-        have combine_Some: "combinePublishResponses (electionValue nd) (if i = firstUncommittedSlot nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
-          by (unfold nodeState'_def, simp add: n_eq nd' addElectionVote_def Let_def)
+        show ?thesis
+        proof (intro bexI exI conjI)
+          show "s \<in> joinVotes (nodeState' n)"
+            unfolding nodeState'_def
+            by (simp add: n_eq nd' addElectionVote_def Let_def)
 
-        have "PublishResponseSent t' x' \<in> { electionValue nd, if i = firstUncommittedSlot nd then a else NoPublishResponseSent }"
-          by (fold combine_Some, intro combinePublishResponses_range)
+          from sent
+          show "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
+            by (simp add: i a n_eq nd_def)
 
-        with False have eqs: "i = firstUncommittedSlot nd" "a = PublishResponseSent t' x'"
-          by (cases "i = firstUncommittedSlot nd", auto)
-
-        from sent show ?thesis
-          by (unfold nodeState'_def, auto simp add: n_eq nd' addElectionVote_def Let_def eqs nd_def)
+          from t show "lastAcceptedTerm (nodeState n) = Some t" by (simp add: nd_def n_eq)
+          from t't show "t' \<le> t" .
+        qed
       qed
     qed
 
   next
-    fix n t' x' n'' t'' x''
-    assume electionValue': "electionValue (nodeState' n) = PublishResponseSent t' x'"
-    assume n''_vote: "n'' \<in> electionVotes (nodeState' n)"
-    assume n''_sent: "n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (PublishResponseSent t'' x'') \<rangle>\<rightarrow> (OneNode n)"
+    fix n
+    assume electionValueForced': "electionValueState (nodeState' n) = ElectionValueForced"
 
-    show "t'' \<le> t'"
+    show "\<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with electionValue_Some_max electionValue' n''_vote n''_sent show ?thesis by (unfold nodeState'_def, auto)
+      with electionValueForced' electionValue_Forced
+      show ?thesis
+        unfolding nodeState'_def
+        by (auto)
     next
       case True note n_eq = this
 
-      from n''_vote have n''_vote: "n'' \<in> electionVotes nd \<or> n'' = s"
-        unfolding nodeState'_def by (auto simp add: n_eq nd' addElectionVote_def Let_def)
-
-      from electionValue'
-      have combine_Some: "combinePublishResponses (electionValue nd) (if i = firstUncommittedSlot nd then a else NoPublishResponseSent) = PublishResponseSent t' x'"
-        by (unfold nodeState'_def, simp add: n_eq nd' addElectionVote_def Let_def)
-
-      have PublishResponseSent_mem: "PublishResponseSent t' x' \<in> { electionValue nd, if i = firstUncommittedSlot nd then a else NoPublishResponseSent }"
-        by (fold combine_Some, intro combinePublishResponses_range)
-
       show ?thesis
-      proof (cases "electionValue nd = PublishResponseSent t' x'")
+      proof (cases "electionValueState (nodeState n) = ElectionValueForced")
         case True
-
-        from n''_vote
-        show ?thesis
-        proof (elim disjE)
-          assume "n'' \<in> electionVotes nd" with True electionValue_Some_max n''_vote n''_sent show ?thesis
-            unfolding nodeState'_def by (auto simp add: nd_def n_eq nd' addElectionVote_def Let_def)
-        next
-          assume n'': "n'' = s"
-          with sent n''_sent
-          have i: "i = firstUncommittedSlot nd"
-            by (intro JoinRequest_slot_function, auto simp add: n_eq isMessageFrom_def nd_def)
-          from n'' i sent n''_sent have a: "a = PublishResponseSent t'' x''"
-            by (intro JoinRequest_value_function, auto simp add: n_eq isMessageFrom_def nd_def)
-          from combine_Some show ?thesis by (cases "t' < t''", auto simp add: True i a)
-        qed
+        with electionValue_Forced
+        have "\<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
+          by (auto simp add: n_eq)
+        moreover have "joinVotes (nodeState n) \<subseteq> joinVotes (nodeState' n)"
+          unfolding nodeState'_def
+          unfolding nd' n_eq addElectionVote_def Let_def nd_def by auto
+        ultimately show ?thesis by blast
       next
         case False
 
-        from PublishResponseSent_mem False have eqs: "i = firstUncommittedSlot nd" "a = PublishResponseSent t' x'"
-          by (cases "i = firstUncommittedSlot nd", auto)
+        with electionValueForced' have "i = firstUncommittedSlot nd \<and> a \<noteq> None \<and> a = lastAcceptedTerm nd"
+          unfolding nodeState'_def n_eq
+          unfolding nd' addElectionVote_def Let_def nd_def
+          apply simp
+          using ElectionValueState.distinct by presburger
 
-        from n''_vote show ?thesis
-        proof (elim disjE)
-          assume n'': "n'' = s"
-          from n''_sent sent have "a = PublishResponseSent t'' x''"
-            by (intro JoinRequest_value_function, auto simp add: n'' eqs nd_def n_eq isMessageFrom_def)
-          with eqs show ?thesis by auto
+        hence i: "i = firstUncommittedSlot nd" and a_Some: "a \<noteq> None" and a: "a = lastAcceptedTerm nd"
+          by auto
+
+        show ?thesis
+        proof (intro bexI exI conjI)
+          from sent
+          show "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
+            by (simp add: i a n_eq nd_def)
+
+          show "s \<in> joinVotes (nodeState' n)"
+            unfolding nodeState'_def
+            by (simp add: n_eq nd' addElectionVote_def Let_def)
+        qed
+      qed
+    qed
+
+  next
+    fix n n' a'
+
+    assume notFree': "electionValueState (nodeState' n) \<noteq> ElectionValueFree"
+    assume n'_vote: "n' \<in> joinVotes (nodeState' n)"
+    assume n'_sent: "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n)"
+
+    show "maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
+    proof (cases "n = n\<^sub>0")
+      case False
+      with electionValue_not_Free_max notFree' n'_vote n'_sent show ?thesis by (unfold nodeState'_def, auto)
+    next
+      case True note n_eq = this
+
+      from n'_vote have "n' \<in> joinVotes nd \<or> n' = s"
+        unfolding nodeState'_def by (auto simp add: n_eq nd' addElectionVote_def Let_def)
+
+      thus ?thesis
+      proof (elim disjE)
+        assume "n' \<in> joinVotes nd" hence n'_vote: "n' \<in> joinVotes (nodeState n\<^sub>0)" by (simp add: nd_def)
+        show ?thesis
+        proof (cases "electionValueState (nodeState n\<^sub>0) = ElectionValueFree")
+          case False
+          with electionValue_not_Free_max n'_vote n'_sent
+          show ?thesis by (simp add: n_eq)
         next
-          assume n''_vote: "n'' \<in> electionVotes nd"
+          case True
+          from electionValue_Free [OF True n'_vote]
           show ?thesis
-          proof (cases "electionValue nd")
-            case NoPublishResponseSent
-            with n''_vote
-            have "electionValue (nodeState n\<^sub>0) = NoPublishResponseSent" "n'' \<in> electionVotes (nodeState n\<^sub>0)"
-              by (simp_all add: nd_def)
-
-            from electionValue_None [OF this] show ?thesis
-            proof (elim disjE exE conjE)
-              assume "n'' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) NoPublishResponseSent \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
-              with n''_sent have "NoPublishResponseSent = PublishResponseSent t'' x''"
-                by (intro JoinRequest_value_function, auto simp add: n_eq isMessageFrom_def)
-              thus ?thesis by simp
-            next
-              fix i' a'
-              assume "n'' \<midarrow>\<langle> JoinRequest i' (currentTerm (nodeState n\<^sub>0)) a' \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
-              with n''_sent have "i' = i" by (intro JoinRequest_slot_function, auto simp add: n_eq isMessageFrom_def eqs nd_def)
-              moreover assume "i' < firstUncommittedSlot (nodeState n\<^sub>0)"
-              ultimately show ?thesis by (simp add: eqs nd_def)
-            qed
-
+          proof (elim disjE exE conjE)
+            assume "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) None \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+            with n'_sent have a': "a' = None"
+              by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n_eq)
+            thus ?thesis by simp
           next
-            case (PublishResponseSent t''' x''')
-            with n''_vote n''_sent have "t'' \<le> t'''"
-              by (intro electionValue_Some_max, auto simp add: n_eq nd_def)
-            also from combine_Some have "t''' \<le> t'"
-              by (cases "t''' < t'", auto simp add: eqs PublishResponseSent)
-            finally show ?thesis .
+            fix i'' a''
+            assume ia: "n' \<midarrow>\<langle> JoinRequest i'' (currentTerm (nodeState n\<^sub>0)) a'' \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+
+            from ia n'_sent
+            have i'': "i'' = (firstUncommittedSlot (nodeState n))"
+              by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def n_eq)
+
+            assume "i'' < firstUncommittedSlot (nodeState n\<^sub>0)"
+            with i'' show ?thesis by (simp add: n_eq)
           qed
         qed
+      next
+        assume n': "n' = s"
+
+        from sent n'_sent have i: "i = firstUncommittedSlot nd"
+          by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def n' n_eq nd_def)
+
+        from sent n'_sent have a: "a' = a"
+          by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n' n_eq nd_def i)
+
+        from a_lastAcceptedTerm show ?thesis
+          by (simp add: a nd_def n_eq)
       qed
     qed
   qed
