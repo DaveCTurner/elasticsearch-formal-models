@@ -142,7 +142,7 @@ text \<open>This method publishes a value via a @{term PublishRequest} message.\
 definition publishValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "publishValue x nd \<equiv>
-        if electionWon nd \<and> publishPermitted nd
+        if electionWon nd \<and> publishPermitted nd \<and> electionValueState nd \<noteq> ElectionValueUnknown
               then ( nd \<lparr> publishPermitted := False \<rparr>
                    , Some (PublishRequest
                              (firstUncommittedSlot nd)

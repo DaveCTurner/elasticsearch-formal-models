@@ -1489,10 +1489,9 @@ lemma (in zenStep) publishValue_invariants:
   defines "result \<equiv> publishValue x nd"
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send broadcast result"
-  assumes x: "\<And> t' x'. electionValueState nd = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue nd"
-  assumes not_unknown: "electionValueState nd \<noteq> ElectionValueUnknown"
+  assumes x: "electionValueState nd = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue nd"
   shows "zenImpl messages' nodeState'"
-proof (cases "electionWon nd \<and> publishPermitted nd")
+proof (cases "electionWon nd \<and> publishPermitted nd \<and> electionValueState nd \<noteq> ElectionValueUnknown")
   case False
   hence result: "result = (nd, None)" by (simp add: result_def publishValue_def)
   have "messages' = messages" by (auto simp add: messages' result)
@@ -1724,7 +1723,7 @@ next
       proof (cases "electionValueState nd")
         case ElectionValueForced thus ?thesis by simp
       next
-        case ElectionValueUnknown with not_unknown show ?thesis by simp
+        case ElectionValueUnknown with won show ?thesis by simp
       next
         case ElectionValueFree
         with s_vote have "electionValueState (nodeState n\<^sub>0) = ElectionValueFree" "s \<in> joinVotes (nodeState n\<^sub>0)"
@@ -2765,22 +2764,29 @@ proof -
         by auto
 
       show ?thesis
-      proof (cases "firstUncommittedSlot nd < i
-             \<or> t < currentTerm nd
-             \<or> (t = currentTerm nd \<and> electionWon nd)
-             \<or> era\<^sub>t t \<noteq> currentEra nd")
-        case True
+      proof (cases "i \<le> firstUncommittedSlot nd
+             \<and> era\<^sub>t t = currentEra nd
+             \<and> currentTerm nd \<le> t
+             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd)")
+        case False
         have "result = (nd, None)"
         unfolding result_def ProcessMessage_def dest_True JoinRequest
-          by (simp add: handleJoinRequest_def True)
+          by (simp add: handleJoinRequest_def False)
         thus ?thesis by (intro noop)
       next
-        case False
-        hence False': "i \<le> firstUncommittedSlot nd" "currentTerm nd \<le> t"
-                      "currentTerm nd = t \<Longrightarrow> \<not> electionWon nd"
-                      "era\<^sub>t t = currentEra nd"
+        case True
+        hence True': "i \<le> firstUncommittedSlot nd"
+          "era\<^sub>t t = currentEra nd"
+          "currentTerm nd \<le> t"
+          "currentTerm nd = t \<Longrightarrow> \<not> electionWon nd"
+          "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd"
           by auto
-        hence False_eq: "(firstUncommittedSlot nd < i \<or> t < currentTerm nd \<or> t = currentTerm nd \<and> electionWon nd \<or> era\<^sub>t t \<noteq> currentEra nd) = False"
+        hence False_eq: "(i \<le> firstUncommittedSlot nd
+             \<and> era\<^sub>t t = currentEra nd
+             \<and> currentTerm nd \<le> t
+             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd)) = True"
           by auto
 
         define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
@@ -2809,7 +2815,7 @@ proof -
         from zenImpl1
         have zenStep1: "zenStep messages nodeState1 messages' m" by (intro zenStepI)
 
-        define newVotes where "newVotes \<equiv> insert (sender m) (electionVotes nd1)"
+        define newVotes where "newVotes \<equiv> insert (sender m) (joinVotes nd1)"
         define nd2 where "nd2 \<equiv> addElectionVote (sender m) i a nd1"
         define nodeState2 where "\<And>n. nodeState2 n \<equiv> if n = n\<^sub>0 then nd2 else nodeState1 n"
 
@@ -2818,6 +2824,9 @@ proof -
 
         have nd1[simp]: "zenStep.nd nodeState1 n\<^sub>0 = nd1"
           by (simp add: zenStep.nd_def [OF zenStep1] nodeState1_def)
+
+        have currentNode_nd1[simp]: "currentNode nd1 = n\<^sub>0"
+          by (auto simp add: nd1_def ensureCurrentTerm_def)
 
         have currentTerm_nd1[simp]: "currentTerm nd1 = t"
           by (simp add: nd1_def ensureCurrentTerm_def)
@@ -2828,7 +2837,7 @@ proof -
         have firstUncommittedSlot_nd1[simp]: "firstUncommittedSlot nd1 = firstUncommittedSlot nd"
           by (simp add: nd1_def ensureCurrentTerm_def)
 
-        from False'
+        from True'
         have electionWon_nd1[simp]: "\<not> electionWon nd1"
           by (simp add: nd1_def ensureCurrentTerm_def)
 
@@ -2845,91 +2854,40 @@ proof -
           from m
           show "\<lparr>sender = sender m, destination = OneNode n\<^sub>0, payload = JoinRequest i (currentTerm (zenStep.nd nodeState1 n\<^sub>0)) a\<rparr> \<in> messages"
             by (simp add: isMessageFromTo_def)
+
+          from True' show "maxTermOption a (lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0)) = lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0)"
+            by (simp add: nd1_def ensureCurrentTerm_def)
+
         qed simp_all
 
         from zenImpl2
         have zenStep2: "zenStep messages nodeState2 messages' m" by (intro zenStepI)
 
-        from False'
-        have "handleJoinRequest (sender m) i t a nd = sendElectionValueIfAppropriate nd2"
-          by (auto simp add: handleJoinRequest_def nd2_def nd1_def)
-        hence result: "result = broadcast' (sendElectionValueIfAppropriate nd2)"
+        from True'
+        have "handleJoinRequest (sender m) i t a nd = publishValue (lastAcceptedValue nd2) nd2"
+          apply (auto simp add: handleJoinRequest_def nd2_def nd1_def)         
+          by metis
+        hence result: "result = broadcast' (publishValue (lastAcceptedValue nd2) nd2)"
           unfolding result_def ProcessMessage_def dest_True JoinRequest broadcast'_def by simp
 
-        have no_message: "result = (nd2, None) \<Longrightarrow> ?thesis"
-        proof -
-          assume result: "result = (nd2, None)"
-          moreover from result have "messages' = messages" by (simp add: messages'_def)
-          moreover from result have "nodeState' = nodeState2" by (auto simp add: nodeState'_def nodeState2_def nodeState1_def)
-          moreover note zenImpl2
-          ultimately show ?thesis by simp
-        qed
+        have nodeState': "nodeState' = zenStep.nodeState' nodeState2 n\<^sub>0 (fst result)"
+          by (intro ext, simp add: zenStep.nodeState'_def [OF zenStep2] nodeState2_def nodeState1_def nodeState'_def)
 
-        have not_requested: "\<not> applyRequested nd2"
-        proof
-          assume "applyRequested nd2"
-          hence "applyRequested nd1" by (simp add: nd2_def addElectionVote_def Let_def)
-          with zenImpl.applyRequested_electionWon [OF zenImpl1, of n\<^sub>0]
-          have "electionWon nd1" by (simp add: nodeState1_def)
-          moreover have "\<not>electionWon nd1" by simp
-          ultimately show False by simp
-        qed
+        have nd2[simp]: "zenStep.nd nodeState2 n\<^sub>0 = nd2"
+          by (simp add: zenStep.nd_def [OF zenStep2] nodeState2_def)
+
+        have currentNode_nd2[simp]: "currentNode nd2 = n\<^sub>0"
+          by (auto simp add: nd2_def addElectionVote_def Let_def)
 
         show ?thesis
-        proof (cases "electionValue nd2")
-          case NoPublishResponseSent
-          hence result: "result = (nd2, None)"
-            by (simp add: result handleJoinRequest_def sendElectionValueIfAppropriate_def broadcast'_def)
-          thus ?thesis by (intro no_message)
-        next
-          case (PublishResponseSent t' x')
-          hence result: "result = broadcast' (publishValue x' nd2)"
-            by (simp add: result handleJoinRequest_def sendElectionValueIfAppropriate_def PublishResponseSent)
-
-          show ?thesis
-          proof (cases "electionWon nd2")
-            case False
-            hence result: "result = (nd2, None)"
-              by (simp add: result publishValue_def broadcast'_def)
-            thus ?thesis by (intro no_message)
-          next
-            case True
-
-            have publishValue_nd2: "publishValue x' nd2 = (nd2\<lparr>applyRequested := True\<rparr>, Some (PublishRequest (firstUncommittedSlot nd2) (currentTerm nd2) x'))"
-              by (simp add: publishValue_def True not_requested)
-
-            have result': "result = (nd2\<lparr>applyRequested := True\<rparr>, Some \<lparr>sender = currentNode nd2, destination = Broadcast, payload = PublishRequest (firstUncommittedSlot nd2) (currentTerm nd2) x'\<rparr>)"
-              by (simp add: result publishValue_nd2 broadcast'_def)
-
-            have nd2[simp]: "zenStep.nd nodeState2 n\<^sub>0 = nd2"
-              by (simp add: zenStep.nd_def [OF zenStep2] nodeState2_def)
-
-            have nodeState': "nodeState' = zenStep.nodeState' nodeState2 n\<^sub>0 (nd2\<lparr>applyRequested := True\<rparr>)"
-              by (intro ext, simp add: nodeState'_def result' zenStep.nodeState'_def [OF zenStep2] nodeState2_def nodeState1_def)
-
-            have currentNode2[simp]: "currentNode nd2 = currentNode nd1"
-              by (simp add: nd2_def addElectionVote_def Let_def)
-            have currentNode1[simp]: "currentNode nd1 = currentNode nd"
-              by (simp add: nd1_def ensureCurrentTerm_def)
-
-            show ?thesis
-              unfolding nodeState'
-            proof (intro zenStep.publishValue_invariants [OF zenStep2])
-
-              from result result' show "nd2\<lparr>applyRequested := True\<rparr> = fst (publishValue x' (zenStep.nd nodeState2 n\<^sub>0))"
-                unfolding broadcast'_def
-                by (simp add: True publishValue_def not_requested)
-
-              from result' show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (publishValue x' (zenStep.nd nodeState2 n\<^sub>0))"
-                using   publishValue_nd2
-                unfolding broadcast'_def messages'_def result zenStep.broadcast_def [OF zenStep2]
-                by (simp add: zenStep.send.simps [OF zenStep2])
-
-              fix t'' x''
-              assume "electionValue (zenStep.nd nodeState2 n\<^sub>0) = PublishResponseSent t'' x''"
-              with PublishResponseSent show "x' = x''" by simp
-            qed
-          qed
+          unfolding nodeState'
+        proof (intro zenStep.publishValue_invariants [OF zenStep2])
+          show "fst result = fst (publishValue (lastAcceptedValue nd2) (zenStep.nd nodeState2 n\<^sub>0))"
+            by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: result publishValue_def broadcast'_def)
+          show "lastAcceptedValue nd2 = lastAcceptedValue (zenStep.nd nodeState2 n\<^sub>0)" by simp
+          show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (publishValue (lastAcceptedValue nd2) (zenStep.nd nodeState2 n\<^sub>0))"
+            by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: messages'_def result broadcast'_def publishValue_def
+              zenStep.send.simps [OF zenStep2] zenStep.broadcast_def [OF zenStep2])
         qed
       qed
 
@@ -2938,52 +2896,45 @@ proof -
 
       have result: "result = broadcast' (handleClientValue x nd)"
         unfolding result_def ProcessMessage_def ClientValue dest_True broadcast'_def by simp
-     
+
       show ?thesis
-      proof (cases "electionWon nd \<and> \<not> applyRequested nd \<and> electionValue nd = NoPublishResponseSent")
+      proof (cases "electionValueState nd = ElectionValueFree")
         case False
         hence "handleClientValue x nd = (nd, None)"
-          by (auto simp add: handleClientValue_def publishValue_def)
+          by (auto simp add: handleClientValue_def)
         hence "result = (nd, None)"
           by (simp add: result broadcast'_def)
         thus ?thesis by (intro noop)
       next
         case True
-        hence handleClientValue_eq: "handleClientValue x nd = (nd \<lparr> applyRequested := True \<rparr>, Some (PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x))"
-          by (simp add: publishValue_def handleClientValue_def)
-        hence result: "result = (nd \<lparr> applyRequested := True \<rparr>, Some \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x\<rparr>)"
-          by (simp add: result broadcast'_def)
+        hence handleClientValue_eq[simp]: "handleClientValue x nd = publishValue x nd"
+          by (auto simp add: handleClientValue_def)
 
-        from handleClientValue_eq True
-        have publishValue: "publishValue x nd = (nd \<lparr> applyRequested := True \<rparr>, Some (PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x))"
-          by (simp add: handleClientValue_def)
+        have result: "result = broadcast' (publishValue x nd)"
+          unfolding result_def ProcessMessage_def ClientValue dest_True broadcast'_def by simp
 
-        note zenStep.nodeState'_def [OF zenStep]
-
-        have nodeState': "nodeState' = zenStep.nodeState' nodeState n\<^sub>0 (nd \<lparr> applyRequested := True \<rparr>)"
-          unfolding zenStep.nodeState'_def [OF zenStep] nodeState'_def
-          by (auto simp add: result)
+        have nodeState': "nodeState' = zenStep.nodeState' nodeState n\<^sub>0 (fst result)"
+          by (intro ext, simp add: zenStep.nodeState'_def [OF zenStep] nodeState'_def)
 
         have nd[simp]: "zenStep.nd nodeState n\<^sub>0 = nd"
-          unfolding zenStep.nd_def [OF zenStep] nd_def by simp
+          by (simp add: zenStep.nd_def [OF zenStep])
 
         show ?thesis
           unfolding nodeState'
         proof (intro zenStep.publishValue_invariants [OF zenStep])
-          from publishValue handleClientValue_eq
-          show "nd\<lparr>applyRequested := True\<rparr> = fst (publishValue x (zenStep.nd nodeState n\<^sub>0))"
-            by simp
-
+          show "fst result = fst (publishValue x (zenStep.nd nodeState n\<^sub>0))"
+            by (cases "electionWon nd \<and> publishPermitted nd", auto simp add: result publishValue_def broadcast'_def)
           show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (publishValue x (zenStep.nd nodeState n\<^sub>0))"
-            by (simp add: messages'_def result publishValue zenStep.send.simps [OF zenStep] zenStep.broadcast_def [OF zenStep])
-
-          fix t' x'
-          assume "electionValue (zenStep.nd nodeState n\<^sub>0) = PublishResponseSent t' x'"
-          with True show "x = x'" by simp
+            by (cases "electionWon nd \<and> publishPermitted nd", simp_all add: messages'_def result broadcast'_def publishValue_def
+                zenStep.send.simps [OF zenStep] zenStep.broadcast_def [OF zenStep])
+          from True show "electionValueState (zenStep.nd nodeState n\<^sub>0) = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue (zenStep.nd nodeState n\<^sub>0)"
+            by simp
         qed
       qed
 
     next
+
+
 
       oops
 end
