@@ -230,7 +230,12 @@ definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \
           if i = firstUncommittedSlot nd
                 \<and> currentTerm nd \<le> t
                 \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t)
-          then ( nd \<lparr> lastAcceptedTerm := Some t, lastAcceptedValue := x \<rparr>
+          then ( nd \<lparr> electionValueState := if lastAcceptedTerm nd \<noteq> Some t
+                                            \<and> electionValueState nd = ElectionValueForced
+                                            then ElectionValueUnknown
+                                            else electionValueState nd,
+                      lastAcceptedTerm := Some t,
+                      lastAcceptedValue := x \<rparr>
                , Some (PublishResponse i t))
           else (nd, None)"
 
