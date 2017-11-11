@@ -198,6 +198,7 @@ definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeDa
     "handleStartJoin t nd \<equiv>
         if currentTerm nd < t 
              \<and> era\<^sub>t t = currentEra nd
+             \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' < t)
           then ( ensureCurrentTerm t nd
                , Some (JoinRequest (firstUncommittedSlot nd)
                                      t
