@@ -3917,7 +3917,7 @@ fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Righ
 
 text \<open>\pagebreak\<close>
 
-lemma (in zenImpl)
+lemma (in zenImpl) invariants_preserved:
   fixes n\<^sub>0
   assumes "m \<in> messages"
   defines "nd \<equiv> nodeState n\<^sub>0"
