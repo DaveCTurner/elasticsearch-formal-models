@@ -558,7 +558,7 @@ text \<open>In contrast, @{term "JoinRequest i\<^sub>0 t\<^sub>0 (Some t\<^sub>0
 message has been sent for slot @{term
 i\<^sub>0}, in which case @{term t\<^sub>0'} must be the greatest term of any such message
 previously sent by node @{term n\<^sub>0} and @{term x\<^sub>0'} is the corresponding
-value.}:\<close>
+value.:\<close>
 
 lemma (in zen) send_JoinRequest_Some:
   assumes "\<forall> i > i\<^sub>0. \<forall> t. \<not> s\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
@@ -972,7 +972,7 @@ proof -
         case False
         have 1: "maxTerm (prevAccepted i t q) \<in> prevAccepted i t q"
           by (intro maxTerm_mem finite_prevAccepted False)
-        have 2: "\<nexists>n. n \<in> q \<and> n \<midarrow>\<langle> JoinRequest i\<^sub>0 t (Some t\<^sub>0) \<rangle>\<leadsto>"
+        have 2: "\<not> (\<exists>n. n \<in> q \<and> n \<midarrow>\<langle> JoinRequest i\<^sub>0 t (Some t\<^sub>0) \<rangle>\<leadsto>)"
           by (meson JoinRequest_Some_PublishResponse PublishResponse_PublishRequest nobody_proposed)
         from 1 2 have v_eq2: "v' i (maxTerm (prevAccepted i t q)) = v i (maxTerm (prevAccepted i t q))"
           apply (unfold v_eq) using prevAccepted_def by auto
@@ -2487,7 +2487,7 @@ next
 
   next
     fix i a
-    show "\<nexists>d. \<lparr>sender = n\<^sub>0, destination = d, payload = JoinRequest i t a\<rparr> \<in> messages"
+    show "\<not> (\<exists> d. \<lparr>sender = n\<^sub>0, destination = d, payload = JoinRequest i t a\<rparr> \<in> messages)"
     proof (intro notI)
       assume "\<exists> d. \<lparr>sender = n\<^sub>0, destination = d, payload = JoinRequest i t a\<rparr> \<in> messages"
       hence "n\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>" by (auto simp add: isMessageFrom_def isMessageFromTo_def)

@@ -258,7 +258,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
       | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
-and \textt{ClusterState} via the @{term applyValue} method. It yields no messages.\<close>
+and \texttt{ClusterState} via the @{term applyValue} method. It yields no messages.\<close>
 
 definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
