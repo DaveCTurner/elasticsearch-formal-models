@@ -263,7 +263,7 @@ and \textt{ClusterState} via the @{term applyValue} method. It yields no message
 definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "handleApplyCommit i t nd \<equiv> 
-        if i = firstUncommittedSlot nd \<and> t = currentTerm nd
+        if i = firstUncommittedSlot nd \<and> lastAcceptedTerm nd = Some t
           then applyAcceptedValue
                   nd \<lparr> firstUncommittedSlot := i + 1
                      , lastAcceptedValue := NoOp
