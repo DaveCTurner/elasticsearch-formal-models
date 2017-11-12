@@ -201,7 +201,7 @@ definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rig
              \<and> era\<^sub>t t = currentEra nd
              \<and> currentTerm nd \<le> t
              \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd) (* TODO \<or> i < firstUncommittedSlot *)
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)
           then let nd1 = ensureCurrentTerm t nd;
                    nd2 = addElectionVote s i a nd1
                in publishValue (lastAcceptedValue nd2) nd2

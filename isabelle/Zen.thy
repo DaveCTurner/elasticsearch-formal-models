@@ -2515,7 +2515,7 @@ lemma (in zenStep) addElectionVote_invariants:
   assumes sent: "s \<midarrow>\<langle> JoinRequest i (currentTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
   assumes era: "era\<^sub>t (currentTerm nd) = currentEra nd"
   assumes slot: "i \<le> firstUncommittedSlot nd"
-  assumes a_lastAcceptedTerm: "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd"
+  assumes a_lastAcceptedTerm: "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd"
   shows "zenImpl messages' nodeState'"
 proof -
   have message_simps[simp]:
@@ -2652,7 +2652,7 @@ proof -
         hence i: "i = firstUncommittedSlot nd" and "a \<noteq> None" by simp_all
         then obtain t' where a: "a = Some t'" by auto
 
-        from a_lastAcceptedTerm a obtain t where t: "lastAcceptedTerm nd = Some t" and t't: "t' \<le> t"
+        from a_lastAcceptedTerm a i obtain t where t: "lastAcceptedTerm nd = Some t" and t't: "t' \<le> t"
           apply (cases "lastAcceptedTerm nd", simp_all)
           by (metis eq_iff max_def)
 
@@ -2780,7 +2780,7 @@ proof -
         from sent n'_sent have a: "a' = a"
           by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n' n_eq nd_def i)
 
-        from a_lastAcceptedTerm show ?thesis
+        from a_lastAcceptedTerm i show ?thesis
           by (simp add: a nd_def n_eq)
       qed
     qed
@@ -4045,7 +4045,7 @@ proof -
              \<and> era\<^sub>t t = currentEra nd
              \<and> currentTerm nd \<le> t
              \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd)")
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)")
         case False
         have "result = (nd, None)"
         unfolding result_def ProcessMessage_def dest_True JoinRequest
@@ -4057,13 +4057,13 @@ proof -
           "era\<^sub>t t = currentEra nd"
           "currentTerm nd \<le> t"
           "currentTerm nd = t \<Longrightarrow> \<not> electionWon nd"
-          "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd"
+          "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd"
           by auto
         hence False_eq: "(i \<le> firstUncommittedSlot nd
              \<and> era\<^sub>t t = currentEra nd
              \<and> currentTerm nd \<le> t
              \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd)) = True"
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)) = True"
           by auto
 
         define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
@@ -4129,7 +4129,7 @@ proof -
           show "\<lparr>sender = sender m, destination = OneNode n\<^sub>0, payload = JoinRequest i (currentTerm (zenStep.nd nodeState1 n\<^sub>0)) a\<rparr> \<in> messages"
             by (simp add: isMessageFromTo_def)
 
-          from True' show "maxTermOption a (lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0)) = lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0)"
+          from True' show "maxTermOption a (lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0)) = lastAcceptedTerm (zenStep.nd nodeState1 n\<^sub>0) \<or> i < firstUncommittedSlot (zenStep.nd nodeState1 n\<^sub>0)"
             by (simp add: nd1_def ensureCurrentTerm_def)
 
         qed simp_all
@@ -4140,6 +4140,7 @@ proof -
         from True'
         have "handleJoinRequest (sender m) i t a nd = publishValue (lastAcceptedValue nd2) nd2"
           apply (auto simp add: handleJoinRequest_def nd2_def nd1_def)         
+          apply metis
           by metis
         hence result: "result = broadcast' (publishValue (lastAcceptedValue nd2) nd2)"
           unfolding result_def ProcessMessage_def dest_True JoinRequest broadcast'_def by simp
