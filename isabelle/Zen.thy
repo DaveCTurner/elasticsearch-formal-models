@@ -3915,6 +3915,8 @@ fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Righ
     "insertOption None = id"
   | "insertOption (Some m) = insert m"
 
+text \<open>\pagebreak\<close>
+
 lemma (in zenImpl)
   fixes n\<^sub>0
   assumes "m \<in> messages"
@@ -4267,8 +4269,10 @@ proof -
 qed
 
 lemma (in zenImpl) consistent_states:
-  assumes "firstUncommittedSlot (nodeState n\<^sub>1) = firstUncommittedSlot (nodeState n\<^sub>2)"
-  shows "currentClusterState (nodeState n\<^sub>1) = currentClusterState (nodeState n\<^sub>2)"
+  assumes
+    "firstUncommittedSlot (nodeState n\<^sub>1) = firstUncommittedSlot (nodeState n\<^sub>2)"
+  shows
+    "currentClusterState (nodeState n\<^sub>1) = currentClusterState (nodeState n\<^sub>2)"
 proof -
   have "currentClusterState (nodeState n\<^sub>1) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n\<^sub>1))"
     using currentClusterState_lastCommittedClusterStateBefore .
