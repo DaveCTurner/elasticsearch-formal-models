@@ -51,6 +51,12 @@ locale zen =
   fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
   defines "prevAccepted i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto> }"
+  fixes lastCommittedClusterStateBefore :: "nat \<Rightarrow> ClusterState"
+  defines "lastCommittedClusterStateBefore i \<equiv>
+    if \<exists> j < i. \<exists> cs. v\<^sub>c j = SetClusterState cs
+    then THE cs. v\<^sub>c (GREATEST j. j < i \<and> (\<exists> cs. v\<^sub>c j = SetClusterState cs)) = SetClusterState cs
+    else ClusterState 0"
+
     (* ASSUMPTIONS *)
   assumes JoinRequest_future:
     "\<And>i i' s t t' a.
@@ -1310,6 +1316,34 @@ proof -
     by (simp_all)
 qed
 
+lemma (in zen) lastCommittedClusterStateBefore_0[simp]: "lastCommittedClusterStateBefore 0 = ClusterState 0"
+  by (simp add: lastCommittedClusterStateBefore_def)
+
+lemma (in zen) lastCommittedClusterStateBefore_Suc:
+  shows "lastCommittedClusterStateBefore (Suc i)
+    = (case v\<^sub>c i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> lastCommittedClusterStateBefore i)"
+proof (cases "\<exists> cs. v\<^sub>c i = SetClusterState cs")
+  case False
+  have eqs:
+    "(\<exists> j < Suc i. \<exists> cs. v\<^sub>c j = SetClusterState cs) = (\<exists> j < i. \<exists> cs. v\<^sub>c j = SetClusterState cs)"
+    "\<And>j. (j < Suc i \<and> (\<exists> cs. v\<^sub>c j = SetClusterState cs)) = (j < i \<and> (\<exists> cs. v\<^sub>c j = SetClusterState cs))"
+    using False less_Suc_eq by auto
+  from False show ?thesis
+    by (unfold lastCommittedClusterStateBefore_def eqs, cases "v\<^sub>c i", auto)
+next
+  case True
+  then obtain cs where SetClusterState: "v\<^sub>c i = SetClusterState cs" by blast
+
+  have condition_eq: "(\<exists> j < Suc i. \<exists> cs. v\<^sub>c j = SetClusterState cs) = True"
+    using SetClusterState by blast
+
+  have greatest_eq: "(GREATEST j. j < Suc i \<and> (\<exists> cs. v\<^sub>c j = SetClusterState cs)) = i"
+    using SetClusterState by (intro Greatest_equality, auto)
+
+  show ?thesis
+  using SetClusterState by (unfold lastCommittedClusterStateBefore_def greatest_eq condition_eq, auto)
+qed
+
 subsection \<open>Invariants on node states\<close>
 
 text \<open>A set of invariants which relate the states of the individual nodes to the set of messages sent.\<close>
@@ -1383,6 +1417,8 @@ locale zenImpl = zen +
                                (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n))"
   assumes publishVotes: "\<And>n n'. n' \<in> publishVotes (nodeState n)
     \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
+  assumes currentClusterState_lastCommittedClusterStateBefore:
+    "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
 
 locale zenStep = zenImpl +
   fixes n\<^sub>0 :: Node
@@ -1434,7 +1470,11 @@ definition (in zenStep) promised' :: "nat \<Rightarrow> Node \<Rightarrow> Node 
 definition (in zenStep) prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
   where "prevAccepted' i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto>' }"
-
+definition (in zenStep) lastCommittedClusterStateBefore' :: "nat \<Rightarrow> ClusterState"
+  where "lastCommittedClusterStateBefore' i \<equiv>
+    if \<exists> j < i. \<exists> cs. v\<^sub>c' j = SetClusterState cs
+    then THE cs. v\<^sub>c' (GREATEST j. j < i \<and> (\<exists> cs. v\<^sub>c' j = SetClusterState cs)) = SetClusterState cs
+    else ClusterState 0"
 
 lemma currentTerm_ensureCurrentTerm[simp]: "currentTerm (ensureCurrentTerm t nd) = t"
   by (auto simp add: ensureCurrentTerm_def)
@@ -1463,6 +1503,7 @@ lemma (in zenStep)
   assumes "\<And>n n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
   assumes "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
   assumes "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'"
+  assumes "\<And>n. currentClusterState (nodeState' n) = lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState' n))"
   shows zenImplI: "zenImpl messages' nodeState'"
   apply (intro_locales, intro assms, intro zenImpl_axioms.intro)
                  apply (fold isMessageFromTo'_def)
@@ -1476,6 +1517,7 @@ lemma (in zenStep)
                  apply (fold reconfig'_def)
                  apply (fold Q'_def)
                  apply (fold promised'_def)
+                 apply (fold lastCommittedClusterStateBefore'_def)
   using assms proof - qed
 
 definition (in zenStep) response :: "Message \<Rightarrow> RoutedMessage"
@@ -1696,6 +1738,45 @@ next
     qed
   qed
 
+  have lastCommittedClusterStateBefore_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> lastCommittedClusterStateBefore' i = lastCommittedClusterStateBefore i"
+  proof -
+    fix i assume "committed\<^sub>< i"
+    hence v\<^sub>c_eq_i: "\<And>j. j < i \<Longrightarrow> v\<^sub>c' j = v\<^sub>c j" by (intro v\<^sub>c_eq, auto simp add: committedTo_def)
+
+    have eqs:
+      "(\<exists>j<i. \<exists>cs. v\<^sub>c' j = SetClusterState cs) = (\<exists>j<i. \<exists>cs. v\<^sub>c j = SetClusterState cs)"
+      "\<And>j. (j < i \<and> (\<exists>cs. v\<^sub>c' j = SetClusterState cs)) = (j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))"
+      using v\<^sub>c_eq_i by auto
+
+    show "?thesis i"
+    proof (cases "\<exists>j<i. \<exists>cs. v\<^sub>c j = SetClusterState cs")
+      case False thus ?thesis
+        by (unfold lastCommittedClusterStateBefore'_def lastCommittedClusterStateBefore_def eqs, auto)
+    next
+      case True
+      then obtain j cs where ji: "j < i" and j: "v\<^sub>c j = SetClusterState cs" by blast
+      define P where "P \<equiv> \<lambda> j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs)"
+      define k where "k \<equiv> Greatest P"
+      have "P k"
+      proof (unfold k_def, intro GreatestI_nat)
+        from ji j show "P j" "\<forall>y. P y \<longrightarrow> y \<le> i" by (auto simp add: P_def)
+      qed
+      hence ki: "k < i" by (simp add: P_def)
+
+      from ki
+      have "v\<^sub>c' (GREATEST j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))
+          = v\<^sub>c  (GREATEST j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))"
+        by (intro v\<^sub>c_eq_i, simp add: k_def P_def)
+      note eqs = eqs this
+
+      show ?thesis
+        unfolding lastCommittedClusterStateBefore'_def lastCommittedClusterStateBefore_def eqs ..
+    qed
+  qed
+
+  have lastCommittedClusterStateBefore_eq: "\<And>n. lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState n)) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
+    by (intro lastCommittedClusterStateBefore_eq committedToLocalCheckpoint)
+
   have nd': "nd' = nd \<lparr> publishPermitted := False \<rparr>" by (simp add: nd' result)
 
   have firstUncommittedSlot: "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
@@ -1711,6 +1792,9 @@ next
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
 
   have currentTerm: "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
+    by (unfold nodeState'_def, auto simp add: nd' nd_def)
+
+  have currentClusterState: "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
 
   show ?thesis
@@ -1961,6 +2045,10 @@ next
     from publishVotes
     show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'"
       unfolding publishVotes_eq firstUncommittedSlot currentTerm message_simps .
+
+    from currentClusterState_lastCommittedClusterStateBefore
+    show "\<And>n. currentClusterState (nodeState' n) = lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState' n))"
+      unfolding currentClusterState firstUncommittedSlot lastCommittedClusterStateBefore_eq .
   qed
 qed
 
@@ -1989,6 +2077,7 @@ next
     "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
     "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
     "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
+    "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
     "\<And>n. lastAcceptedTerm (nodeState' n) = lastAcceptedTerm (nodeState n)"
     "\<And>n. lastAcceptedValue (nodeState' n) = lastAcceptedValue (nodeState n)"
@@ -2011,9 +2100,11 @@ next
   have era\<^sub>i_eq[simp]: "era\<^sub>i' = era\<^sub>i" by (intro ext, auto simp add: era\<^sub>i'_def era\<^sub>i_def)
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show "zenImpl messages' nodeState'"
-  proof (intro zenImplI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq)
+  proof (intro zenImplI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq lastCommittedClusterStateBefore_eq)
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
@@ -2026,6 +2117,7 @@ next
     from lastAccepted_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>" .
     from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto> \<Longrightarrow> t' \<le> t" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from publishVotes False show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>"
       unfolding nodeState'_def by (auto simp add: nd' ensureCurrentTerm_def nd_def)
@@ -2144,6 +2236,8 @@ proof -
   have era\<^sub>i_eq[simp]: "era\<^sub>i' = era\<^sub>i" by (intro ext, auto simp add: era\<^sub>i'_def era\<^sub>i_def)
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show ?thesis
   proof (intro zenImplI)
@@ -2232,6 +2326,7 @@ proof -
     from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>' \<Longrightarrow> t' \<le> t" by simp
     from electionWon_era show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'" by simp
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState' n) = lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState' n))" by simp
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState' n))"
       by (auto simp add: promised'_def JoinRequest', blast)
@@ -2441,6 +2536,7 @@ proof -
     "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
     "\<And>n. publishPermitted (nodeState' n) = publishPermitted (nodeState n)"
     "\<And>n. publishVotes (nodeState' n) = publishVotes (nodeState n)"
+    "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' addElectionVote_def Let_def)
 
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
@@ -2451,10 +2547,12 @@ proof -
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
   have promised_eq[simp]: "promised' = promised" by (intro ext, auto simp add: promised'_def promised_def)
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show "zenImpl messages' nodeState'"
     apply (intro zenImplI)
-                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq)
+                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -2472,6 +2570,7 @@ proof -
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from electionWon_isQuorum
     show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState' n))"
@@ -2748,6 +2847,7 @@ next
     "\<And>n. joinVotes (nodeState' n) = joinVotes (nodeState n)"
     "\<And>n. electionWon (nodeState' n) = electionWon (nodeState n)"
     "\<And>n. publishVotes (nodeState' n) = publishVotes (nodeState n)"
+    "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     "lastAcceptedTerm nd' = Some t"
     "lastAcceptedValue nd' = x"
     by (unfold nodeState'_def, auto simp add: result nd' nd_def isQuorum_def)
@@ -2785,10 +2885,12 @@ next
   have era\<^sub>i_eq[simp]: "era\<^sub>i' = era\<^sub>i" by (intro ext, auto simp add: era\<^sub>i'_def era\<^sub>i_def)
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
   show ?thesis
     apply (intro zenImplI)
-                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq electionValueState_simps)
+                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq electionValueState_simps lastCommittedClusterStateBefore_eq)
   proof -
     show "zen messages'"
     proof (unfold messages', intro send_PublishResponse [OF sent] allI impI)
@@ -2811,6 +2913,7 @@ next
             n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
              \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
     from firstUncommittedSlot_PublishRequest show "\<And>i n t x. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
       by (simp add: promised'_def)
@@ -3126,11 +3229,50 @@ next
     show "\<And>n. era\<^sub>i (firstUncommittedSlot (nodeState n)) \<le> era\<^sub>i (firstUncommittedSlot (nodeState n))" by simp
   qed
 
-  note zen.consistent [OF zen']
+  have lastCommittedClusterStateBefore_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> lastCommittedClusterStateBefore' i = lastCommittedClusterStateBefore i"
+  proof -
+    fix i assume "committed\<^sub>< i"
+    hence v\<^sub>c_eq_i: "\<And>j. j < i \<Longrightarrow> v\<^sub>c' j = v\<^sub>c j" by (intro v\<^sub>c_eq, auto simp add: committedTo_def)
+
+    have eqs:
+      "(\<exists>j<i. \<exists>cs. v\<^sub>c' j = SetClusterState cs) = (\<exists>j<i. \<exists>cs. v\<^sub>c j = SetClusterState cs)"
+      "\<And>j. (j < i \<and> (\<exists>cs. v\<^sub>c' j = SetClusterState cs)) = (j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))"
+      using v\<^sub>c_eq_i by auto
+
+    show "?thesis i"
+    proof (cases "\<exists>j<i. \<exists>cs. v\<^sub>c j = SetClusterState cs")
+      case False thus ?thesis
+        by (unfold lastCommittedClusterStateBefore'_def lastCommittedClusterStateBefore_def eqs, auto)
+    next
+      case True
+      then obtain j cs where ji: "j < i" and j: "v\<^sub>c j = SetClusterState cs" by blast
+      define P where "P \<equiv> \<lambda> j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs)"
+      define k where "k \<equiv> Greatest P"
+      have "P k"
+      proof (unfold k_def, intro GreatestI_nat)
+        from ji j show "P j" "\<forall>y. P y \<longrightarrow> y \<le> i" by (auto simp add: P_def)
+      qed
+      hence ki: "k < i" by (simp add: P_def)
+
+      from ki
+      have "v\<^sub>c' (GREATEST j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))
+          = v\<^sub>c  (GREATEST j. j < i \<and> (\<exists>cs. v\<^sub>c j = SetClusterState cs))"
+        by (intro v\<^sub>c_eq_i, simp add: k_def P_def)
+      note eqs = eqs this
+
+      show ?thesis
+        unfolding lastCommittedClusterStateBefore'_def lastCommittedClusterStateBefore_def eqs ..
+    qed
+  qed
+
+  have lastCommittedClusterStateBefore_slot_eq:
+    "\<And>n. lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState n))
+        = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
+    by (intro lastCommittedClusterStateBefore_eq committedToLocalCheckpoint)
 
   show ?thesis
     apply (intro zenImplI)
-                        apply (unfold nodeState' message_simps era\<^sub>i_firstUncommittedSlot Q_era_eq)
+                        apply (unfold nodeState' message_simps era\<^sub>i_firstUncommittedSlot Q_era_eq lastCommittedClusterStateBefore_slot_eq)
   proof -
     from zen' show "zen messages'" .
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -3146,6 +3288,7 @@ next
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
       by (simp add: promised'_def)
@@ -3192,6 +3335,7 @@ proof -
     "\<And>n. joinVotes (nodeState' n) = joinVotes (nodeState n)"
     "\<And>n. electionWon (nodeState' n) = electionWon (nodeState n)"
     "\<And>n. electionValueState (nodeState' n) = electionValueState (nodeState n)"
+   "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' addElectionVote_def Let_def)
 
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
@@ -3202,10 +3346,12 @@ proof -
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
   have promised_eq[simp]: "promised' = promised" by (intro ext, auto simp add: promised'_def promised_def)
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
   show ?thesis
     apply (intro zenImplI)
-                        apply (unfold property_simps era\<^sub>i_eq Q_eq message_simps committedTo_eq promised_eq)
+                        apply (unfold property_simps era\<^sub>i_eq Q_eq message_simps committedTo_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zen_axioms messages' show "zen messages'" by simp
 
@@ -3223,6 +3369,7 @@ proof -
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
       by (auto simp add: promised_def)
@@ -3337,6 +3484,7 @@ proof -
     "\<And>n. lastAcceptedTerm (nodeState' n) = lastAcceptedTerm (nodeState n)"
     "\<And>n. lastAcceptedValue (nodeState' n) = lastAcceptedValue (nodeState n)"
     "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
+    "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' handleReboot_def Let_def)
 
   have reset_states_simps[simp]:
@@ -3352,10 +3500,12 @@ proof -
   have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
   have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
   have promised_eq[simp]: "promised' = promised" by (intro ext, auto simp add: promised'_def promised_def)
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show "zenImpl messages' nodeState'"
     apply (intro zenImplI)
-                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq)
+                        apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zen_axioms show "zen messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -3371,6 +3521,7 @@ proof -
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
+    from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     fix n
 
@@ -3469,6 +3620,8 @@ next
   have reconfig'_eq[simp]: "reconfig' = reconfig" unfolding reconfig'_def reconfig_def isCommitted_eq v\<^sub>c_eq era\<^sub>i_eq ..
   have Q_eq[simp]: "Q' = Q" unfolding Q'_def Q_def reconfig'_eq v\<^sub>c_eq ..
   have promised_eq[simp]: "promised' = promised" unfolding promised'_def promised_def message_simps ..
+  have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
+    unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
   from zen_axioms have zen': "zen messages'" by simp
 
@@ -3523,7 +3676,7 @@ next
 
     show "zenImpl messages' nodeState'"
       apply (intro zenImplI zen')
-                          apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq era\<^sub>i_eq2 Q_eq promised_eq)
+                          apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq era\<^sub>i_eq2 Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
       from committedToLocalCheckpoint' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
@@ -3585,6 +3738,32 @@ next
       from PublishRequest_currentTerm_applyRequested firstUncommittedSlot_PublishRequest 
       show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
+
+      from currentClusterState_lastCommittedClusterStateBefore
+      show "currentClusterState (nodeState' n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState' n))"
+      proof (cases "n = n\<^sub>0")
+        case False with currentClusterState_lastCommittedClusterStateBefore
+        show ?thesis unfolding nodeState'_def by auto
+      next
+        case True
+        show ?thesis
+        proof (cases "v\<^sub>c i")
+          case NoOp
+          from currentClusterState_lastCommittedClusterStateBefore True lastAcceptedValue_eq
+          show ?thesis
+            unfolding nodeState'_def
+            by (simp add: nd' lastCommittedClusterStateBefore_Suc NoOp nd_def, simp add: i nd_def applyAcceptedValue_def)
+        next
+          case Reconfigure with False show ?thesis by simp
+        next
+          case (SetClusterState sc)
+          with lastAcceptedValue_eq have "lastAcceptedValue nd = SetClusterState sc" by simp
+          with SetClusterState True
+          show ?thesis
+            unfolding nodeState'_def
+            by (auto simp add: nd' lastCommittedClusterStateBefore_Suc SetClusterState nd_def applyAcceptedValue_def)
+        qed
+      qed
     qed
 
   next
@@ -3608,6 +3787,7 @@ next
     have property_simps[simp]:
       "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
       "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
+      "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
       by (unfold nodeState'_def, auto simp add: lastAcceptedValue_eq nd_def nd')
 
     have nodeState'_n\<^sub>0[simp]: "nodeState' n\<^sub>0 = nd'"
@@ -3630,7 +3810,7 @@ next
 
     show "zenImpl messages' nodeState'"
       apply (intro zenImplI zen')
-                          apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq)
+                          apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
       from committedToLocalCheckpoint' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
@@ -3708,6 +3888,20 @@ next
 
       from electionWon_era show "electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState' n))"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def nd')
+
+      show "currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState' n))"
+      proof (cases "n = n\<^sub>0")
+        case False with currentClusterState_lastCommittedClusterStateBefore show ?thesis unfolding nodeState'_def by simp
+      next
+        case True
+        have "lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState' n))
+          = lastCommittedClusterStateBefore (Suc (firstUncommittedSlot (nodeState n)))"
+          unfolding nodeState'_def by (simp add: True nd_def)
+        also from Reconfigure have "... = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
+          by (simp add: lastCommittedClusterStateBefore_Suc True i nd_def)
+        also note currentClusterState_lastCommittedClusterStateBefore
+        finally show ?thesis .
+      qed
     qed
   qed
 qed
@@ -4070,6 +4264,18 @@ proof -
       qed
     qed
   qed
+qed
+
+lemma (in zenImpl) consistent_states:
+  assumes "firstUncommittedSlot (nodeState n\<^sub>1) = firstUncommittedSlot (nodeState n\<^sub>2)"
+  shows "currentClusterState (nodeState n\<^sub>1) = currentClusterState (nodeState n\<^sub>2)"
+proof -
+  have "currentClusterState (nodeState n\<^sub>1) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n\<^sub>1))"
+    using currentClusterState_lastCommittedClusterStateBefore .
+  also have "... = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n\<^sub>2))" using assms by simp
+  also have "... = currentClusterState (nodeState n\<^sub>2)"
+    using currentClusterState_lastCommittedClusterStateBefore ..
+  finally show ?thesis .
 qed
 
 end
