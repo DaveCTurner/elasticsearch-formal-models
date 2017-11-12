@@ -3401,6 +3401,10 @@ proof -
   qed
 qed
 
+lemma
+  shows "zenImpl {} initialNodeState"
+  by (unfold_locales, simp_all add: initialNodeState_def isQuorum_def, intro Abs_Configuration_inverse, simp add: Q\<^sub>0_intersects)
+
 fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Rightarrow> RoutedMessage set"
   where
     "insertOption None = id"
@@ -3739,7 +3743,7 @@ proof -
       qed
 
     next
-
+      case (ApplyCommit i t)
 
       oops
 end

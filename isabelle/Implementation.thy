@@ -123,20 +123,6 @@ record NodeData =
 definition isQuorum :: "NodeData \<Rightarrow> Node set \<Rightarrow> bool"
   where "isQuorum nd q \<equiv> q \<in> Rep_Configuration (currentConfiguration nd)"
 
-text \<open>This method updates the node's state when a value is committed.\<close>
-
-definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
-  where
-    "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
-        NoOp \<Rightarrow> nd
-      | Reconfigure Q \<Rightarrow> nd
-          \<lparr> currentEra := nextEra (currentEra nd)
-          , currentConfiguration := Q
-          , joinVotes := {}
-          , electionWon := False
-          , electionValueState := ElectionValueFree \<rparr>
-      | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
-
 text \<open>This method publishes a value via a @{term PublishRequest} message.\<close>
 
 definition publishValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
@@ -257,20 +243,34 @@ definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \
         then commitIfQuorate (nd \<lparr> publishVotes := insert s (publishVotes nd) \<rparr>)
         else (nd, None)"
 
+text \<open>This method updates the node's state when a value is committed.\<close>
+
+definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
+  where
+    "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
+        NoOp \<Rightarrow> nd
+      | Reconfigure Q \<Rightarrow> nd
+          \<lparr> currentEra := nextEra (currentEra nd)
+          , currentConfiguration := Q
+          , joinVotes := {}
+          , electionWon := False
+          , electionValueState := ElectionValueFree \<rparr>
+      | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
+
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
 and \textt{ClusterState} via the @{term applyValue} method. It yields no messages.\<close>
 
 definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "handleApplyCommit i t nd \<equiv> 
-        if i = firstUncommittedSlot nd
-         \<and> lastAcceptedTerm nd = Some t
+        if i = firstUncommittedSlot nd \<and> t = currentTerm nd
           then applyAcceptedValue
                   nd \<lparr> firstUncommittedSlot := i + 1
                      , lastAcceptedValue := NoOp
                      , lastAcceptedTerm := None
                      , publishPermitted := True
-                     , electionValueState := ElectionValueFree \<rparr>
+                     , electionValueState := ElectionValueFree
+                     , publishVotes := {} \<rparr>
           else nd"
 
 text \<open>A @{term Reboot} message simulates the effect of a reboot, discarding any ephemeral state but
@@ -328,5 +328,21 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
           | Reboot
               \<Rightarrow> (handleReboot nd, None)
         else (nd, None)"
+
+definition initialNodeState :: "Node \<Rightarrow> NodeData"
+  where "initialNodeState n =
+      \<lparr> currentNode = n
+      , firstUncommittedSlot = 0
+      , currentTerm = Term e\<^sub>0 0
+      , currentEra = e\<^sub>0
+      , currentConfiguration = Abs_Configuration Q\<^sub>0
+      , currentClusterState = ClusterState 0
+      , lastAcceptedTerm = None
+      , lastAcceptedValue = NoOp
+      , joinVotes = {}
+      , electionWon = False
+      , electionValueState = ElectionValueFree
+      , publishPermitted = False
+      , publishVotes = {} \<rparr>"
 
 end
