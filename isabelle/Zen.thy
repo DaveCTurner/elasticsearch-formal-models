@@ -276,6 +276,11 @@ lemma (in zen) isCommitted_committedTo:
   shows "committed\<^sub>< i"
   using ApplyCommit_PublishRequest PublishRequest_committedTo assms isCommitted_def by blast
 
+lemma (in zen) isCommitted_committedTo_Suc:
+  assumes "isCommitted i"
+  shows "committed\<^sub>< (Suc i)"
+  using assms committedTo_def isCommitted_committedTo less_antisym by blast
+
 lemma (in zen) promised_unique:
   assumes "promised i s d t" and "promised i' s d' t"
   shows "d = d'"
@@ -367,6 +372,21 @@ proof -
   moreover have "v\<^sub>2 = v i t\<^sub>2" using ApplyCommit_PublishRequest assms PublishRequest_function by blast
   ultimately show ?thesis by simp
 qed
+
+lemma (in zen) ApplyCommit_v\<^sub>c:
+  assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
+  shows "v\<^sub>c i = v i t"
+proof (unfold v\<^sub>c_def, intro someI2 [where Q = "\<lambda>t'. v i t' = v i t"])
+  from assms show "\<langle> ApplyCommit i t \<rangle>\<leadsto>" .
+  fix t' assume "\<langle> ApplyCommit i t' \<rangle>\<leadsto>"
+  thus "v i t' = v i t" by (intro oneSlot.consistent [OF zen_is_oneSlot] assms)
+qed
+
+lemma (in zen) ApplyCommit_PublishRequest_v\<^sub>c:
+  assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
+  shows "\<langle> PublishRequest i t (v\<^sub>c i) \<rangle>\<leadsto>"
+  unfolding ApplyCommit_v\<^sub>c [OF assms]
+  using ApplyCommit_PublishRequest assms .
 
 subsection \<open>Preserving invariants\<close>
 
@@ -1358,6 +1378,8 @@ locale zenImpl = zen +
          (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                                (currentTerm (nodeState n))
                                (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n))"
+  assumes publishVotes: "\<And>n n'. n' \<in> publishVotes (nodeState n)
+    \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
 
 locale zenStep = zenImpl +
   fixes n\<^sub>0 :: Node
@@ -1436,6 +1458,7 @@ lemma (in zenStep)
   assumes "\<And>n. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n).  \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (Some t') \<rangle>\<rightarrow>' (OneNode n)"
   assumes "\<And>n n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
   assumes "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
+  assumes "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'"
   shows zenImplI: "zenImpl messages' nodeState'"
   apply (intro_locales, intro assms, intro zenImpl_axioms.intro)
                  apply (fold isMessageFromTo'_def)
@@ -1677,6 +1700,15 @@ next
   have era_firstUncommittedSlot: "\<And>n. era\<^sub>i' (firstUncommittedSlot (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
     by (intro era\<^sub>i_eq committedToLocalCheckpoint)
 
+  have currentEra: "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
+    by (unfold nodeState'_def, auto simp add: nd' nd_def)
+
+  have publishVotes_eq: "\<And>n. publishVotes (nodeState' n) = publishVotes (nodeState n)"
+    by (unfold nodeState'_def, auto simp add: nd' nd_def)
+
+  have currentTerm: "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
+    by (unfold nodeState'_def, auto simp add: nd' nd_def)
+
   show ?thesis
   proof (intro zenImplI)
     show "zen messages'"
@@ -1910,13 +1942,17 @@ next
          \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps)
 
-    fix n
     from electionValue_not_Free_max
     show "\<And>n n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
                n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow>
                maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
-      by (unfold nodeState'_def, cases "n = n\<^sub>0", auto simp add: nd' nd_def message_simps)
+      by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps)
+
+  next
+    from publishVotes
+    show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'"
+      unfolding publishVotes_eq firstUncommittedSlot currentTerm message_simps .
   qed
 qed
 
@@ -1953,6 +1989,7 @@ next
     "joinVotes (nodeState' n\<^sub>0) = {}"
     "electionValueState (nodeState' n\<^sub>0) = ElectionValueFree"
     "publishPermitted (nodeState' n\<^sub>0) = True"
+    "publishVotes (nodeState' n\<^sub>0) = {}"
     using False
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' ensureCurrentTerm_def)
 
@@ -1980,6 +2017,9 @@ next
     from lastAccepted_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>" .
     from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto> \<Longrightarrow> t' \<le> t" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
+
+    from publishVotes False show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>"
+      unfolding nodeState'_def by (auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     from JoinRequest_currentTerm currentTerm_increases show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
       using order_trans by blast
@@ -2181,6 +2221,7 @@ proof -
     from lastAccepted_Some_value show "\<And>n t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t (lastAcceptedValue (nodeState' n)) \<rangle>\<leadsto>'" by simp
     from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>' \<Longrightarrow> t' \<le> t" by simp
     from electionWon_era show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
+    from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'" by simp
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState' n))"
       by (auto simp add: promised'_def JoinRequest', blast)
@@ -2389,6 +2430,7 @@ proof -
     "\<And>n. lastAcceptedValue (nodeState' n) = lastAcceptedValue (nodeState n)"
     "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
     "\<And>n. publishPermitted (nodeState' n) = publishPermitted (nodeState n)"
+    "\<And>n. publishVotes (nodeState' n) = publishVotes (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' addElectionVote_def Let_def)
 
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
@@ -2418,6 +2460,7 @@ proof -
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
 
     from electionWon_isQuorum
     show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState' n))"
@@ -2758,7 +2801,10 @@ next
              \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
-      by (auto simp add: promised'_def)
+      by (simp add: promised'_def)
+
+    from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>'"
+      by (auto simp add: PublishResponse')
 
     fix n
 
@@ -2875,6 +2921,387 @@ next
   qed
 qed
 
+lemma (in zenStep) commitIfQuorate_invariants:
+  fixes s i t
+  defines "result \<equiv> commitIfQuorate nd"
+  assumes nd': "nd' = fst result"
+  assumes messages': "messages' = send broadcast result"
+  shows "zenImpl messages' nodeState'"
+proof (cases "isQuorum nd (publishVotes nd)")
+  case False
+  hence [simp]: "result = (nd, None)"
+    by (simp add: result_def commitIfQuorate_def)
+
+  have [simp]: "messages' = messages"
+    by (simp add: messages')
+
+  have [simp]: "nodeState' = nodeState"
+    unfolding nodeState'_def
+    by (intro ext, simp add: nd' nd_def)
+
+  from zenImpl_axioms show ?thesis by simp
+
+next
+  case True note isQuorum = this
+
+  hence result: "result = (nd, Some (ApplyCommit (firstUncommittedSlot nd) (currentTerm nd)))"
+    by (simp add: result_def commitIfQuorate_def)
+
+  have nodeState': "nodeState' = nodeState"
+    unfolding nodeState'_def
+    by (intro ext, simp add: nd' nd_def result)
+
+  have messages': "messages' = insert \<lparr> sender = n\<^sub>0, destination = Broadcast, payload = ApplyCommit (firstUncommittedSlot nd) (currentTerm nd) \<rparr> messages"
+    by (simp add: messages' result broadcast_def)
+
+  have message_simps[simp]:
+    "\<And>s d i t. (s \<midarrow>\<langle> PublishResponse i t \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> PublishResponse i t \<rangle>\<rightarrow> d)"
+    "\<And>s d i t x. (s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<rightarrow> d)"
+    "\<And>s d i t a. (s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<rightarrow> d)"
+    "\<And>d i t. (\<langle> PublishResponse i t \<rangle>\<rightarrow>' d) = (\<langle> PublishResponse i t \<rangle>\<rightarrow> d)"
+    "\<And>d i t x. (\<langle> PublishRequest i t x \<rangle>\<rightarrow>' d) = (\<langle> PublishRequest i t x \<rangle>\<rightarrow> d)"
+    "\<And>d i t a. (\<langle> JoinRequest i t a \<rangle>\<rightarrow>' d) = (\<langle> JoinRequest i t a \<rangle>\<rightarrow> d)"
+    "\<And>s i t. (s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>') = (s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>)"
+    "\<And>s i t x. (s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>') = (s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>)"
+    "\<And>s i t a. (s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>') = (s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>)"
+    "\<And>i t. (\<langle> PublishResponse i t \<rangle>\<leadsto>') = (\<langle> PublishResponse i t \<rangle>\<leadsto>)"
+    "\<And>i t x. (\<langle> PublishRequest i t x \<rangle>\<leadsto>') = (\<langle> PublishRequest i t x \<rangle>\<leadsto>)"
+    "\<And>i t a. (\<langle> JoinRequest i t a \<rangle>\<leadsto>') = (\<langle> JoinRequest i t a \<rangle>\<leadsto>)"
+    by (unfold isMessageFromTo'_def isMessageTo'_def isMessageFrom'_def isMessage'_def,
+        auto simp add: messages' isMessageFromTo_def isMessageTo_def isMessageFrom_def isMessage_def)
+
+  have ApplyCommit_fromTo: "\<And>s d i t. (s \<midarrow>\<langle> ApplyCommit i t \<rangle>\<rightarrow>' d) = ((s \<midarrow>\<langle> ApplyCommit i t \<rangle>\<rightarrow> d)
+      \<or> (s, i, t, d) = (n\<^sub>0, firstUncommittedSlot nd, currentTerm nd, Broadcast))"
+    unfolding isMessageFromTo_def isMessageFromTo'_def
+    by (auto simp add: messages')
+
+  have ApplyCommit_from: "\<And>s i t. (s \<midarrow>\<langle> ApplyCommit i t \<rangle>\<leadsto>') = ((s \<midarrow>\<langle> ApplyCommit i t \<rangle>\<leadsto>)
+      \<or> (s, i, t) = (n\<^sub>0, firstUncommittedSlot nd, currentTerm nd))"
+    unfolding isMessageFrom_def isMessageFrom'_def by (auto simp add: ApplyCommit_fromTo)
+
+  have ApplyCommit_to: "\<And>d i t. (\<langle> ApplyCommit i t \<rangle>\<rightarrow>' d) = ((\<langle> ApplyCommit i t \<rangle>\<rightarrow> d)
+      \<or> (i, t, d) = (firstUncommittedSlot nd, currentTerm nd, Broadcast))"
+    unfolding isMessageTo_def isMessageTo'_def
+    by (auto simp add: ApplyCommit_fromTo)
+
+  have ApplyCommit_any: "\<And>i t. (\<langle> ApplyCommit i t \<rangle>\<leadsto>') = ((\<langle> ApplyCommit i t \<rangle>\<leadsto>)
+      \<or> (i, t) = (firstUncommittedSlot nd, currentTerm nd))"
+    unfolding isMessage_def isMessage'_def by (auto simp add: ApplyCommit_from)
+
+  note ApplyCommit' = ApplyCommit_any ApplyCommit_from ApplyCommit_fromTo ApplyCommit_to
+
+  from committedToLocalCheckpoint
+  have committedTo_current: "committed\<^sub>< (firstUncommittedSlot nd)"
+    by (simp add: nd_def)
+
+  have isCommitted_eq: "\<And>i. isCommitted' i = (isCommitted i \<or> i = firstUncommittedSlot nd)"
+    using isCommitted'_def isCommitted_def by (auto simp add: ApplyCommit')
+
+  have committedTo_eq: "\<And>i. committed\<^sub><' i = ((committed\<^sub>< i) \<or> (i = Suc (firstUncommittedSlot nd)))"
+  proof -
+    fix i
+    show "?thesis i"
+    proof (cases "isCommitted (firstUncommittedSlot nd)")
+      case True with isCommitted_eq have 1: "isCommitted' = isCommitted" by (intro ext, auto)
+      from True isCommitted_committedTo_Suc have 2: "committed\<^sub>< (Suc (firstUncommittedSlot nd))" by simp
+      from 1 2 show ?thesis by (simp add: committedTo'_def committedTo_def, blast)
+    next
+      case False
+      with committedTo_current isCommitted_committedTo
+      have isCommitted_lt[simp]: "\<And>j. isCommitted j = (j < firstUncommittedSlot nd)"
+        using committedTo_def nat_neq_iff by blast
+      have isCommitted'_le[simp]: "\<And>j. isCommitted' j = (j \<le> firstUncommittedSlot nd)"
+        by (auto simp add: isCommitted_eq)
+      show ?thesis
+        by (simp add: committedTo'_def committedTo_def, auto, presburger)
+    qed
+  qed
+
+  have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
+
+  have zen': "zen messages'"
+  proof (unfold messages', intro send_ApplyCommit ballI)
+    from isQuorum_firstUncommittedSlot isQuorum
+    have publishVotes_Q: "publishVotes nd \<in> Q (era\<^sub>i (firstUncommittedSlot nd))"
+      by (auto simp add: nd_def)
+
+    hence publishVotes_nonempty: "publishVotes nd \<noteq> {}"
+      by (intro Q_members_nonempty)
+    then obtain n' where n'_vote: "n' \<in> publishVotes (nodeState n\<^sub>0)" unfolding nd_def by blast
+
+    with publishVotes
+    have "n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) \<rangle>\<leadsto>"
+      by simp
+
+    from PublishResponse_era [OF this] publishVotes_Q
+    show "publishVotes nd \<in> Q (era\<^sub>t (currentTerm nd))"
+      by (simp add: nd_def)
+
+    from publishVotes show "\<And>s. s \<in> publishVotes nd \<Longrightarrow> s \<midarrow>\<langle> PublishResponse (firstUncommittedSlot nd) (currentTerm nd) \<rangle>\<leadsto>"
+      by (simp add: nd_def)
+  qed
+
+  have v\<^sub>c_eq: "\<And>i. isCommitted i \<Longrightarrow> v\<^sub>c' i = v\<^sub>c i"
+  proof -
+    fix i assume "isCommitted i"
+    then obtain t where committed: "\<langle> ApplyCommit i t \<rangle>\<leadsto>" unfolding isCommitted_def by blast
+    hence committed': "\<langle> ApplyCommit i t \<rangle>\<leadsto>'" by (simp add: ApplyCommit')
+
+    have "v\<^sub>c i = v i t" by (intro ApplyCommit_v\<^sub>c committed)
+    moreover from committed'
+    have "v\<^sub>c' i = v' i t" by (unfold v\<^sub>c'_def v'_def isMessage'_def isMessageFrom'_def isMessageFromTo'_def, intro zen.ApplyCommit_v\<^sub>c [OF zen'])
+    ultimately show "?thesis i" by simp
+  qed
+
+  have era\<^sub>i_eq: "\<And>i. committed\<^sub>< i \<Longrightarrow> era\<^sub>i' i = era\<^sub>i i"
+  proof -
+    fix i assume "committed\<^sub>< i"
+    hence "\<And>j. (j < i \<and> isReconfiguration (v\<^sub>c' j)) = (j < i \<and> isReconfiguration (v\<^sub>c j))"
+      unfolding committedTo_def using v\<^sub>c_eq by metis
+    thus "?thesis i" by (unfold era\<^sub>i'_def era\<^sub>i_def, simp)
+  qed
+
+  from committedToLocalCheckpoint
+  have era\<^sub>i_firstUncommittedSlot: "\<And>n. era\<^sub>i' (firstUncommittedSlot (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
+    by (intro era\<^sub>i_eq)
+
+  have reconfig_eq: "\<And>e i. committed\<^sub>< i \<Longrightarrow> e < era\<^sub>i i \<Longrightarrow> reconfig' e = reconfig e"
+  proof -
+    fix e i assume a: "committed\<^sub>< i" "e < era\<^sub>i i"
+
+    define P where "\<And>i. P i \<equiv> isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
+    have reconfig'_the: "reconfig' e = (THE i. P i)" by (simp add: P_def reconfig'_def)
+
+    have "P (reconfig' e)"
+    proof (unfold reconfig'_the, intro theI [of P])
+      show "P (reconfig e)"
+        using P_def a era\<^sub>i_eq isCommitted_committedTo isCommitted_eq reconfig_era reconfig_isCommitted reconfig_isReconfiguration v\<^sub>c_eq by auto
+
+      show "\<And>j. P j \<Longrightarrow> j = reconfig e"
+        using P_def a
+        by (metis committedTo_current committedTo_def era\<^sub>i_eq era\<^sub>i_mono isCommitted_committedTo isCommitted_eq not_le reconfig_eq v\<^sub>c_eq)
+    qed
+    thus "?thesis e i"
+      using P_def a
+      by (metis committedTo_current committedTo_def era\<^sub>i_eq era\<^sub>i_mono isCommitted_committedTo isCommitted_eq not_le reconfig_eq v\<^sub>c_eq)
+  qed
+
+  have Q_eq: "\<And>e i. committed\<^sub>< i \<Longrightarrow> e \<le> era\<^sub>i i \<Longrightarrow> Q' e = Q e"
+  proof -
+    fix e i assume a: "committed\<^sub>< i" "e \<le> era\<^sub>i i"
+    thus "Q' e = Q e" 
+    proof (cases e)
+      case e\<^sub>0 thus ?thesis by (simp add: Q_def Q'_def)
+    next
+      case (nextEra e')
+      with a have lt: "e' < era\<^sub>i i" by (simp add: less_Era_def less_eq_Era_def)
+
+      from a lt have reconfig_eq[simp]: "reconfig' e' = reconfig e'"
+        by (intro reconfig_eq)
+
+      from a lt
+      have v\<^sub>c_eq[simp]: "v\<^sub>c' (reconfig e') = v\<^sub>c (reconfig e')"
+        by (intro v\<^sub>c_eq reconfig_isCommitted)
+
+      show ?thesis unfolding Q_def Q'_def nextEra by simp
+    qed
+  qed
+
+  have Q_era_eq: "\<And>n. Q' (era\<^sub>i (firstUncommittedSlot (nodeState n))) = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))"
+  proof (intro Q_eq)
+    from committedToLocalCheckpoint
+    show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    show "\<And>n. era\<^sub>i (firstUncommittedSlot (nodeState n)) \<le> era\<^sub>i (firstUncommittedSlot (nodeState n))" by simp
+  qed
+
+  note zen.consistent [OF zen']
+
+  show ?thesis
+    apply (intro zenImplI)
+                        apply (unfold nodeState' message_simps era\<^sub>i_firstUncommittedSlot Q_era_eq)
+  proof -
+    from zen' show "zen messages'" .
+    from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
+    from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
+    from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
+    from lastAccepted_None show "\<And>n t. lastAcceptedTerm (nodeState n) = None \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
+    from lastAccepted_Some_sent show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
+    from lastAccepted_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>" .
+    from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto> \<Longrightarrow> t' \<le> t" .
+    from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
+    from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
+    from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
+    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+
+    from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
+      by (simp add: promised'_def)
+
+    from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
+    from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))" .
+    from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
+            n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
+             \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
+
+    from electionValue_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
+    from electionValue_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
+               n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)".
+    from electionValue_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
+    from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
+
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState n))" by (simp add: committedTo_eq)
+  qed
+qed
+
+lemma (in zenStep) addPublishVote_invariants:
+  assumes nd': "nd' = nd \<lparr> publishVotes := insert s (publishVotes nd) \<rparr>"
+  assumes messages': "messages' = messages"
+  assumes sent: "s \<midarrow>\<langle> PublishResponse (firstUncommittedSlot nd) (currentTerm nd) \<rangle>\<leadsto>"
+  shows "zenImpl messages' nodeState'"
+proof -
+  have message_simps[simp]:
+    "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
+    "\<And>p d. (\<langle> p \<rangle>\<rightarrow>' d) = (\<langle> p \<rangle>\<rightarrow> d)"
+    "\<And>s p. (s \<midarrow>\<langle> p \<rangle>\<leadsto>') = (s \<midarrow>\<langle> p \<rangle>\<leadsto>)"
+    "\<And>p. (\<langle> p \<rangle>\<leadsto>') = (\<langle> p \<rangle>\<leadsto>)"
+    by (unfold isMessageFromTo'_def isMessageTo'_def isMessageFrom'_def isMessage'_def,
+        auto simp add: messages' isMessageFromTo_def isMessageTo_def isMessageFrom_def isMessage_def)
+
+  have property_simps[simp]:
+    "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
+    "\<And>n. firstUncommittedSlot (nodeState' n) = firstUncommittedSlot (nodeState n)"
+    "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
+    "\<And>n q. isQuorum (nodeState' n) q = isQuorum (nodeState n) q"
+    "\<And>n. lastAcceptedTerm (nodeState' n) = lastAcceptedTerm (nodeState n)"
+    "\<And>n. lastAcceptedValue (nodeState' n) = lastAcceptedValue (nodeState n)"
+    "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
+    "\<And>n. publishPermitted (nodeState' n) = publishPermitted (nodeState n)"
+    "\<And>n. joinVotes (nodeState' n) = joinVotes (nodeState n)"
+    "\<And>n. electionWon (nodeState' n) = electionWon (nodeState n)"
+    "\<And>n. electionValueState (nodeState' n) = electionValueState (nodeState n)"
+    by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' addElectionVote_def Let_def)
+
+  have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
+  have v\<^sub>c_eq[simp]: "v\<^sub>c' = v\<^sub>c" by (intro ext, auto simp add: v\<^sub>c'_def v\<^sub>c_def)
+  have isCommitted_eq[simp]: "isCommitted' = isCommitted" by (intro ext, auto simp add: isCommitted'_def isCommitted_def)
+  have committedTo_eq[simp]: "committed\<^sub><' = committed\<^sub><" by (intro ext, auto simp add: committedTo'_def committedTo_def)
+  have era\<^sub>i_eq[simp]: "era\<^sub>i' = era\<^sub>i" by (intro ext, auto simp add: era\<^sub>i'_def era\<^sub>i_def)
+  have reconfig_eq[simp]: "reconfig' = reconfig" by (intro ext, auto simp add: reconfig'_def reconfig_def)
+  have Q_eq[simp]: "Q' = Q" using reconfig_eq v\<^sub>c_eq Q'_def Q_def by blast
+  have promised_eq[simp]: "promised' = promised" by (intro ext, auto simp add: promised'_def promised_def)
+
+  show ?thesis
+    apply (intro zenImplI)
+                        apply (unfold property_simps era\<^sub>i_eq Q_eq message_simps committedTo_eq promised_eq)
+  proof -
+    from zen_axioms messages' show "zen messages'" by simp
+
+    from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
+    from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
+    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))" .
+    from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
+    from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
+    from lastAccepted_None show "\<And>n t. lastAcceptedTerm (nodeState n) = None \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
+    from lastAccepted_Some_sent show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t \<rangle>\<leadsto>" .
+    from lastAccepted_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>" .
+    from lastAccepted_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto> \<Longrightarrow> t' \<le> t" .
+    from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
+    from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
+    from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
+    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+
+    from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
+      by (auto simp add: promised_def)
+
+    from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
+    from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))" .
+    from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
+            n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
+             \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
+
+    from electionValue_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
+    from electionValue_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
+               n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)".
+    from electionValue_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
+
+    fix n
+    from sent publishVotes
+    show "\<And>n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
+      unfolding nodeState'_def
+      by (cases "n = n\<^sub>0", simp_all add: nd' nd_def, blast)
+  qed
+qed
+
+lemma (in zenStep) handlePublishResponse_invariants:
+  fixes s i t
+  defines "result \<equiv> handlePublishResponse s i t nd"
+  assumes nd': "nd' = fst result"
+  assumes messages': "messages' = send broadcast result"
+  assumes sent: "s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
+  shows "zenImpl messages' nodeState'"
+proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd")
+  case False
+  hence [simp]: "result = (nd, None)"
+    by (auto simp add: result_def handlePublishResponse_def Let_def)
+
+  have [simp]: "messages' = messages"
+    by (simp add: messages')
+
+  have [simp]: "nodeState' = nodeState"
+    unfolding nodeState'_def
+    by (intro ext, simp add: nd' nd_def)
+
+  from zenImpl_axioms show ?thesis by simp
+
+next
+  case True
+  hence i: "i = firstUncommittedSlot nd"
+    and t: "t = currentTerm nd"
+    by simp_all
+
+  define newVotes where "newVotes \<equiv> insert s (publishVotes nd)"
+
+  define nd1 where "nd1 \<equiv> nd \<lparr>publishVotes := newVotes\<rparr>"
+  define nodeState1 where "nodeState1 \<equiv> \<lambda>n. if n = n\<^sub>0 then nd1 else nodeState n"
+
+  have nodeState1: "nodeState1 = zenStep.nodeState' nodeState n\<^sub>0 nd1"
+    by (intro ext, simp add: zenStep.nodeState'_def [OF zenStep_axioms] nodeState1_def)
+
+  note zenStep.addPublishVote_invariants
+
+  have zenImpl1: "zenImpl messages nodeState1"
+     unfolding nodeState1
+ proof (intro_locales, intro zenImpl.axioms zenStep.addPublishVote_invariants)
+    show "nd1 = nd\<lparr>publishVotes := insert s (publishVotes nd)\<rparr>"
+      by (simp add: nd1_def newVotes_def)
+    show "messages = messages"..
+    from sent i t
+    show "\<exists>d. \<lparr>sender = s, destination = d, payload = PublishResponse (firstUncommittedSlot nd) (currentTerm nd)\<rparr> \<in> messages"
+      unfolding isMessageFrom_def isMessageFromTo_def by simp
+    from message show "zenStep messages nodeState messages message" by (unfold_locales, simp_all)
+  qed
+
+  have zenStep1: "zenStep messages nodeState1 messages' message"
+  proof (intro_locales)
+    from zenImpl1 show "zenImpl_axioms messages nodeState1" by (simp add: zenImpl_def)
+    from zenStep_axioms show "zenStep_axioms messages messages' message" by (simp add: zenStep_def)
+  qed
+
+  have result: "result = commitIfQuorate nd1"
+    by (simp add: result_def handlePublishResponse_def i t newVotes_def nd1_def)
+
+  have nodeState': "nodeState' = zenStep.nodeState' nodeState1 n\<^sub>0 nd'"
+    unfolding nodeState'_def zenStep.nodeState'_def [OF zenStep1]
+    by (intro ext, simp add: nodeState1_def)
+
+  have nd1[simp]: "zenStep.nd nodeState1 n\<^sub>0 = nd1"
+    by (simp add: zenStep.nd_def [OF zenStep1], simp add: nodeState1_def)
+
+  show ?thesis
+    unfolding nodeState'
+    by (intro zenStep.commitIfQuorate_invariants [OF zenStep1], simp_all add: nd' messages' result)
+qed
+
 lemma (in zenStep) handleReboot_invariants:
   assumes nd': "nd' = handleReboot nd"
   assumes messages': "messages' = messages"
@@ -2966,6 +3393,10 @@ proof -
 
     from electionValue_Forced
     show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
+      by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
+
+    from publishVotes
+    show "\<And>n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
   qed
 qed
@@ -3287,6 +3718,24 @@ proof -
         from m
         show "\<exists>s d. \<lparr>sender = s, destination = d, payload = PublishRequest i t x\<rparr> \<in> messages"
           by (auto simp add: PublishRequest isMessageFromTo_def)
+      qed
+
+    next
+      case (PublishResponse i t)
+
+      have result: "result = broadcast' (handlePublishResponse (sender m) i t nd)"
+        unfolding result_def ProcessMessage_def PublishResponse dest_True by (simp add: broadcast'_def)
+
+      show ?thesis
+      proof (unfold nodeState', intro zenStep.handlePublishResponse_invariants [OF zenStep])
+        show "fst result = fst (handlePublishResponse (sender m) i t (zenStep.nd nodeState n\<^sub>0))"
+          by (simp add: result)
+        show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (handlePublishResponse (sender m) i t (zenStep.nd nodeState n\<^sub>0))"
+          by (simp_all add: messages'_def result broadcast'_def handlePublishResponse_def zenStep.send.simps [OF zenStep] zenStep.broadcast_def [OF zenStep] commitIfQuorate_def)
+
+        from m
+        show "\<exists>d. \<lparr>sender = sender m, destination = d, payload = PublishResponse i t\<rparr> \<in> messages"
+          by (auto simp add: PublishResponse isMessageFromTo_def)
       qed
 
     next

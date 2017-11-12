@@ -239,6 +239,13 @@ definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \
                , Some (PublishResponse i t))
           else (nd, None)"
 
+text \<open>This method sends an @{term ApplyCommit} message if a quorum of votes has been received.\<close>
+
+definition commitIfQuorate :: "NodeData \<Rightarrow> (NodeData * Message option)"
+  where
+    "commitIfQuorate nd = (nd, if isQuorum nd (publishVotes nd)
+                                  then Some (ApplyCommit (firstUncommittedSlot nd) (currentTerm nd)) else None)"
+
 text \<open>A @{term PublishResponse} message is checked for acceptability and handled as follows. If
 this message, together with the previously-received messages, forms a quorum of votes then the
 value is committed, yielding an @{term ApplyCommit} message.\<close>
@@ -246,12 +253,8 @@ value is committed, yielding an @{term ApplyCommit} message.\<close>
 definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishResponse s i t nd \<equiv>
-        if i = firstUncommittedSlot nd
-             \<and> currentTerm nd \<le> t
-        then let nd1 = ensureCurrentTerm t nd;
-                 newVotes = insert s (publishVotes nd1)
-             in (nd1 \<lparr> publishVotes := newVotes \<rparr>,
-                 if isQuorum nd newVotes then Some (ApplyCommit i t) else None)
+        if i = firstUncommittedSlot nd \<and> t = currentTerm nd
+        then commitIfQuorate (nd \<lparr> publishVotes := insert s (publishVotes nd) \<rparr>)
         else (nd, None)"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
