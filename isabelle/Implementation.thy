@@ -19,7 +19,7 @@ message refers to a slot number.\<close>
 
 datatype Message
   = StartJoin Term
-  | JoinRequest nat Term "Term option"
+  | JoinRequest nat Term "Term option" (* TODO the second term, if present, is in the same era as the first, so just use its termInEra *)
   | ClientValue Value
   | PublishRequest nat Term Value
   | PublishResponse nat Term
@@ -106,11 +106,11 @@ record NodeData =
   currentNode :: Node (* identity of this node *)
   firstUncommittedSlot :: nat (* all slots strictly below this one are committed *)
   currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
-  currentEra :: Era (* era of the firstUncommittedSlot slot *)
-  currentConfiguration :: Configuration (* configuration of the currentEra *)
+  currentEra :: Era (* era of the firstUncommittedSlot slot *) (* TODO just use "era\<^sub>t currentTerm" *)
+  currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set" *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
-  lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *)
+  lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *) (* TODO use the era\<^sub>t of currentTerm *)
   lastAcceptedValue :: Value (* value accepted in lastAcceptedTerm, or NoOp *)
   (* election data *)
   joinVotes :: "Node set" (* set of nodes that have sent a JoinRequest for the current currentTerm *)
@@ -206,6 +206,7 @@ definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rig
                    nd2 = addElectionVote s i a nd1
                in publishValue (lastAcceptedValue nd2) nd2
           else (nd, None)"
+(* TODO show this is equivalent to recursing to (handleJoinRequest ... None) if given an earlier slot *)
 
 text \<open>A @{term PublishRequest} message is checked for acceptability and then handled as follows,
 yielding a @{term PublishResponse} message.\<close>
@@ -250,7 +251,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
     "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
         NoOp \<Rightarrow> nd
       | Reconfigure Q \<Rightarrow> nd
-          \<lparr> currentEra := nextEra (currentEra nd)
+          \<lparr> currentEra := nextEra (currentEra nd) (* TODO also update term to Term 0 in the next era *)
           , currentConfiguration := Q
           , joinVotes := {}
           , electionWon := False
@@ -328,6 +329,9 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
           | Reboot
               \<Rightarrow> (handleReboot nd, None)
         else (nd, None)"
+
+text \<open>Nodes are initialised to this state. The data required is the initial configuration, @{term Q\<^sub>0}
+and the initial \texttt{ClusterState}, here shown as @{term "ClusterState 0"}.\<close>
 
 definition initialNodeState :: "Node \<Rightarrow> NodeData"
   where "initialNodeState n =

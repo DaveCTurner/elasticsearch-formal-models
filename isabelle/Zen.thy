@@ -12,6 +12,8 @@ subsection \<open>Invariants on messages\<close>
 text \<open>Firstly, a set of invariants that hold on the set of messages that have ever been sent,
 without considering the state of any individual node.\<close>
 
+(* TODO rename to zenMessages *)
+
 locale zen =
   fixes messages :: "RoutedMessage set"
   fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<rightarrow> (_)" [55])
@@ -395,6 +397,8 @@ lemma (in zen) ApplyCommit_PublishRequest_v\<^sub>c:
   using ApplyCommit_PublishRequest assms .
 
 subsection \<open>Preserving invariants\<close>
+
+(* TODO fold these into the zenImpl cases *)
 
 text \<open>The statement @{term "zen M"} indicates that the set @{term M} of messages satisfies the
 invariants of @{term zen}, and therefore all committed values are equal. Lemmas that are proven ``in
@@ -1348,6 +1352,8 @@ subsection \<open>Invariants on node states\<close>
 
 text \<open>A set of invariants which relate the states of the individual nodes to the set of messages sent.\<close>
 
+(* TODO rename zenImpl to zen *)
+(* TODO name these assumptions more consistently *)
 locale zenImpl = zen +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
@@ -1428,6 +1434,7 @@ locale zenStep = zenImpl +
   assumes message: "message \<in> messages"
   assumes messages_subset: "messages \<subseteq> messages'"
 
+(* TODO move these definitions into the locale declaration *)
 definition (in zenStep) nd :: NodeData
   where "nd \<equiv> nodeState n\<^sub>0"
 definition (in zenStep) nodeState' :: "Node \<Rightarrow> NodeData"
@@ -1519,19 +1526,23 @@ lemma (in zenStep)
                  apply (fold promised'_def)
                  apply (fold lastCommittedClusterStateBefore'_def)
   using assms proof - qed
+(* TODO perhaps also a simpler introduction rule for when messages' = messages? Should only need to look at n\<^sub>0 in that case. *)
 
+(* TODO fold into locale definition *)
 definition (in zenStep) response :: "Message \<Rightarrow> RoutedMessage"
   where
     "\<And>msg. response msg \<equiv>  \<lparr>sender = n\<^sub>0,
                              destination = OneNode (sender message),
                              payload = msg \<rparr>"
 
+(* TODO fold into locale definition *)
 definition (in zenStep) broadcast :: "Message \<Rightarrow> RoutedMessage"
   where
     "\<And>msg. broadcast msg \<equiv>  \<lparr>sender = n\<^sub>0,
                              destination = Broadcast,
                              payload = msg \<rparr>"
 
+(* TODO move to zenImpl? *)
 fun (in zenStep) send :: "(Message \<Rightarrow> RoutedMessage) \<Rightarrow> ('a * Message option) \<Rightarrow> RoutedMessage set"
   where
     "send f (_, None) = messages"
@@ -1590,14 +1601,16 @@ next
     by (auto simp add: isMessageFromTo'_def isMessageTo'_def isMessage'_def isMessageFrom'_def,
         auto simp add: isMessageFromTo_def isMessageTo_def isMessage_def isMessageFrom_def messages')
 
+  have PublishRequest': "\<And>s d i t x'. (s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow>' d) = ((s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow> d)
+          \<or> (s, d, i, t, x') = (n\<^sub>0, Broadcast, firstUncommittedSlot nd, currentTerm nd, x))"
+    by (auto simp add: isMessageFromTo'_def, auto simp add: messages' isMessageFromTo_def)
+
+  (* TODO make this proof more like the other ones *)
+
   from electionWon_era True eraMatchesLocalCheckpoint
   have era_eq:
     "era\<^sub>t (currentTerm nd) = currentEra nd" 
     "era\<^sub>i (firstUncommittedSlot nd) = currentEra nd" by (simp_all add: nd_def)
-
-  have PublishRequest': "\<And>s d i t x'. (s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow>' d) = ((s \<midarrow>\<langle> PublishRequest i t x' \<rangle>\<rightarrow> d)
-          \<or> (s, d, i, t, x') = (n\<^sub>0, Broadcast, firstUncommittedSlot nd, currentTerm nd, x))"
-    by (auto simp add: isMessageFromTo'_def, auto simp add: messages' isMessageFromTo_def)
 
   have fresh_request: "\<And>x. \<not> \<langle> PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x \<rangle>\<leadsto>"
   proof (intro notI)
@@ -2240,7 +2253,7 @@ proof -
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show ?thesis
-  proof (intro zenImplI)
+  proof (intro zenImplI) (* TODO unfold things too, like in the other proofs *)
     show "zen messages'"
     proof (cases "lastAcceptedTerm nd")
       case None
@@ -2311,7 +2324,7 @@ proof -
       qed
     qed
 
-    from nodesIdentified show "\<And>n. currentNode (nodeState' n) = n" by simp
+    from nodesIdentified show "\<And>n. currentNode (nodeState' n) = n" by simp (* TODO should be '.' not 'by simp' *)
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))" by simp
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'" by simp
@@ -3906,10 +3919,6 @@ next
   qed
 qed
 
-lemma
-  shows "zenImpl {} initialNodeState"
-  by (unfold_locales, simp_all add: initialNodeState_def isQuorum_def, intro Abs_Configuration_inverse, simp add: Q\<^sub>0_intersects)
-
 fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Rightarrow> RoutedMessage set"
   where
     "insertOption None = id"
@@ -3917,7 +3926,11 @@ fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Righ
 
 text \<open>\pagebreak\<close>
 
-lemma (in zenImpl) invariants_preserved:
+lemma initial_state_satisfies_invariants:
+  shows "zenImpl {} initialNodeState"
+  by (unfold_locales, simp_all add: initialNodeState_def isQuorum_def, intro Abs_Configuration_inverse, simp add: Q\<^sub>0_intersects)
+
+lemma (in zenImpl) invariants_preserved_by_ProcessMessage:
   fixes n\<^sub>0
   assumes "m \<in> messages"
   defines "nd \<equiv> nodeState n\<^sub>0"
@@ -4066,6 +4079,8 @@ proof -
              \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)) = True"
           by auto
 
+        (* TODO this should be in a separate lemma, handleJoinRequest_invariants *)
+
         define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
         define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
 
@@ -4173,7 +4188,7 @@ proof -
         unfolding result_def ProcessMessage_def ClientValue dest_True broadcast'_def by simp
 
       show ?thesis
-      proof (cases "electionValueState nd = ElectionValueFree")
+      proof (cases "electionValueState nd = ElectionValueFree") (* TODO this should be in a separate lemma, handleClientValue_invariants *)
         case False
         hence "handleClientValue x nd = (nd, None)"
           by (auto simp add: handleClientValue_def)
@@ -4269,7 +4284,7 @@ proof -
   qed
 qed
 
-lemma (in zenImpl) consistent_states:
+lemma (in zenImpl) invariants_imply_consistent_states:
   assumes
     "firstUncommittedSlot (nodeState n\<^sub>1) = firstUncommittedSlot (nodeState n\<^sub>2)"
   shows
