@@ -1443,38 +1443,37 @@ locale zenStep = zen +
   defines "\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d"
   fixes isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55])
   defines "\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
-    (* TODO move these definitions into the locale declaration *)
     (* value proposed in a slot & a term *)
-definition (in zenStep) v' :: "nat \<Rightarrow> Term \<Rightarrow> Value"
-  where "v' i t \<equiv> THE x. \<langle> PublishRequest i t x \<rangle>\<leadsto>'"
+  fixes v' :: "nat \<Rightarrow> Term \<Rightarrow> Value"
+  defines "v' i t \<equiv> THE x. \<langle> PublishRequest i t x \<rangle>\<leadsto>'"
     (* whether a slot is committed *)
-definition (in zenStep) isCommitted' :: "nat \<Rightarrow> bool"
-  where "isCommitted' i \<equiv> \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>'"
+  fixes isCommitted' :: "nat \<Rightarrow> bool"
+  defines "isCommitted' i \<equiv> \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>'"
     (* whether all preceding slots are committed *)
-definition (in zenStep) committedTo' :: "nat \<Rightarrow> bool" ("committed\<^sub><'")
-  where "committed\<^sub><' i \<equiv> \<forall> j < i. isCommitted' j" 
+  fixes committedTo' :: "nat \<Rightarrow> bool" ("committed\<^sub><'")
+  defines "committed\<^sub><' i \<equiv> \<forall> j < i. isCommitted' j" 
     (* the committed value in a slot *)
-definition (in zenStep) v\<^sub>c' :: "nat \<Rightarrow> Value"
-  where "v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
+  fixes v\<^sub>c' :: "nat \<Rightarrow> Value"
+  defines "v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
     (* the era of a slot *)
-definition (in zenStep) era\<^sub>i' :: "nat \<Rightarrow> Era"
-  where "era\<^sub>i' i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c' j) })"
+  fixes era\<^sub>i' :: "nat \<Rightarrow> Era"
+  defines "era\<^sub>i' i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c' j) })"
     (* the (unique) slot in an era containing a reconfiguration *)
-definition (in zenStep) reconfig' :: "Era \<Rightarrow> nat"
-  where "reconfig' e
+  fixes reconfig' :: "Era \<Rightarrow> nat"
+  defines "reconfig' e
       \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
     (* the configuration of an era *)
-definition (in zenStep) Q' :: "Era \<Rightarrow> Node set set"
-  where "Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+  fixes Q' :: "Era \<Rightarrow> Node set set"
+  defines "Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
     (* predicate to say whether an applicable JoinRequest has been sent *)
-definition (in zenStep) promised' :: "nat \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
-  where "promised' i s dn t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow>' (OneNode dn)"
+  fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  defines "promised' i s dn t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow>' (OneNode dn)"
     (* set of previously-accepted terms *)
-definition (in zenStep) prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
-  where "prevAccepted' i t senders
+  fixes prevAccepted' :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  defines "prevAccepted' i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto>' }"
-definition (in zenStep) lastCommittedClusterStateBefore' :: "nat \<Rightarrow> ClusterState"
-  where "lastCommittedClusterStateBefore' i \<equiv>
+  fixes lastCommittedClusterStateBefore' :: "nat \<Rightarrow> ClusterState"
+  defines "lastCommittedClusterStateBefore' i \<equiv>
     if \<exists> j < i. \<exists> cs. v\<^sub>c' j = SetClusterState cs
     then THE cs. v\<^sub>c' (GREATEST j. j < i \<and> (\<exists> cs. v\<^sub>c' j = SetClusterState cs)) = SetClusterState cs
     else ClusterState 0"
