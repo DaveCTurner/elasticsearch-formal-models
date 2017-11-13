@@ -119,7 +119,7 @@ record NodeData =
   electionWon :: bool
   electionValueState :: ElectionValueState (* if True, must propose lastAcceptedValue for this slot on winning an election; if False, can propose anything *)
   (* learner data *)
-  publishPermitted :: bool (* if True, may publish a value for this slot/term pair; if False, must not. *)
+  publishPermitted :: bool (* if True, may publish a value for this slot/term pair; if False, must not: either there is definitely a PublishRequest in flight, or we've just rebooted. *)
   publishVotes :: "Node set"
 
 definition isQuorum :: "NodeData \<Rightarrow> Node set \<Rightarrow> bool"
