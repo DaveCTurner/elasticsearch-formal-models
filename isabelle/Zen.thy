@@ -1372,7 +1372,7 @@ locale zen = zenMessages +
   assumes lastAccepted_Some_max: "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t
     \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>
     \<Longrightarrow> t' \<le> t"
-  assumes lastAccepted_Some_value: "lastAcceptedTerm (nodeState n) = Some t
+  assumes lastAccepted_Some_value: "\<And>n t. lastAcceptedTerm (nodeState n) = Some t
     \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>"
   assumes JoinRequest_currentTerm:
     "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)"
