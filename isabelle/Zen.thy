@@ -15,11 +15,11 @@ node.\<close>
 
 locale zenMessages =
   fixes messages :: "RoutedMessage set"
-  fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<rightarrow> (_)" [55])
+  fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<rightarrow> (_)" [1000,55,1000])
   defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages"
-  fixes isMessageFrom :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<leadsto>" [55])
+  fixes isMessageFrom :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<leadsto>" [1000,55])
   defines "s \<midarrow>\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
-  fixes isMessageTo :: "Message \<Rightarrow> Destination \<Rightarrow> bool" ("\<langle> _ \<rangle>\<rightarrow> (_)" [55])
+  fixes isMessageTo :: "Message \<Rightarrow> Destination \<Rightarrow> bool" ("\<langle> _ \<rangle>\<rightarrow> (_)" [55,1000])
   defines "\<langle> m \<rangle>\<rightarrow> d \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<rightarrow> d"
   fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
   defines "\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>"
@@ -1435,15 +1435,15 @@ locale zenStep = zen +
   fixes nodeState' :: "Node \<Rightarrow> NodeData"
   defines "nodeState' n \<equiv> if n = n\<^sub>0 then nd' else nodeState n"
     (* updated definitions from zenMessages *)
+  fixes isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<rightarrow>' (_)" [1000,55,1000])
+  defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages'"
+  fixes isMessageFrom' :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [1000,55])
+  defines "s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d"
+  fixes isMessageTo' :: "Message \<Rightarrow> Destination \<Rightarrow> bool" ("\<langle> _ \<rangle>\<rightarrow>' (_)" [55,1000])
+  defines "\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d"
+  fixes isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55])
+  defines "\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
     (* TODO move these definitions into the locale declaration *)
-definition (in zenStep) isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55])
-  where "s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages'"
-definition (in zenStep) isMessageFrom' :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55])
-  where "s \<midarrow>\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d"
-definition (in zenStep) isMessageTo' :: "Message \<Rightarrow> Destination \<Rightarrow> bool" ("\<langle> _ \<rangle>\<rightarrow>' _" [55])
-  where "\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d"
-definition (in zenStep) isMessage' :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>'" [55])
-  where "\<langle> m \<rangle>\<leadsto>' \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>'"
     (* value proposed in a slot & a term *)
 definition (in zenStep) v' :: "nat \<Rightarrow> Term \<Rightarrow> Value"
   where "v' i t \<equiv> THE x. \<langle> PublishRequest i t x \<rangle>\<leadsto>'"
