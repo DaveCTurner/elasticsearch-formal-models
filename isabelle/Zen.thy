@@ -397,7 +397,7 @@ lemma (in zenMessages) ApplyCommit_PublishRequest_v\<^sub>c:
 
 subsection \<open>Preserving invariants\<close>
 
-(* TODO fold these into the zenImpl cases *)
+(* TODO fold these into the zen cases *)
 
 text \<open>The statement @{term "zenMessages M"} indicates that the set @{term M} of messages satisfies the
 invariants of @{term zenMessages}, and therefore all committed values are equal. Lemmas that are proven ``in
@@ -1351,9 +1351,8 @@ subsection \<open>Invariants on node states\<close>
 
 text \<open>A set of invariants which relate the states of the individual nodes to the set of messages sent.\<close>
 
-(* TODO rename zenImpl to zenMessages *)
 (* TODO name these assumptions more consistently *)
-locale zenImpl = zenMessages +
+locale zen = zenMessages +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
   assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
@@ -1425,7 +1424,7 @@ locale zenImpl = zenMessages +
   assumes currentClusterState_lastCommittedClusterStateBefore:
     "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
 
-locale zenStep = zenImpl +
+locale zenStep = zen +
   fixes n\<^sub>0 :: Node
   fixes nd' :: NodeData
   fixes messages' :: "RoutedMessage set"
@@ -1510,8 +1509,8 @@ lemma (in zenStep)
   assumes "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
   assumes "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) \<rangle>\<leadsto>'"
   assumes "\<And>n. currentClusterState (nodeState' n) = lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState' n))"
-  shows zenImplI: "zenImpl messages' nodeState'"
-  apply (intro_locales, intro assms, intro zenImpl_axioms.intro)
+  shows zenI: "zen messages' nodeState'"
+  apply (intro_locales, intro assms, intro zen_axioms.intro)
                  apply (fold isMessageFromTo'_def)
                  apply (fold isMessageFrom'_def)
                  apply (fold isMessage'_def)
@@ -1541,19 +1540,19 @@ definition (in zenStep) broadcast :: "Message \<Rightarrow> RoutedMessage"
                              destination = Broadcast,
                              payload = msg \<rparr>"
 
-(* TODO move to zenImpl? *)
+(* TODO move to zen? *)
 fun (in zenStep) send :: "(Message \<Rightarrow> RoutedMessage) \<Rightarrow> ('a * Message option) \<Rightarrow> RoutedMessage set"
   where
     "send f (_, None) = messages"
   | "send f (_, Some m) = insert (f m) messages"
 
 lemma (in zenStep)
-  assumes "zenImpl messages' nodeState'"
+  assumes "zen messages' nodeState'"
   shows zenStepI: "zenStep messages' nodeState' messages' message"
 proof (intro_locales)
   from assms
-  show "zenMessages messages'" "zenImpl_axioms messages' nodeState'"
-    by (simp_all add: zenImpl_def)
+  show "zenMessages messages'" "zen_axioms messages' nodeState'"
+    by (simp_all add: zen_def)
 
   from message messages_subset
   show "zenStep_axioms messages' messages' message"
@@ -1566,14 +1565,14 @@ lemma (in zenStep) publishValue_invariants:
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send broadcast result"
   assumes x: "electionValueState nd = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue nd"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "electionWon nd \<and> publishPermitted nd \<and> electionValueState nd \<noteq> ElectionValueUnknown")
   case False
   hence result: "result = (nd, None)" by (simp add: result_def publishValue_def)
   have "messages' = messages" by (auto simp add: messages' result)
   moreover
   have "nodeState' = nodeState" by (intro ext, unfold nodeState'_def, simp add: nd' result nd_def)
-  moreover note zenImpl_axioms
+  moreover note zen_axioms
   ultimately show ?thesis by simp
 next
   case True note won = this
@@ -1810,7 +1809,7 @@ next
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
 
   show ?thesis
-  proof (intro zenImplI)
+  proof (intro zenI)
     show "zenMessages messages'"
     proof (unfold messages', intro send_PublishRequest allI impI notI ballI)
       from PublishRequest_currentTerm_applyRequested True
@@ -2068,12 +2067,12 @@ lemma (in zenStep) ensureCurrentTerm_invariants:
   assumes t: "currentTerm nd \<le> t"
   assumes nd': "nd' = ensureCurrentTerm t nd"
   assumes messages': "messages' = messages"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "currentTerm nd = t")
   case True
   hence "nodeState' = nodeState"
     by (intro ext, unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
-  with zenImpl_axioms messages' show ?thesis by simp
+  with zen_axioms messages' show ?thesis by simp
 next
   case False
 
@@ -2115,8 +2114,8 @@ next
   have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
-  show "zenImpl messages' nodeState'"
-  proof (intro zenImplI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq lastCommittedClusterStateBefore_eq)
+  show "zen messages' nodeState'"
+  proof (intro zenI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq lastCommittedClusterStateBefore_eq)
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
@@ -2207,7 +2206,7 @@ lemma (in zenStep) sendJoinRequest_invariants:
   assumes nd': "nd' = nd"
   assumes not_sent: "\<And>i a. \<not> n\<^sub>0 \<midarrow>\<langle> JoinRequest i (currentTerm nd) a \<rangle>\<leadsto>"
   assumes not_accepted: "\<And>t'. lastAcceptedTerm nd = Some t' \<Longrightarrow> t' < currentTerm nd"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof -
 
   have result: "result = (nd, Some (JoinRequest (firstUncommittedSlot nd) (currentTerm nd) (lastAcceptedTerm nd)))"
@@ -2252,7 +2251,7 @@ proof -
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
   show ?thesis
-  proof (intro zenImplI) (* TODO unfold things too, like in the other proofs *)
+  proof (intro zenI) (* TODO unfold things too, like in the other proofs *)
     show "zenMessages messages'"
     proof (cases "lastAcceptedTerm nd")
       case None
@@ -2453,14 +2452,14 @@ lemma (in zenStep) handleStartJoin_invariants:
   defines "result \<equiv> handleStartJoin t nd"
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send response result"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "currentTerm nd < t \<and> era\<^sub>t t = currentEra nd \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' < t)")
   case False
   hence result: "result = (nd, None)" by (simp add: result_def handleStartJoin_def)
   have "messages' = messages" by (auto simp add: messages' result)
   moreover
   have "nodeState' = nodeState" by (intro ext, unfold nodeState'_def, simp add: nd' result nd_def)
-  moreover note zenImpl_axioms
+  moreover note zen_axioms
   ultimately show ?thesis by simp
 next
   case True
@@ -2471,12 +2470,12 @@ next
     by (simp add: nd' result_def handleStartJoin_def)
 
   from message new_term nd'
-  have zenImpl1: "zenImpl messages nodeState'"
+  have zen1: "zen messages nodeState'"
     by (intro zenStep.ensureCurrentTerm_invariants, intro_locales, intro zenStep_axioms.intro, simp_all)
 
   with message messages_subset
   have zenStep1: "zenStep messages nodeState' messages' message"
-    by (intro_locales, simp add: zenImpl_def, intro zenStep_axioms.intro)
+    by (intro_locales, simp add: zen_def, intro zenStep_axioms.intro)
 
   have nodeState': "nodeState' = zenStep.nodeState' nodeState' n\<^sub>0 nd'"
     by (intro ext, simp add: nodeState'_def zenStep.nodeState'_def [OF zenStep1])
@@ -2486,7 +2485,7 @@ next
 
   have currentTerm_nd': "currentTerm nd' = t" by (simp add: nd')
 
-  have "zenImpl messages' (zenStep.nodeState' nodeState' n\<^sub>0 nd')"
+  have "zen messages' (zenStep.nodeState' nodeState' n\<^sub>0 nd')"
   proof (intro zenStep.sendJoinRequest_invariants [OF zenStep1], unfold nd'_eq currentTerm_nd')
     from True
     show "messages' = send response (nd', Some (JoinRequest (firstUncommittedSlot nd') t (lastAcceptedTerm nd')))"
@@ -2528,7 +2527,7 @@ lemma (in zenStep) addElectionVote_invariants:
   assumes era: "era\<^sub>t (currentTerm nd) = currentEra nd"
   assumes slot: "i \<le> firstUncommittedSlot nd"
   assumes a_lastAcceptedTerm: "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof -
   have message_simps[simp]:
     "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
@@ -2562,8 +2561,8 @@ proof -
   have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
-  show "zenImpl messages' nodeState'"
-    apply (intro zenImplI)
+  show "zen messages' nodeState'"
+    apply (intro zenI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
@@ -2805,7 +2804,7 @@ lemma (in zenStep) handlePublishRequest_invariants:
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send response result"
   assumes sent: "\<langle> PublishRequest i t x \<rangle>\<leadsto>"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "i = firstUncommittedSlot nd \<and> currentTerm nd \<le> t \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t)")
   case False
   hence [simp]: "result = (nd, None)"
@@ -2818,7 +2817,7 @@ proof (cases "i = firstUncommittedSlot nd \<and> currentTerm nd \<le> t \<and> (
     unfolding nodeState'_def
     by (intro ext, simp add: nd' nd_def)
 
-  from zenImpl_axioms show ?thesis by simp
+  from zen_axioms show ?thesis by simp
 
 next
   case True note precondition = this
@@ -2901,7 +2900,7 @@ next
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
   show ?thesis
-    apply (intro zenImplI)
+    apply (intro zenI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq electionValueState_simps lastCommittedClusterStateBefore_eq)
   proof -
     show "zenMessages messages'"
@@ -2983,7 +2982,7 @@ next
     show "electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
       apply (cases "n = n\<^sub>0")
        apply (auto simp add: nodeState'_def nd_def)
-       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zenMessages.JoinRequest_Some_lt zenImpl.electionValue_not_Free zenImpl_axioms zenMessages_axioms)
+       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zenMessages.JoinRequest_Some_lt zen.electionValue_not_Free zen_axioms zenMessages_axioms)
       using electionValue_not_Free by auto
 
   next
@@ -3053,7 +3052,7 @@ lemma (in zenStep) commitIfQuorate_invariants:
   defines "result \<equiv> commitIfQuorate nd"
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send broadcast result"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "isQuorum nd (publishVotes nd)")
   case False
   hence [simp]: "result = (nd, None)"
@@ -3066,7 +3065,7 @@ proof (cases "isQuorum nd (publishVotes nd)")
     unfolding nodeState'_def
     by (intro ext, simp add: nd' nd_def)
 
-  from zenImpl_axioms show ?thesis by simp
+  from zen_axioms show ?thesis by simp
 
 next
   case True note isQuorum = this
@@ -3283,7 +3282,7 @@ next
     by (intro lastCommittedClusterStateBefore_eq committedToLocalCheckpoint)
 
   show ?thesis
-    apply (intro zenImplI)
+    apply (intro zenI)
                         apply (unfold nodeState' message_simps era\<^sub>i_firstUncommittedSlot Q_era_eq lastCommittedClusterStateBefore_slot_eq)
   proof -
     from zenMessages' show "zenMessages messages'" .
@@ -3325,7 +3324,7 @@ lemma (in zenStep) addPublishVote_invariants:
   assumes nd': "nd' = nd \<lparr> publishVotes := insert s (publishVotes nd) \<rparr>"
   assumes messages': "messages' = messages"
   assumes sent: "s \<midarrow>\<langle> PublishResponse (firstUncommittedSlot nd) (currentTerm nd) \<rangle>\<leadsto>"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof -
   have message_simps[simp]:
     "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
@@ -3362,7 +3361,7 @@ proof -
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
   show ?thesis
-    apply (intro zenImplI)
+    apply (intro zenI)
                         apply (unfold property_simps era\<^sub>i_eq Q_eq message_simps committedTo_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zenMessages_axioms messages' show "zenMessages messages'" by simp
@@ -3411,7 +3410,7 @@ lemma (in zenStep) handlePublishResponse_invariants:
   assumes nd': "nd' = fst result"
   assumes messages': "messages' = send broadcast result"
   assumes sent: "s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd")
   case False
   hence [simp]: "result = (nd, None)"
@@ -3424,7 +3423,7 @@ proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd")
     unfolding nodeState'_def
     by (intro ext, simp add: nd' nd_def)
 
-  from zenImpl_axioms show ?thesis by simp
+  from zen_axioms show ?thesis by simp
 
 next
   case True
@@ -3442,9 +3441,9 @@ next
 
   note zenStep.addPublishVote_invariants
 
-  have zenImpl1: "zenImpl messages nodeState1"
+  have zen1: "zen messages nodeState1"
      unfolding nodeState1
- proof (intro_locales, intro zenImpl.axioms zenStep.addPublishVote_invariants)
+ proof (intro_locales, intro zen.axioms zenStep.addPublishVote_invariants)
     show "nd1 = nd\<lparr>publishVotes := insert s (publishVotes nd)\<rparr>"
       by (simp add: nd1_def newVotes_def)
     show "messages = messages"..
@@ -3456,7 +3455,7 @@ next
 
   have zenStep1: "zenStep messages nodeState1 messages' message"
   proof (intro_locales)
-    from zenImpl1 show "zenImpl_axioms messages nodeState1" by (simp add: zenImpl_def)
+    from zen1 show "zen_axioms messages nodeState1" by (simp add: zen_def)
     from zenStep_axioms show "zenStep_axioms messages messages' message" by (simp add: zenStep_def)
   qed
 
@@ -3478,7 +3477,7 @@ qed
 lemma (in zenStep) handleReboot_invariants:
   assumes nd': "nd' = handleReboot nd"
   assumes messages': "messages' = messages"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof -
   have message_simps[simp]:
     "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
@@ -3515,8 +3514,8 @@ proof -
   have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq .. 
 
-  show "zenImpl messages' nodeState'"
-    apply (intro zenImplI)
+  show "zen messages' nodeState'"
+    apply (intro zenI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
@@ -3583,7 +3582,7 @@ lemma (in zenStep) handleApplyCommit_invariants:
   assumes nd': "nd' = handleApplyCommit i t nd"
   assumes messages'[simp]: "messages' = messages"
   assumes sent: "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof (cases "i = firstUncommittedSlot nd \<and> lastAcceptedTerm nd = Some t")
   case False
   hence nd'[simp]: "nd' = nd"
@@ -3591,7 +3590,7 @@ proof (cases "i = firstUncommittedSlot nd \<and> lastAcceptedTerm nd = Some t")
 
   have nodeState'[simp]: "nodeState' = nodeState" unfolding nodeState'_def by (intro ext, simp add: nd_def)
 
-  from zenImpl_axioms show ?thesis unfolding nodeState' by simp
+  from zen_axioms show ?thesis unfolding nodeState' by simp
 
 next
   case True
@@ -3686,8 +3685,8 @@ next
       case Reconfigure with False show "\<And>n. ?thesis n" by simp
     qed
 
-    show "zenImpl messages' nodeState'"
-      apply (intro zenImplI zenMessages')
+    show "zen messages' nodeState'"
+      apply (intro zenI zenMessages')
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq era\<^sub>i_eq2 Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -3820,8 +3819,8 @@ next
     with Reconfigure have Q'_eq: "Q (era\<^sub>i (firstUncommittedSlot (nodeState' n\<^sub>0))) = Rep_Configuration newConfig"
       unfolding Q_def era\<^sub>i_firstUncommittedSlot by (simp add: i nd_def)
 
-    show "zenImpl messages' nodeState'"
-      apply (intro zenImplI zenMessages')
+    show "zen messages' nodeState'"
+      apply (intro zenI zenMessages')
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -3926,25 +3925,25 @@ fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Righ
 text \<open>\pagebreak\<close>
 
 lemma initial_state_satisfies_invariants:
-  shows "zenImpl {} initialNodeState"
+  shows "zen {} initialNodeState"
   by (unfold_locales, simp_all add: initialNodeState_def isQuorum_def, intro Abs_Configuration_inverse, simp add: Q\<^sub>0_intersects)
 
-lemma (in zenImpl) invariants_preserved_by_ProcessMessage:
+lemma (in zen) invariants_preserved_by_ProcessMessage:
   fixes n\<^sub>0
   assumes "m \<in> messages"
   defines "nd \<equiv> nodeState n\<^sub>0"
   defines "result \<equiv> ProcessMessage nd m"
   defines "nodeState' \<equiv> \<lambda>n. if n = n\<^sub>0 then (fst result) else nodeState n"
   defines "messages' \<equiv> insertOption (snd result) messages"
-  shows "zenImpl messages' nodeState'"
+  shows "zen messages' nodeState'"
 proof -
   {
     assume r: "result = (nd, None)"
     from r have "nodeState' = nodeState"
       by (auto simp add: nodeState'_def nd_def)
     moreover from r have "messages' = messages" by (simp add: messages'_def)
-    ultimately have "zenImpl messages' nodeState'"
-      using zenImpl_axioms by blast
+    ultimately have "zen messages' nodeState'"
+      using zen_axioms by blast
   }
   note noop = this
 
@@ -3956,13 +3955,13 @@ proof -
     by (simp_all add: nd_def nodesIdentified)
 
   from `m \<in> messages`
-  have zenStepI: "\<And>nodeState. zenImpl messages nodeState \<Longrightarrow> zenStep messages nodeState messages' m"
-  proof (intro_locales, simp add: zenImpl_def, intro zenStep_axioms.intro)
+  have zenStepI: "\<And>nodeState. zen messages nodeState \<Longrightarrow> zenStep messages nodeState messages' m"
+  proof (intro_locales, simp add: zen_def, intro zenStep_axioms.intro)
     show "messages \<subseteq> messages'"
       by (cases "snd result", auto simp add: messages'_def)
   qed
 
-  from zenImpl_axioms have zenStep: "zenStep messages nodeState messages' m" by (intro zenStepI)
+  from zen_axioms have zenStep: "zenStep messages nodeState messages' m" by (intro zenStepI)
 
   have [simp]: "nodeState n\<^sub>0 = nd" by (simp add: nd_def)
 
@@ -4024,7 +4023,7 @@ proof -
 
         note zenStep.handleStartJoin_invariants [OF zenStep, where t = t]
 
-        have "zenImpl messages' (zenStep.nodeState' nodeState n\<^sub>0 (fst (handleStartJoin t nd)))"
+        have "zen messages' (zenStep.nodeState' nodeState n\<^sub>0 (fst (handleStartJoin t nd)))"
         proof (intro zenStep.handleStartJoin_invariants [OF zenStep])
           show "fst (handleStartJoin t nd) = fst (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))" by simp
 
@@ -4086,7 +4085,7 @@ proof -
         have nodeState1: "nodeState1 = zenStep.nodeState' nodeState n\<^sub>0 nd1"
           by (intro ext, simp add: zenStep.nodeState'_def [OF zenStep] nodeState1_def)
 
-        have zenImpl1: "zenImpl messages nodeState1"
+        have zen1: "zen messages nodeState1"
           unfolding nodeState1
         proof (intro zenStep.ensureCurrentTerm_invariants)
           from `m \<in> messages`
@@ -4100,7 +4099,7 @@ proof -
             by (simp add: zenStep.nd_def [OF zenStep] nd1_def)
         qed simp
 
-        from zenImpl1
+        from zen1
         have zenStep1: "zenStep messages nodeState1 messages' m" by (intro zenStepI)
 
         define newVotes where "newVotes \<equiv> insert (sender m) (joinVotes nd1)"
@@ -4129,13 +4128,13 @@ proof -
         have electionWon_nd1[simp]: "\<not> electionWon nd1"
           by (simp add: nd1_def ensureCurrentTerm_def)
 
-        have zenImpl2: "zenImpl messages nodeState2"
+        have zen2: "zen messages nodeState2"
           unfolding nodeState2
           using `era\<^sub>t t = currentEra nd` `i \<le> firstUncommittedSlot nd`
         proof (intro zenStep.addElectionVote_invariants)
-          from `m \<in> messages` zenImpl1
+          from `m \<in> messages` zen1
           show "zenStep messages nodeState1 messages m"
-            by (intro_locales, simp add: zenImpl_def, intro zenStep_axioms.intro, simp_all)
+            by (intro_locales, simp add: zen_def, intro zenStep_axioms.intro, simp_all)
 
           show "nd2 = addElectionVote (sender m) i a (zenStep.nd nodeState1 n\<^sub>0)" by (simp add: nd2_def)
 
@@ -4148,7 +4147,7 @@ proof -
 
         qed simp_all
 
-        from zenImpl2
+        from zen2
         have zenStep2: "zenStep messages nodeState2 messages' m" by (intro zenStepI)
 
         from True'
@@ -4283,7 +4282,7 @@ proof -
   qed
 qed
 
-lemma (in zenImpl) invariants_imply_consistent_states:
+lemma (in zen) invariants_imply_consistent_states:
   assumes
     "firstUncommittedSlot (nodeState n\<^sub>1) = firstUncommittedSlot (nodeState n\<^sub>2)"
   shows
