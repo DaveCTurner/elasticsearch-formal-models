@@ -1351,7 +1351,6 @@ subsection \<open>Invariants on node states\<close>
 
 text \<open>A set of invariants which relate the states of the individual nodes to the set of messages sent.\<close>
 
-(* TODO name these assumptions more consistently *)
 locale zen = zenMessages +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes currentNode_nodeState: "\<And>n. currentNode (nodeState n) = n"
