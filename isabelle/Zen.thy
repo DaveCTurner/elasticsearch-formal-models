@@ -1540,7 +1540,7 @@ definition (in zenStep) broadcast :: "Message \<Rightarrow> RoutedMessage"
                              payload = msg \<rparr>"
 
 (* TODO move to zen? *)
-fun (in zenStep) send :: "(Message \<Rightarrow> RoutedMessage) \<Rightarrow> ('a * Message option) \<Rightarrow> RoutedMessage set"
+fun (in zen) send :: "(Message \<Rightarrow> RoutedMessage) \<Rightarrow> ('a * Message option) \<Rightarrow> RoutedMessage set"
   where
     "send f (_, None) = messages"
   | "send f (_, Some m) = insert (f m) messages"
@@ -4017,7 +4017,7 @@ proof -
         hence result: "result = respond' (handleStartJoin t nd)"
           unfolding result_def ProcessMessage_def Let_def dest_True StartJoin respond'_def by simp
 
-        note zenStep.nodeState'_def zenStep.response_def zenStep.send.simps zenStep.nd_def
+        note zenStep.nodeState'_def zenStep.response_def zenStep.nd_def
         note [simp] = this [OF zenStep]
 
         note zenStep.handleStartJoin_invariants [OF zenStep, where t = t]
@@ -4026,7 +4026,7 @@ proof -
         proof (intro zenStep.handleStartJoin_invariants [OF zenStep])
           show "fst (handleStartJoin t nd) = fst (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))" by simp
 
-          from True show "messages' = zenStep.send messages (zenStep.response n\<^sub>0 m) (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))"
+          from True show "messages' = send (zenStep.response n\<^sub>0 m) (handleStartJoin t (zenStep.nd nodeState n\<^sub>0))"
             by (auto simp add: messages'_def result respond'_def handleStartJoin_def ensureCurrentTerm_def)
         qed
         moreover have "nodeState' = zenStep.nodeState' nodeState n\<^sub>0 (fst (handleStartJoin t nd))"
@@ -4172,9 +4172,9 @@ proof -
           show "fst result = fst (publishValue (lastAcceptedValue nd2) (zenStep.nd nodeState2 n\<^sub>0))"
             by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: result publishValue_def broadcast'_def)
           show "lastAcceptedValue nd2 = lastAcceptedValue (zenStep.nd nodeState2 n\<^sub>0)" by simp
-          show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (publishValue (lastAcceptedValue nd2) (zenStep.nd nodeState2 n\<^sub>0))"
+          show "messages' = send (zenStep.broadcast n\<^sub>0) (publishValue (lastAcceptedValue nd2) (zenStep.nd nodeState2 n\<^sub>0))"
             by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: messages'_def result broadcast'_def publishValue_def
-              zenStep.send.simps [OF zenStep2] zenStep.broadcast_def [OF zenStep2])
+              zenStep.broadcast_def [OF zenStep2])
         qed
       qed
 
@@ -4205,9 +4205,9 @@ proof -
         proof (intro zenStep.publishValue_invariants [OF zenStep])
           show "fst result = fst (publishValue x (zenStep.nd nodeState n\<^sub>0))"
             by (simp add: result)
-          show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (publishValue x (zenStep.nd nodeState n\<^sub>0))"
+          show "messages' = send (zenStep.broadcast n\<^sub>0) (publishValue x (zenStep.nd nodeState n\<^sub>0))"
             by (simp_all add: messages'_def result broadcast'_def publishValue_def
-                zenStep.send.simps [OF zenStep] zenStep.broadcast_def [OF zenStep])
+                zenStep.broadcast_def [OF zenStep])
           from True show "electionValueState (zenStep.nd nodeState n\<^sub>0) = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue (zenStep.nd nodeState n\<^sub>0)"
             by simp
         qed
@@ -4236,8 +4236,8 @@ proof -
       proof (unfold nodeState', intro zenStep.handlePublishRequest_invariants [OF zenStep])
         show "fst result = fst (handlePublishRequest i t x (zenStep.nd nodeState n\<^sub>0))"
           by (simp add: result)
-        show "messages' = zenStep.send messages (zenStep.response n\<^sub>0 m) (handlePublishRequest i t x (zenStep.nd nodeState n\<^sub>0))"
-          by (simp_all add: messages'_def result respond'_def handlePublishRequest_def zenStep.send.simps [OF zenStep] zenStep.response_def [OF zenStep])
+        show "messages' = send (zenStep.response n\<^sub>0 m) (handlePublishRequest i t x (zenStep.nd nodeState n\<^sub>0))"
+          by (simp_all add: messages'_def result respond'_def handlePublishRequest_def zenStep.response_def [OF zenStep])
 
         from m
         show "\<exists>s d. \<lparr>sender = s, destination = d, payload = PublishRequest i t x\<rparr> \<in> messages"
@@ -4254,8 +4254,8 @@ proof -
       proof (unfold nodeState', intro zenStep.handlePublishResponse_invariants [OF zenStep])
         show "fst result = fst (handlePublishResponse (sender m) i t (zenStep.nd nodeState n\<^sub>0))"
           by (simp add: result)
-        show "messages' = zenStep.send messages (zenStep.broadcast n\<^sub>0) (handlePublishResponse (sender m) i t (zenStep.nd nodeState n\<^sub>0))"
-          by (simp_all add: messages'_def result broadcast'_def handlePublishResponse_def zenStep.send.simps [OF zenStep] zenStep.broadcast_def [OF zenStep] commitIfQuorate_def)
+        show "messages' = send (zenStep.broadcast n\<^sub>0) (handlePublishResponse (sender m) i t (zenStep.nd nodeState n\<^sub>0))"
+          by (simp_all add: messages'_def result broadcast'_def handlePublishResponse_def zenStep.broadcast_def [OF zenStep] commitIfQuorate_def)
 
         from m
         show "\<exists>d. \<lparr>sender = sender m, destination = d, payload = PublishResponse i t\<rparr> \<in> messages"
