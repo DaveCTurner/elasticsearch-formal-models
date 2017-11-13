@@ -191,7 +191,7 @@ datatype ClusterState = ClusterState nat
 datatype Value
   = NoOp
   | Reconfigure Configuration
-  | SetClusterState ClusterState
+  | SetClusterState ClusterState (* TODO model as ClusterState \<Rightarrow> ClusterState, i.e. diffs *)
 
 text \<open>Some useful definitions and lemmas follow.\<close>
 

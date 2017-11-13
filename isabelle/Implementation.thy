@@ -98,6 +98,7 @@ subsection \<open>Node implementation\<close>
 
 text \<open>Each node holds the following local data.\<close>
 
+(* TODO get rid of this and just reject the messages that would have led to ElectionValueUnknown. *) 
 datatype ElectionValueState
   = ElectionValueFree (* all received promises carried no previously-accepted term. Can propose anything. *)
   | ElectionValueUnknown (* received a promise carrying a previously-accepted term, but it wasn't the local lastAcceptedTerm so it is unknown. Cannot propose anything. *)
@@ -108,7 +109,7 @@ record NodeData =
   firstUncommittedSlot :: nat (* all slots strictly below this one are committed *)
   currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
   currentEra :: Era (* era of the firstUncommittedSlot slot *) (* TODO just use "era\<^sub>t currentTerm" *)
-  currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set" *)
+  currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set set" *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
   lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *) (* TODO use the era\<^sub>t of currentTerm *)
