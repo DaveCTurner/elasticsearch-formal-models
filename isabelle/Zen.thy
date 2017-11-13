@@ -1381,7 +1381,7 @@ locale zen = zenMessages +
   assumes PublishRequest_currentTerm:
     "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto>
         \<Longrightarrow> t \<le> currentTerm (nodeState n)"
-  assumes PublishRequest_currentTerm_applyRequested:
+  assumes PublishRequest_publishPermitted_currentTerm:
     "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto>
         \<Longrightarrow> publishPermitted (nodeState n)
         \<Longrightarrow> t < currentTerm (nodeState n)"
@@ -1646,7 +1646,7 @@ next
       by (auto simp add: isMessageFrom_def)
 
     hence "currentTerm nd < currentTerm (nodeState n\<^sub>0)"
-    proof (intro PublishRequest_currentTerm_applyRequested, fold nd_def)
+    proof (intro PublishRequest_publishPermitted_currentTerm, fold nd_def)
       from won show "publishPermitted nd" by (simp add: nd_def)
     qed
     thus False by (simp add: nd_def)
@@ -1812,7 +1812,7 @@ next
   proof (intro zenI)
     show "zenMessages messages'"
     proof (unfold messages', intro send_PublishRequest allI impI notI ballI)
-      from PublishRequest_currentTerm_applyRequested True
+      from PublishRequest_publishPermitted_currentTerm True
       show "\<And>x. n\<^sub>0 \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x \<rangle>\<leadsto> \<Longrightarrow> False"
         by (auto simp add: isMessageFrom_def isMessageFromTo_def nd_def)
 
@@ -2011,7 +2011,7 @@ next
     show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
       by (unfold nodeState'_def isMessageFrom'_def PublishRequest', auto simp add: nd' nd_def isMessageFrom_def, blast, blast)
 
-    from PublishRequest_currentTerm_applyRequested
+    from PublishRequest_publishPermitted_currentTerm
     show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState' n)"
       by (unfold nodeState'_def isMessageFrom'_def PublishRequest', auto simp add: nd' nd_def isMessageFrom_def, blast)
 
@@ -2187,7 +2187,7 @@ next
     show "t' < currentTerm (nodeState' n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with PublishRequest_currentTerm_applyRequested sent not_requested show ?thesis
+      with PublishRequest_publishPermitted_currentTerm sent not_requested show ?thesis
         by (unfold nodeState'_def, auto)
     next
       case True
@@ -2328,7 +2328,7 @@ proof -
     from firstUncommittedSlot_PublishResponse show "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'" by simp
     from firstUncommittedSlot_PublishRequest show "\<And>i n t x. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>'" by simp
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)" by simp
-    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState' n)" by simp
+    from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState' n)" by simp
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))" by simp
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (joinVotes (nodeState' n))" by simp
     from lastAcceptedTerm_None show "\<And>n t. lastAcceptedTerm (nodeState' n) = None \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'" by simp
@@ -2579,7 +2579,7 @@ proof -
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
-    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
     from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
@@ -2917,7 +2917,7 @@ next
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
-    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
     from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
@@ -3298,7 +3298,7 @@ next
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
-    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
@@ -3379,7 +3379,7 @@ proof -
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
     from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
-    from PublishRequest_currentTerm_applyRequested show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
+    from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
 
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))"
@@ -3536,7 +3536,7 @@ proof -
 
     fix n
 
-    from PublishRequest_currentTerm_applyRequested
+    from PublishRequest_publishPermitted_currentTerm
     show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState n)"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
@@ -3746,7 +3746,7 @@ next
       show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from PublishRequest_currentTerm_applyRequested firstUncommittedSlot_PublishRequest 
+      from PublishRequest_publishPermitted_currentTerm firstUncommittedSlot_PublishRequest 
       show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
@@ -3869,7 +3869,7 @@ next
       show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from PublishRequest_currentTerm_applyRequested firstUncommittedSlot_PublishRequest 
+      from PublishRequest_publishPermitted_currentTerm firstUncommittedSlot_PublishRequest 
       show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
