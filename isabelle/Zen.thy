@@ -1393,27 +1393,27 @@ locale zen = zenMessages +
     "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))"
   assumes electionWon_era:
     "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
-  assumes electionValue_Free: "\<And>n n'.
+  assumes electionValueState_Free: "\<And>n n'.
     \<lbrakk> electionValueState (nodeState n) = ElectionValueFree; n' \<in> joinVotes (nodeState n) \<rbrakk>
     \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                            (currentTerm (nodeState n))
                            None \<rangle>\<rightarrow> (OneNode n))
     \<or> (\<exists> i < firstUncommittedSlot (nodeState n). \<exists> a.
         n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
-  assumes electionValue_not_Free: "\<And>n.
+  assumes electionValueState_not_Free: "\<And>n.
     \<lbrakk> electionValueState (nodeState n) \<noteq> ElectionValueFree \<rbrakk>
     \<Longrightarrow> \<exists> n' \<in> joinVotes (nodeState n). \<exists> t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and>
          n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                                (currentTerm (nodeState n))
                                (Some t') \<rangle>\<rightarrow> (OneNode n)"
-  assumes electionValue_not_Free_max: "\<And>n n' a'.
+  assumes electionValueState_not_Free_max: "\<And>n n' a'.
     \<lbrakk> electionValueState (nodeState n) \<noteq> ElectionValueFree;
       n' \<in> joinVotes (nodeState n);
       n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
                                 (currentTerm (nodeState n))
                                 a' \<rangle>\<rightarrow> (OneNode n) \<rbrakk>
     \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
-  assumes electionValue_Forced: "\<And>n.
+  assumes electionValueState_Forced: "\<And>n.
     electionValueState (nodeState n) = ElectionValueForced
     \<Longrightarrow> \<exists> n' \<in> joinVotes (nodeState n).
          (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n))
@@ -1856,7 +1856,7 @@ next
         case ElectionValueFree
         with s_vote have "electionValueState (nodeState n\<^sub>0) = ElectionValueFree" "s \<in> joinVotes (nodeState n\<^sub>0)"
           by (simp_all add: nd_def)
-        from electionValue_Free[OF this]
+        from electionValueState_Free[OF this]
         show ?thesis
         proof (elim disjE exE conjE)
           assume "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) None \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
@@ -1902,7 +1902,7 @@ next
 
       from electionValueForced s_vote s_send_to
       have maxTermOption_eq: "maxTermOption (Some t') (lastAcceptedTerm nd) = lastAcceptedTerm nd"
-        by (unfold nd_def, intro electionValue_not_Free_max, auto)
+        by (unfold nd_def, intro electionValueState_not_Free_max, auto)
 
       obtain t where t: "lastAcceptedTerm nd = Some t" and tt': "t' \<le> t"
       proof (cases "lastAcceptedTerm (nodeState n\<^sub>0)")
@@ -1932,7 +1932,7 @@ next
         thus "\<langle> PublishRequest (firstUncommittedSlot nd) t' (v (firstUncommittedSlot nd) t') \<rangle>\<leadsto>"
           by (simp add: P_def)
 
-        from electionValue_Forced [where n = n\<^sub>0] electionValueForced
+        from electionValueState_Forced [where n = n\<^sub>0] electionValueForced
         obtain s' where s'_vote: "s' \<in> joinVotes nd"
           and s'_send: "s' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot nd) (currentTerm nd) (lastAcceptedTerm nd) \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
           by (auto simp add: nd_def)
@@ -2027,25 +2027,25 @@ next
     show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState' n)) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd')
 
-    from electionValue_Free
+    from electionValueState_Free
     show "\<And>n n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
             (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) None \<rangle>\<rightarrow>' (OneNode n)) \<or>
             ((\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n)))"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps, blast, blast)
 
-    from electionValue_not_Free
+    from electionValueState_not_Free
     show "\<And>n. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
             \<exists>n'\<in>joinVotes (nodeState' n).
                \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (Some t') \<rangle>\<rightarrow>' (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps)
 
-    from electionValue_Forced
+    from electionValueState_Forced
     show "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow>
          \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' nd_def message_simps)
 
-    from electionValue_not_Free_max
+    from electionValueState_not_Free_max
     show "\<And>n n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
                n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow>' (OneNode n) \<Longrightarrow>
@@ -2145,23 +2145,23 @@ next
     from electionWon_era False show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState' n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
-    from electionValue_Free False show "\<And>n n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
+    from electionValueState_Free False show "\<And>n n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
             (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) None \<rangle>\<rightarrow> (OneNode n)) \<or>
             (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState' n)) a \<rangle>\<rightarrow> (OneNode n))"
       by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def, blast)
 
-    from electionValue_not_Free show "\<And>n. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
+    from electionValueState_not_Free show "\<And>n. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
             \<exists>n'\<in>joinVotes (nodeState' n).
                \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
-    from electionValue_Forced show "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow>
+    from electionValueState_Forced show "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow>
          \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
       by (unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
 
     fix n
-    from electionValue_not_Free_max False show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
+    from electionValueState_not_Free_max False show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
                n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow>
                maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
@@ -2342,20 +2342,20 @@ proof -
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState' n) \<Longrightarrow> promised' (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState' n))"
       by (auto simp add: promised'_def JoinRequest', blast)
 
-    from electionValue_Free
+    from electionValueState_Free
     show "\<And>n n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState' n) \<Longrightarrow>
             (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) None \<rangle>\<rightarrow>' (OneNode n)) \<or>
             (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState' n)) a \<rangle>\<rightarrow>' (OneNode n))"
       by (auto simp add: JoinRequest')
 
-    from electionValue_not_Free JoinRequest' message_simps nodeState'
+    from electionValueState_not_Free JoinRequest' message_simps nodeState'
     show "\<And>n. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
             \<exists>n'\<in>joinVotes (nodeState' n).
                \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (Some t') \<rangle>\<rightarrow>' (OneNode n)"
       by metis
 
-    from electionValue_Forced
+    from electionValueState_Forced
     show "\<And>n. electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow>
          \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState' n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow>' (OneNode n)"
       by (auto simp add: JoinRequest')
@@ -2417,7 +2417,7 @@ proof -
     fix n
     assume "electionValueState (nodeState' n) \<noteq> ElectionValueFree"
     hence a: "electionValueState (nodeState n) \<noteq> ElectionValueFree" by simp
-    from electionValue_not_Free [OF a]
+    from electionValueState_not_Free [OF a]
     obtain n' t t' where n': "n' \<in> joinVotes (nodeState n)" "lastAcceptedTerm (nodeState n) = Some t" "t' \<le> t"
       "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" by auto
 
@@ -2435,7 +2435,7 @@ proof -
     thus "maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
     proof (elim disjE)
       assume ?D1
-      with electionValue_not_Free_max a n' show ?thesis by auto
+      with electionValueState_not_Free_max a n' show ?thesis by auto
     next
       assume eq: "?D2"
       from n' eq have "n\<^sub>0 \<in> joinVotes (nodeState (sender message))" by simp
@@ -2603,7 +2603,7 @@ proof -
     show "(n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
                \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
     proof (cases "n = n\<^sub>0")
-      case False with electionValue_Free electionValueFree' n'_vote show ?thesis
+      case False with electionValueState_Free electionValueFree' n'_vote show ?thesis
         by (unfold nodeState'_def, auto)
     next
       case True note n_eq = this
@@ -2620,7 +2620,7 @@ proof -
       thus ?thesis
       proof (elim disjE)
         assume n'_vote: "n' \<in> joinVotes nd"
-        with electionValue_Free electionValueFree
+        with electionValueState_Free electionValueFree
         show ?thesis by (auto simp add: nd_def n_eq)
       next
         assume n': "n' = s"
@@ -2647,12 +2647,12 @@ proof -
             \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with electionValue_not_Free electionValueForced' show ?thesis by (unfold nodeState'_def, auto)
+      with electionValueState_not_Free electionValueForced' show ?thesis by (unfold nodeState'_def, auto)
     next
       case True note n_eq = this
       show ?thesis
       proof (cases "electionValueState (nodeState n) = ElectionValueFree")
-        case False with electionValue_not_Free show ?thesis
+        case False with electionValueState_not_Free show ?thesis
           by (unfold nodeState'_def, auto simp add: nd_def n_eq nd' addElectionVote_def Let_def)
       next
         case True
@@ -2694,7 +2694,7 @@ proof -
     show "\<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with electionValueForced' electionValue_Forced
+      with electionValueForced' electionValueState_Forced
       show ?thesis
         unfolding nodeState'_def
         by (auto)
@@ -2704,7 +2704,7 @@ proof -
       show ?thesis
       proof (cases "electionValueState (nodeState n) = ElectionValueForced")
         case True
-        with electionValue_Forced
+        with electionValueState_Forced
         have "\<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
           by (auto simp add: n_eq)
         moreover have "joinVotes (nodeState n) \<subseteq> joinVotes (nodeState' n)"
@@ -2746,7 +2746,7 @@ proof -
     show "maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with electionValue_not_Free_max notFree' n'_vote n'_sent show ?thesis by (unfold nodeState'_def, auto)
+      with electionValueState_not_Free_max notFree' n'_vote n'_sent show ?thesis by (unfold nodeState'_def, auto)
     next
       case True note n_eq = this
 
@@ -2759,11 +2759,11 @@ proof -
         show ?thesis
         proof (cases "electionValueState (nodeState n\<^sub>0) = ElectionValueFree")
           case False
-          with electionValue_not_Free_max n'_vote n'_sent
+          with electionValueState_not_Free_max n'_vote n'_sent
           show ?thesis by (simp add: n_eq)
         next
           case True
-          from electionValue_Free [OF True n'_vote]
+          from electionValueState_Free [OF True n'_vote]
           show ?thesis
           proof (elim disjE exE conjE)
             assume "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) None \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
@@ -2920,7 +2920,7 @@ next
     from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)" .
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
     from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
-    from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
+    from electionValueState_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
              \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
     from firstUncommittedSlot_PublishRequest show "\<And>i n t x. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>" .
@@ -2982,8 +2982,8 @@ next
     show "electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
       apply (cases "n = n\<^sub>0")
        apply (auto simp add: nodeState'_def nd_def)
-       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zenMessages.JoinRequest_Some_lt zen.electionValue_not_Free zen_axioms zenMessages_axioms)
-      using electionValue_not_Free by auto
+       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zenMessages.JoinRequest_Some_lt zen.electionValueState_not_Free zen_axioms zenMessages_axioms)
+      using electionValueState_not_Free by auto
 
   next
     fix n n' a'
@@ -2994,11 +2994,11 @@ next
     show "maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
     proof (cases "n = n\<^sub>0")
       case False
-      with not_Free n'_vote n'_sent electionValue_not_Free_max
+      with not_Free n'_vote n'_sent electionValueState_not_Free_max
       show ?thesis by (simp add: nodeState'_def)
     next
       case True note n_eq = this
-      from not_Free n'_vote n'_sent electionValue_not_Free_max
+      from not_Free n'_vote n'_sent electionValueState_not_Free_max
       have 1: "maxTermOption a' (lastAcceptedTerm (nodeState n\<^sub>0)) = lastAcceptedTerm (nodeState n\<^sub>0)"
         by (simp add: n_eq)
 
@@ -3027,7 +3027,7 @@ next
     assume forced': "electionValueState (nodeState' n) = ElectionValueForced"
     show "\<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
     proof (cases "n = n\<^sub>0")
-      case False with forced' electionValue_Forced show ?thesis by (simp add: nodeState'_def)
+      case False with forced' electionValueState_Forced show ?thesis by (simp add: nodeState'_def)
     next
       case True note n_eq = this
       from forced' have "electionValueState (nodeState n\<^sub>0) = ElectionValueForced
@@ -3039,7 +3039,7 @@ next
         and unchanged: "lastAcceptedTerm nd = Some t"
         by auto
 
-      with electionValue_Forced [of n\<^sub>0]
+      with electionValueState_Forced [of n\<^sub>0]
       show ?thesis
         unfolding nodeState'_def
         by (auto simp add: n_eq nd_def)
@@ -3306,14 +3306,14 @@ next
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
     from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))" .
-    from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
+    from electionValueState_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
              \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
 
-    from electionValue_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
-    from electionValue_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
+    from electionValueState_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
+    from electionValueState_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)".
-    from electionValue_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
+    from electionValueState_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
 
     from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState n))" by (simp add: committedTo_eq)
@@ -3387,14 +3387,14 @@ proof -
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState n))" .
     from electionWon_era show "\<And>n. electionWon (nodeState n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))" .
-    from electionValue_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
+    from electionValueState_Free show "\<And>n n'. electionValueState (nodeState n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
              \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))".
 
-    from electionValue_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
-    from electionValue_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
+    from electionValueState_not_Free show "\<And>n. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)" .
+    from electionValueState_not_Free_max show "\<And>n n' a'. electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)".
-    from electionValue_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
+    from electionValueState_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
 
     fix n
     from sent publishVotes
@@ -3552,23 +3552,23 @@ proof -
     show "electionWon (nodeState' n) \<Longrightarrow> era\<^sub>t (currentTerm (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
-    from electionValue_Free
+    from electionValueState_Free
     show "\<And>n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState' n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
            \<or> (\<exists>i<firstUncommittedSlot (nodeState n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
-    from electionValue_not_Free
+    from electionValueState_not_Free
     show "electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n).
       \<exists>t t'. lastAcceptedTerm (nodeState n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
-    from electionValue_not_Free_max
+    from electionValueState_not_Free_max
     show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
-    from electionValue_Forced
+    from electionValueState_Forced
     show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
       by (cases "n = n\<^sub>0", auto simp add: nodeState'_def)
 
@@ -3723,20 +3723,20 @@ next
         unfolding nodeState'_def apply (cases "n = n\<^sub>0", auto simp add: nd_def promised_def)
         using le_SucI by blast
 
-      from electionValue_Free show "\<And>n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
+      from electionValueState_Free show "\<And>n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
                  \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
         unfolding nodeState'_def apply (cases "n = n\<^sub>0", auto simp add: nd_def)
         using joinVotes le_imp_less_Suc by blast
 
-      from electionValue_not_Free_max show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
+      from electionValueState_not_Free_max show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from electionValue_not_Free show "electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
+      from electionValueState_not_Free show "electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from electionValue_Forced show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
+      from electionValueState_Forced show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
       from publishVotes show "\<And>n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
@@ -3876,19 +3876,19 @@ next
       from joinVotes show "\<And>n'. n' \<in> joinVotes (nodeState' n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState n))"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def promised_def nd')
 
-      from electionValue_Free show "\<And>n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
+      from electionValueState_Free show "\<And>n'. electionValueState (nodeState' n) = ElectionValueFree \<Longrightarrow>
             n' \<in> joinVotes (nodeState' n) \<Longrightarrow> (n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n))
                  \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def nd')
 
-      from electionValue_not_Free_max show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
+      from electionValueState_not_Free_max show "\<And>n' a'. electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow>
                n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from electionValue_not_Free show "electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
+      from electionValueState_not_Free show "electionValueState (nodeState' n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
-      from electionValue_Forced show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
+      from electionValueState_Forced show "electionValueState (nodeState' n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
         unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd_def)
 
       from publishVotes show "\<And>n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
