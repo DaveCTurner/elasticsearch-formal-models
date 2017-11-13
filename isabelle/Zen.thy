@@ -9,12 +9,11 @@ begin
 
 subsection \<open>Invariants on messages\<close>
 
-text \<open>Firstly, a set of invariants that hold on the set of messages that have ever been sent,
-without considering the state of any individual node.\<close>
+text \<open>Firstly, a set of invariants that hold on the set of messages that
+have ever been sent, without considering the state of any individual
+node.\<close>
 
-(* TODO rename to zenMessages *)
-
-locale zen =
+locale zenMessages =
   fixes messages :: "RoutedMessage set"
   fixes isMessageFromTo :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("(_) \<midarrow>\<langle> _ \<rangle>\<rightarrow> (_)" [55])
   defines "s \<midarrow>\<langle> m \<rangle>\<rightarrow> d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages"
@@ -111,32 +110,32 @@ subsubsection \<open>Utility lemmas\<close>
 
 text \<open>Some results that are useful later:\<close>
 
-lemma (in zen) Q_intersects: "Q e \<frown> Q e"
+lemma (in zenMessages) Q_intersects: "Q e \<frown> Q e"
   by (cases e, simp_all add: Q_def Q\<^sub>0_intersects getConf_intersects)
 
-lemma (in zen) Q_members_nonempty: assumes "q \<in> Q e" shows "q \<noteq> {}"
+lemma (in zenMessages) Q_members_nonempty: assumes "q \<in> Q e" shows "q \<noteq> {}"
   using assms Q_intersects 
   by (auto simp add: intersects_def)
 
-lemma (in zen) Q_member_member: assumes "q \<in> Q e" obtains n where "n \<in> q"
+lemma (in zenMessages) Q_member_member: assumes "q \<in> Q e" obtains n where "n \<in> q"
   using Q_members_nonempty assms by fastforce
 
-lemma (in zen) ApplyCommit_PublishResponse:
+lemma (in zenMessages) ApplyCommit_PublishResponse:
   assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   obtains s where "s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
   by (meson ApplyCommit_quorum Q_member_member assms)
 
-lemma (in zen) ApplyCommit_PublishRequest:
+lemma (in zenMessages) ApplyCommit_PublishRequest:
   assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "\<langle> PublishRequest i t (v i t) \<rangle>\<leadsto>"
   by (metis ApplyCommit_PublishResponse PublishResponse_PublishRequest assms the_equality v_def PublishRequest_function)
 
-lemma (in zen) PublishRequest_JoinRequest:
+lemma (in zenMessages) PublishRequest_JoinRequest:
   assumes "s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>"
   obtains i' n a where "i' \<le> i" "n \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow> (OneNode s)"
   by (meson PublishRequest_quorum Q_member_member assms isMessage_def promised_def)
 
-lemma (in zen) finite_prevAccepted: "finite (prevAccepted i t ns)"
+lemma (in zenMessages) finite_prevAccepted: "finite (prevAccepted i t ns)"
 proof -
   fix t\<^sub>0
   define f :: "RoutedMessage \<Rightarrow> Term" where "f \<equiv> \<lambda> m. case payload m of JoinRequest _ _ (Some t') \<Rightarrow> t' | _ \<Rightarrow> t\<^sub>0"
@@ -146,7 +145,7 @@ proof -
   with finite_messages show ?thesis using finite_surj by auto
 qed
 
-lemma (in zen) era\<^sub>i_step:
+lemma (in zenMessages) era\<^sub>i_step:
   "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
 proof (cases "isReconfiguration (v\<^sub>c i)")
   case True
@@ -160,7 +159,7 @@ next
     by (simp add: era\<^sub>i_def, smt Collect_cong less_or_eq_imp_le)
 qed
 
-lemma (in zen) era\<^sub>i_mono:
+lemma (in zenMessages) era\<^sub>i_mono:
   assumes "i' \<le> i"
   shows "era\<^sub>i i' \<le> era\<^sub>i i"
   using assms
@@ -177,7 +176,7 @@ proof (induct i)
   qed simp
 qed simp
 
-lemma (in zen) era\<^sub>i_contiguous:
+lemma (in zenMessages) era\<^sub>i_contiguous:
   assumes "e \<le> era\<^sub>i i"
   shows "\<exists> i' \<le> i. era\<^sub>i i' = e"
   using assms
@@ -192,17 +191,17 @@ next
     by (metis antisym_conv1 era\<^sub>i_step le_SucI less_Era_def less_Suc_eq_le less_eq_Era_def natOfEra.simps(2))
 qed
 
-lemma (in zen) PublishResponse_era:
+lemma (in zenMessages) PublishResponse_era:
   assumes "s \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
   shows "era\<^sub>t t = era\<^sub>i i"
   using assms PublishRequest_era PublishResponse_PublishRequest by metis
 
-lemma (in zen) ApplyCommit_era:
+lemma (in zenMessages) ApplyCommit_era:
   assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "era\<^sub>t t = era\<^sub>i i"
   by (meson PublishResponse_era assms ApplyCommit_PublishResponse)
 
-lemma (in zen) reconfig_props:
+lemma (in zenMessages) reconfig_props:
   assumes "committed\<^sub>< i" "e < era\<^sub>i i"
   shows reconfig_isCommitted: "isCommitted (reconfig e)"
     and reconfig_isReconfiguration: "isReconfiguration (v\<^sub>c (reconfig e))"
@@ -239,7 +238,7 @@ proof -
   from p assms show "isCommitted (reconfig e)" "isReconfiguration (v\<^sub>c (reconfig e))" "era\<^sub>i (reconfig e) = e" by auto
 qed
 
-lemma (in zen) reconfig_eq:
+lemma (in zenMessages) reconfig_eq:
   assumes "committed\<^sub>< i" "e < era\<^sub>i i"
   assumes "isReconfiguration (v\<^sub>c j)"
   assumes "era\<^sub>i j = e"
@@ -247,7 +246,7 @@ lemma (in zen) reconfig_eq:
   using assms
   by (metis era\<^sub>i_mono era\<^sub>i_step lessI less_Era_def less_antisym less_eq_Suc_le natOfEra.simps(2) not_less reconfig_era reconfig_isReconfiguration)
 
-lemma (in zen) promised_long_def: "\<exists>d. promised i s d t
+lemma (in zenMessages) promised_long_def: "\<exists>d. promised i s d t
      \<equiv> (s \<midarrow>\<langle> JoinRequest i t None \<rangle>\<leadsto>
            \<or> (\<exists>i'<i. \<exists>a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<leadsto>))
            \<or> (\<exists>t'. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto>)"
@@ -260,7 +259,7 @@ proof -
   thus "?LHS == ?RHS" by simp
 qed
 
-lemma (in zen) JoinRequest_value_function:
+lemma (in zenMessages) JoinRequest_value_function:
   assumes "s \<midarrow>\<langle> JoinRequest i t a\<^sub>1 \<rangle>\<leadsto>" and "s \<midarrow>\<langle> JoinRequest i t a\<^sub>2 \<rangle>\<leadsto>"
   shows "a\<^sub>1 = a\<^sub>2"
 proof (cases a\<^sub>1)
@@ -276,20 +275,20 @@ next
     by (metis JoinRequest_Some_PublishResponse JoinRequest_Some_lt less_linear JoinRequest_Some_max)
 qed
 
-lemma (in zen) shows finite_messages_insert: "finite (insert m messages)"
+lemma (in zenMessages) shows finite_messages_insert: "finite (insert m messages)"
   using finite_messages by auto
 
-lemma (in zen) isCommitted_committedTo:
+lemma (in zenMessages) isCommitted_committedTo:
   assumes "isCommitted i"
   shows "committed\<^sub>< i"
   using ApplyCommit_PublishRequest PublishRequest_committedTo assms isCommitted_def by blast
 
-lemma (in zen) isCommitted_committedTo_Suc:
+lemma (in zenMessages) isCommitted_committedTo_Suc:
   assumes "isCommitted i"
   shows "committed\<^sub>< (Suc i)"
   using assms committedTo_def isCommitted_committedTo less_antisym by blast
 
-lemma (in zen) promised_unique:
+lemma (in zenMessages) promised_unique:
   assumes "promised i s d t" and "promised i' s d' t"
   shows "d = d'"
   by (meson Destination.inject JoinRequest_unique_destination assms promised_def)
@@ -299,7 +298,7 @@ subsubsection \<open>Relationship to @{term oneSlot}\<close>
 text \<open>This shows that each slot @{term i} in Zen satisfies the assumptions of the @{term
 oneSlot} model above.\<close>
 
-lemma (in zen) zen_is_oneSlot:
+lemma (in zenMessages) zen_is_oneSlot:
   fixes i
   shows "oneSlot (Q \<circ> era\<^sub>t) (v i)
     (\<lambda> s t. s \<midarrow>\<langle> JoinRequest i t None \<rangle>\<leadsto>
@@ -367,7 +366,7 @@ qed
 
 text \<open>From this it follows that all committed values are equal.\<close>
 
-theorem (in zen) consistent:
+theorem (in zenMessages) consistent:
   assumes "\<langle> ApplyCommit  i t\<^sub>1 \<rangle>\<leadsto>"
   assumes "\<langle> ApplyCommit  i t\<^sub>2 \<rangle>\<leadsto>"
   assumes "\<langle> PublishRequest i t\<^sub>1 v\<^sub>1 \<rangle>\<leadsto>"
@@ -381,7 +380,7 @@ proof -
   ultimately show ?thesis by simp
 qed
 
-lemma (in zen) ApplyCommit_v\<^sub>c:
+lemma (in zenMessages) ApplyCommit_v\<^sub>c:
   assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "v\<^sub>c i = v i t"
 proof (unfold v\<^sub>c_def, intro someI2 [where Q = "\<lambda>t'. v i t' = v i t"])
@@ -390,7 +389,7 @@ proof (unfold v\<^sub>c_def, intro someI2 [where Q = "\<lambda>t'. v i t' = v i 
   thus "v i t' = v i t" by (intro oneSlot.consistent [OF zen_is_oneSlot] assms)
 qed
 
-lemma (in zen) ApplyCommit_PublishRequest_v\<^sub>c:
+lemma (in zenMessages) ApplyCommit_PublishRequest_v\<^sub>c:
   assumes "\<langle> ApplyCommit i t \<rangle>\<leadsto>"
   shows "\<langle> PublishRequest i t (v\<^sub>c i) \<rangle>\<leadsto>"
   unfolding ApplyCommit_v\<^sub>c [OF assms]
@@ -400,23 +399,23 @@ subsection \<open>Preserving invariants\<close>
 
 (* TODO fold these into the zenImpl cases *)
 
-text \<open>The statement @{term "zen M"} indicates that the set @{term M} of messages satisfies the
-invariants of @{term zen}, and therefore all committed values are equal. Lemmas that are proven ``in
-zen'' include the variable @{term messages} along with a silent assumption @{term "zen messages"}
+text \<open>The statement @{term "zenMessages M"} indicates that the set @{term M} of messages satisfies the
+invariants of @{term zenMessages}, and therefore all committed values are equal. Lemmas that are proven ``in
+zenMessages'' include the variable @{term messages} along with a silent assumption @{term "zenMessages messages"}
 and show from this that some modified set of messages also satisfies the invariants.\<close>
 
 subsubsection \<open>Initial state\<close>
 
 text \<open>When no messages have been sent, the invariants hold:\<close>
 
-lemma zen_initial_state: "zen {}" by (unfold_locales, auto)
+lemma zen_initial_state: "zenMessages {}" by (unfold_locales, auto)
 
 subsubsection \<open>Sending @{term StartJoin} messages\<close>
 
 text \<open>Any node may send a @{term StartJoin} message for any term at any time.\<close>
 
-lemma (in zen) send_StartJoin:
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = StartJoin t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
+lemma (in zenMessages) send_StartJoin:
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = StartJoin t\<^sub>0 \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -471,16 +470,16 @@ slot. \end{itemize}.\<close>
 text \<open>@{term "JoinRequest i\<^sub>0 t\<^sub>0 NoPublishResponseSent"} can be sent by node @{term n\<^sub>0} if,
 additionally, no @{term PublishResponse} message has been sent for slot @{term i\<^sub>0}:\<close>
 
-lemma (in zen) send_JoinRequest_None:
+lemma (in zenMessages) send_JoinRequest_None:
   assumes "\<forall> i \<ge> i\<^sub>0. \<forall> t. \<not> s\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
     (* first-uncommitted slot, the era is ok, and not already sent*)
   assumes "\<forall> i < i\<^sub>0. \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   assumes "\<forall> i a. \<not> s\<^sub>0 \<midarrow>\<langle> JoinRequest i t\<^sub>0 a \<rangle>\<leadsto>"
     (* *)
-  shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = OneNode d\<^sub>0,
+  shows   "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = OneNode d\<^sub>0,
                          payload = JoinRequest i\<^sub>0 t\<^sub>0 None \<rparr> messages)"
-          (is "zen ?messages'")
+          (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -564,7 +563,7 @@ i\<^sub>0}, in which case @{term t\<^sub>0'} must be the greatest term of any su
 previously sent by node @{term n\<^sub>0} and @{term x\<^sub>0'} is the corresponding
 value.:\<close>
 
-lemma (in zen) send_JoinRequest_Some:
+lemma (in zenMessages) send_JoinRequest_Some:
   assumes "\<forall> i > i\<^sub>0. \<forall> t. \<not> s\<^sub>0 \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
   assumes "s\<^sub>0 \<midarrow>\<langle> PublishResponse i\<^sub>0 t\<^sub>0' \<rangle>\<leadsto>"
   assumes "t\<^sub>0' < t\<^sub>0"
@@ -574,8 +573,8 @@ lemma (in zen) send_JoinRequest_Some:
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
   assumes "\<forall> i a. \<not> s\<^sub>0 \<midarrow>\<langle> JoinRequest i t\<^sub>0 a \<rangle>\<leadsto>"
     (* *)
-  shows   "zen (insert \<lparr> sender = s\<^sub>0, destination = OneNode d\<^sub>0,
-                         payload = JoinRequest i\<^sub>0 t\<^sub>0 (Some t\<^sub>0') \<rparr> messages)" (is "zen ?messages'")
+  shows   "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = OneNode d\<^sub>0,
+                         payload = JoinRequest i\<^sub>0 t\<^sub>0 (Some t\<^sub>0') \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -697,8 +696,8 @@ subsubsection \<open>Sending @{term ClientValue} messages\<close>
 
 text \<open>Any node may send a @{term ClientValue} message for any value at any time.\<close>
 
-lemma (in zen) send_ClientValue:
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = ClientValue x\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
+lemma (in zenMessages) send_ClientValue:
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = ClientValue x\<^sub>0 \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -752,7 +751,7 @@ sent @{term JoinRequest} messages for term @{term t\<^sub>0}, and \item the valu
 value accepted in the greatest term amongst all @{term JoinRequest} messages, if any.
 \end{itemize} \<close>
 
-lemma (in zen) send_PublishRequest:
+lemma (in zenMessages) send_PublishRequest:
   assumes "\<forall> x. \<not> s\<^sub>0 \<midarrow>\<langle> PublishRequest i\<^sub>0 t\<^sub>0 x \<rangle>\<leadsto>"
   assumes "\<forall> i < i\<^sub>0. \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
   assumes "era\<^sub>t t\<^sub>0 = era\<^sub>i i\<^sub>0"
@@ -760,8 +759,8 @@ lemma (in zen) send_PublishRequest:
   assumes "\<forall> s \<in> q. \<exists> i \<le> i\<^sub>0. \<exists> a. s \<midarrow>\<langle> JoinRequest i t\<^sub>0 a \<rangle>\<rightarrow> (OneNode s\<^sub>0)"
   assumes "prevAccepted i\<^sub>0 t\<^sub>0 q \<noteq> {}
     \<longrightarrow> x\<^sub>0 = v i\<^sub>0 (maxTerm (prevAccepted i\<^sub>0 t\<^sub>0 q))"
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0,
-                       payload = PublishRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0,
+                       payload = PublishRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   have quorum_promised: "\<forall>n\<in>q. promised i\<^sub>0 n s\<^sub>0 t\<^sub>0"
     by (simp add: assms promised_def)
@@ -1010,11 +1009,11 @@ subsubsection \<open>Sending @{term PublishResponse} messages\<close>
 text \<open>@{term "PublishResponse i\<^sub>0 t\<^sub>0"} can be sent in response to an @{term PublishRequest}
 as long as a @{term JoinRequest} for a later term has not been sent:\<close>
 
-lemma (in zen) send_PublishResponse:
+lemma (in zenMessages) send_PublishResponse:
   assumes "\<langle> PublishRequest i\<^sub>0 t\<^sub>0 x\<^sub>0 \<rangle>\<leadsto>"
   assumes "\<forall> i t a. s\<^sub>0 \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<longrightarrow> t \<le> t\<^sub>0"
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0,
-                       payload = PublishResponse i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0,
+                       payload = PublishResponse i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -1091,10 +1090,10 @@ text \<open>@{term "ApplyCommit i\<^sub>0 t\<^sub>0"} can be sent on receipt of 
 @{term PublishResponse} messages, where \textit{quorum} is defined in terms of the current
 configuration:\<close>
 
-lemma (in zen) send_ApplyCommit:
+lemma (in zenMessages) send_ApplyCommit:
   assumes "q \<in> Q (era\<^sub>t t\<^sub>0)"
   assumes "\<forall> s \<in> q. s \<midarrow>\<langle> PublishResponse i\<^sub>0 t\<^sub>0 \<rangle>\<leadsto>"
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zen ?messages'")
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = ApplyCommit i\<^sub>0 t\<^sub>0 \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   have era: "era\<^sub>i i\<^sub>0 = era\<^sub>t t\<^sub>0"
     by (metis PublishResponse_era Q_member_member assms(1) assms(2))
@@ -1274,8 +1273,8 @@ subsubsection \<open>Sending @{term Reboot} messages\<close>
 
 text \<open>Any node may send a @{term Reboot} message at any time.\<close>
 
-lemma (in zen) send_Reboot:
-  shows "zen (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = Reboot \<rparr> messages)" (is "zen ?messages'")
+lemma (in zenMessages) send_Reboot:
+  shows "zenMessages (insert \<lparr> sender = s\<^sub>0, destination = d\<^sub>0, payload = Reboot \<rparr> messages)" (is "zenMessages ?messages'")
 proof -
   define isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55]) where
     "\<And>s m d. s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> ?messages'"
@@ -1320,10 +1319,10 @@ proof -
     by (simp_all)
 qed
 
-lemma (in zen) lastCommittedClusterStateBefore_0[simp]: "lastCommittedClusterStateBefore 0 = ClusterState 0"
+lemma (in zenMessages) lastCommittedClusterStateBefore_0[simp]: "lastCommittedClusterStateBefore 0 = ClusterState 0"
   by (simp add: lastCommittedClusterStateBefore_def)
 
-lemma (in zen) lastCommittedClusterStateBefore_Suc:
+lemma (in zenMessages) lastCommittedClusterStateBefore_Suc:
   shows "lastCommittedClusterStateBefore (Suc i)
     = (case v\<^sub>c i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> lastCommittedClusterStateBefore i)"
 proof (cases "\<exists> cs. v\<^sub>c i = SetClusterState cs")
@@ -1352,9 +1351,9 @@ subsection \<open>Invariants on node states\<close>
 
 text \<open>A set of invariants which relate the states of the individual nodes to the set of messages sent.\<close>
 
-(* TODO rename zenImpl to zen *)
+(* TODO rename zenImpl to zenMessages *)
 (* TODO name these assumptions more consistently *)
-locale zenImpl = zen +
+locale zenImpl = zenMessages +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes nodesIdentified: "\<And>n. currentNode (nodeState n) = n"
   assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
@@ -1439,7 +1438,7 @@ definition (in zenStep) nd :: NodeData
   where "nd \<equiv> nodeState n\<^sub>0"
 definition (in zenStep) nodeState' :: "Node \<Rightarrow> NodeData"
   where "nodeState' n \<equiv> if n = n\<^sub>0 then nd' else nodeState n"
-    (* updated definitions from zen *)
+    (* updated definitions from zenMessages *)
 definition (in zenStep) isMessageFromTo' :: "Node \<Rightarrow> Message \<Rightarrow> Destination \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<rightarrow>' _" [55])
   where "s \<midarrow>\<langle> m \<rangle>\<rightarrow>' d \<equiv> \<lparr> sender = s, destination = d, payload = m \<rparr> \<in> messages'"
 definition (in zenStep) isMessageFrom' :: "Node \<Rightarrow> Message \<Rightarrow> bool" ("_ \<midarrow>\<langle> _ \<rangle>\<leadsto>'" [55])
@@ -1487,7 +1486,7 @@ lemma currentTerm_ensureCurrentTerm[simp]: "currentTerm (ensureCurrentTerm t nd)
   by (auto simp add: ensureCurrentTerm_def)
 
 lemma (in zenStep)
-  assumes "zen messages'"
+  assumes "zenMessages messages'"
   assumes "\<And>n. currentNode (nodeState' n) = n"
   assumes "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))"
   assumes "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
@@ -1553,7 +1552,7 @@ lemma (in zenStep)
   shows zenStepI: "zenStep messages' nodeState' messages' message"
 proof (intro_locales)
   from assms
-  show "zen messages'" "zenImpl_axioms messages' nodeState'"
+  show "zenMessages messages'" "zenImpl_axioms messages' nodeState'"
     by (simp_all add: zenImpl_def)
 
   from message messages_subset
@@ -1812,7 +1811,7 @@ next
 
   show ?thesis
   proof (intro zenImplI)
-    show "zen messages'"
+    show "zenMessages messages'"
     proof (unfold messages', intro send_PublishRequest allI impI notI ballI)
       from PublishRequest_currentTerm_applyRequested True
       show "\<And>x. n\<^sub>0 \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x \<rangle>\<leadsto> \<Longrightarrow> False"
@@ -2118,7 +2117,7 @@ next
 
   show "zenImpl messages' nodeState'"
   proof (intro zenImplI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq lastCommittedClusterStateBefore_eq)
-    from zen_axioms show "zen messages'" by (simp add: messages')
+    from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
@@ -2254,7 +2253,7 @@ proof -
 
   show ?thesis
   proof (intro zenImplI) (* TODO unfold things too, like in the other proofs *)
-    show "zen messages'"
+    show "zenMessages messages'"
     proof (cases "lastAcceptedTerm nd")
       case None
       hence messages': "messages' = insert \<lparr>sender = n\<^sub>0, destination = OneNode (sender message),
@@ -2567,7 +2566,7 @@ proof -
     apply (intro zenImplI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
-    from zen_axioms show "zen messages'" by (simp add: messages')
+    from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
@@ -2905,7 +2904,7 @@ next
     apply (intro zenImplI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq electionValueState_simps lastCommittedClusterStateBefore_eq)
   proof -
-    show "zen messages'"
+    show "zenMessages messages'"
     proof (unfold messages', intro send_PublishResponse [OF sent] allI impI)
       fix i' t' a'
       assume "n\<^sub>0 \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<leadsto>"
@@ -2984,7 +2983,7 @@ next
     show "electionValueState (nodeState n) \<noteq> ElectionValueFree \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). \<exists>t t'. lastAcceptedTerm (nodeState' n) = Some t \<and> t' \<le> t \<and> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
       apply (cases "n = n\<^sub>0")
        apply (auto simp add: nodeState'_def nd_def)
-       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zen.JoinRequest_Some_lt zenImpl.electionValue_not_Free zenImpl_axioms zen_axioms)
+       apply (metis dual_order.strict_implies_order dual_order.trans isMessageFromTo_def nd_def precondition zenMessages.JoinRequest_Some_lt zenImpl.electionValue_not_Free zenImpl_axioms zenMessages_axioms)
       using electionValue_not_Free by auto
 
   next
@@ -3147,7 +3146,7 @@ next
 
   have v_eq[simp]: "v' = v" by (intro ext, auto simp add: v'_def v_def)
 
-  have zen': "zen messages'"
+  have zenMessages': "zenMessages messages'"
   proof (unfold messages', intro send_ApplyCommit ballI)
     from isQuorum_firstUncommittedSlot isQuorum
     have publishVotes_Q: "publishVotes nd \<in> Q (era\<^sub>i (firstUncommittedSlot nd))"
@@ -3177,7 +3176,7 @@ next
 
     have "v\<^sub>c i = v i t" by (intro ApplyCommit_v\<^sub>c committed)
     moreover from committed'
-    have "v\<^sub>c' i = v' i t" by (unfold v\<^sub>c'_def v'_def isMessage'_def isMessageFrom'_def isMessageFromTo'_def, intro zen.ApplyCommit_v\<^sub>c [OF zen'])
+    have "v\<^sub>c' i = v' i t" by (unfold v\<^sub>c'_def v'_def isMessage'_def isMessageFrom'_def isMessageFromTo'_def, intro zenMessages.ApplyCommit_v\<^sub>c [OF zenMessages'])
     ultimately show "?thesis i" by simp
   qed
 
@@ -3287,7 +3286,7 @@ next
     apply (intro zenImplI)
                         apply (unfold nodeState' message_simps era\<^sub>i_firstUncommittedSlot Q_era_eq lastCommittedClusterStateBefore_slot_eq)
   proof -
-    from zen' show "zen messages'" .
+    from zenMessages' show "zenMessages messages'" .
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
@@ -3366,7 +3365,7 @@ proof -
     apply (intro zenImplI)
                         apply (unfold property_simps era\<^sub>i_eq Q_eq message_simps committedTo_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
-    from zen_axioms messages' show "zen messages'" by simp
+    from zenMessages_axioms messages' show "zenMessages messages'" by simp
 
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
@@ -3520,7 +3519,7 @@ proof -
     apply (intro zenImplI)
                         apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
   proof -
-    from zen_axioms show "zen messages'" by (simp add: messages')
+    from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
     from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
@@ -3636,7 +3635,7 @@ next
   have lastCommittedClusterStateBefore_eq[simp]: "lastCommittedClusterStateBefore' = lastCommittedClusterStateBefore"
     unfolding lastCommittedClusterStateBefore_def lastCommittedClusterStateBefore'_def v\<^sub>c_eq ..
 
-  from zen_axioms have zen': "zen messages'" by simp
+  from zenMessages_axioms have zenMessages': "zenMessages messages'" by simp
 
   from sent t
   have lastAcceptedValue_eq: "v\<^sub>c i = lastAcceptedValue nd"
@@ -3688,7 +3687,7 @@ next
     qed
 
     show "zenImpl messages' nodeState'"
-      apply (intro zenImplI zen')
+      apply (intro zenImplI zenMessages')
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq era\<^sub>i_eq2 Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
@@ -3822,7 +3821,7 @@ next
       unfolding Q_def era\<^sub>i_firstUncommittedSlot by (simp add: i nd_def)
 
     show "zenImpl messages' nodeState'"
-      apply (intro zenImplI zen')
+      apply (intro zenImplI zenMessages')
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from nodesIdentified show "\<And>n. currentNode (nodeState n) = n".
