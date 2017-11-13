@@ -25,6 +25,7 @@ datatype Message
   | PublishResponse nat Term
   | ApplyCommit nat Term
   | Reboot
+(* TODO also need a message to represent a catch-up *)
 
 text \<open>Some prose descriptions of these messages follows, in order to give a bit more of an
 intuitive understanding of their purposes.\<close>
