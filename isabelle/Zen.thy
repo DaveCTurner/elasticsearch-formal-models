@@ -1355,7 +1355,7 @@ text \<open>A set of invariants which relate the states of the individual nodes 
 locale zen = zenMessages +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes currentNode_nodeState: "\<And>n. currentNode (nodeState n) = n"
-  assumes committedToLocalCheckpoint: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
+  assumes committedTo_firstUncommittedSlot: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
   assumes eraMatchesLocalCheckpoint: "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
   assumes isQuorum_firstUncommittedSlot:
     "\<And>n. { q. isQuorum (nodeState n) q } = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))"
@@ -1786,7 +1786,7 @@ next
   qed
 
   have lastCommittedClusterStateBefore_eq: "\<And>n. lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState n)) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
-    by (intro lastCommittedClusterStateBefore_eq committedToLocalCheckpoint)
+    by (intro lastCommittedClusterStateBefore_eq committedTo_firstUncommittedSlot)
 
   have nd': "nd' = nd \<lparr> publishPermitted := False \<rparr>" by (simp add: nd' result)
 
@@ -1794,7 +1794,7 @@ next
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
 
   have era_firstUncommittedSlot: "\<And>n. era\<^sub>i' (firstUncommittedSlot (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
-    by (intro era\<^sub>i_eq committedToLocalCheckpoint)
+    by (intro era\<^sub>i_eq committedTo_firstUncommittedSlot)
 
   have currentEra: "\<And>n. currentEra (nodeState' n) = currentEra (nodeState n)"
     by (unfold nodeState'_def, auto simp add: nd' nd_def)
@@ -1816,7 +1816,7 @@ next
       show "\<And>x. n\<^sub>0 \<midarrow>\<langle> PublishRequest (firstUncommittedSlot nd) (currentTerm nd) x \<rangle>\<leadsto> \<Longrightarrow> False"
         by (auto simp add: isMessageFrom_def isMessageFromTo_def nd_def)
 
-      from committedToLocalCheckpoint [where n = n\<^sub>0]
+      from committedTo_firstUncommittedSlot [where n = n\<^sub>0]
       show "\<And>i. i < firstUncommittedSlot nd \<Longrightarrow> \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
         by (auto simp add: isMessage_def isMessageFrom_def isMessageFromTo_def nd_def committedTo_def isCommitted_def)
 
@@ -1954,11 +1954,11 @@ next
     show "\<And>n. currentNode (nodeState' n) = n"
       by (unfold nodeState'_def, auto simp add: nd_def)
 
-    from committedToLocalCheckpoint nd'
+    from committedTo_firstUncommittedSlot nd'
     show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def committedTo_eq)
 
-    from era\<^sub>i_eq committedToLocalCheckpoint nd' era_eq eraMatchesLocalCheckpoint
+    from era\<^sub>i_eq committedTo_firstUncommittedSlot nd' era_eq eraMatchesLocalCheckpoint
     show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))"
       by (unfold nodeState'_def, auto simp add: nd_def nd')
 
@@ -1968,7 +1968,7 @@ next
       by (unfold nodeState'_def, simp add: isQuorum_def nd' nd_def)
     also note isQuorum_firstUncommittedSlot
     also have "Q (era\<^sub>i (firstUncommittedSlot (nodeState n))) = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))"
-      by (unfold firstUncommittedSlot era_firstUncommittedSlot, intro sym [OF Q_eq] committedToLocalCheckpoint)
+      by (unfold firstUncommittedSlot era_firstUncommittedSlot, intro sym [OF Q_eq] committedTo_firstUncommittedSlot)
     finally show "{q. isQuorum (nodeState' n) q} = Q' (era\<^sub>i' (firstUncommittedSlot (nodeState' n)))".
 
     from nothingAcceptedInLaterSlots
@@ -2118,7 +2118,7 @@ next
   proof (intro zenI, unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq lastCommittedClusterStateBefore_eq)
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
@@ -2261,7 +2261,7 @@ proof -
 
       show ?thesis
       proof (unfold messages', intro send_JoinRequest_None)
-        from committedToLocalCheckpoint
+        from committedTo_firstUncommittedSlot
         show "\<forall>i<firstUncommittedSlot nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
           by (simp add: nd_def committedTo_def isCommitted_def)
 
@@ -2297,7 +2297,7 @@ proof -
 
       show ?thesis
       proof (unfold messages', intro send_JoinRequest_Some)
-        from committedToLocalCheckpoint
+        from committedTo_firstUncommittedSlot
         show "\<forall>i<firstUncommittedSlot nd. \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
           by (simp add: nd_def committedTo_def isCommitted_def)
 
@@ -2323,7 +2323,7 @@ proof -
     qed
 
     from currentNode_nodeState show "\<And>n. currentNode (nodeState' n) = n" by simp (* TODO should be '.' not 'by simp' *)
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))" by simp
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState' n))" by simp
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState' n) = era\<^sub>i' (firstUncommittedSlot (nodeState' n))" by simp
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>'" by simp
     from firstUncommittedSlot_PublishRequest show "\<And>i n t x. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>'" by simp
@@ -2567,7 +2567,7 @@ proof -
   proof -
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
@@ -2911,7 +2911,7 @@ next
     qed
 
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
@@ -3116,7 +3116,7 @@ next
 
   note ApplyCommit' = ApplyCommit_any ApplyCommit_from ApplyCommit_fromTo ApplyCommit_to
 
-  from committedToLocalCheckpoint
+  from committedTo_firstUncommittedSlot
   have committedTo_current: "committed\<^sub>< (firstUncommittedSlot nd)"
     by (simp add: nd_def)
 
@@ -3187,7 +3187,7 @@ next
     thus "?thesis i" by (unfold era\<^sub>i'_def era\<^sub>i_def, simp)
   qed
 
-  from committedToLocalCheckpoint
+  from committedTo_firstUncommittedSlot
   have era\<^sub>i_firstUncommittedSlot: "\<And>n. era\<^sub>i' (firstUncommittedSlot (nodeState n)) = era\<^sub>i (firstUncommittedSlot (nodeState n))"
     by (intro era\<^sub>i_eq)
 
@@ -3235,7 +3235,7 @@ next
 
   have Q_era_eq: "\<And>n. Q' (era\<^sub>i (firstUncommittedSlot (nodeState n))) = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))"
   proof (intro Q_eq)
-    from committedToLocalCheckpoint
+    from committedTo_firstUncommittedSlot
     show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     show "\<And>n. era\<^sub>i (firstUncommittedSlot (nodeState n)) \<le> era\<^sub>i (firstUncommittedSlot (nodeState n))" by simp
   qed
@@ -3279,7 +3279,7 @@ next
   have lastCommittedClusterStateBefore_slot_eq:
     "\<And>n. lastCommittedClusterStateBefore' (firstUncommittedSlot (nodeState n))
         = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
-    by (intro lastCommittedClusterStateBefore_eq committedToLocalCheckpoint)
+    by (intro lastCommittedClusterStateBefore_eq committedTo_firstUncommittedSlot)
 
   show ?thesis
     apply (intro zenI)
@@ -3316,7 +3316,7 @@ next
     from electionValue_Forced show "\<And>n. electionValueState (nodeState n) = ElectionValueForced \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)".
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" .
 
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState n))" by (simp add: committedTo_eq)
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub><' (firstUncommittedSlot (nodeState n))" by (simp add: committedTo_eq)
   qed
 qed
 
@@ -3368,7 +3368,7 @@ proof -
 
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))" .
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))" .
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
     from firstUncommittedSlot_PublishRequest show "\<And>i n t x. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>" .
@@ -3520,7 +3520,7 @@ proof -
   proof -
     from zenMessages_axioms show "zenMessages messages'" by (simp add: messages')
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-    from committedToLocalCheckpoint show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
+    from committedTo_firstUncommittedSlot show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))".
     from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
     from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
     from nothingAcceptedInLaterSlots show "\<And>i n t. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>" .
@@ -3641,8 +3641,8 @@ next
     unfolding i nd_def
     by (intro PublishRequest_function [OF ApplyCommit_PublishRequest_v\<^sub>c lastAccepted_Some_value])
 
-  have committedToLocalCheckpoint': "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))"
-    using committedToLocalCheckpoint i isCommitted_committedTo_Suc isCommitted_def nodeState'_def sent by auto
+  have committedTo_firstUncommittedSlot': "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))"
+    using committedTo_firstUncommittedSlot i isCommitted_committedTo_Suc isCommitted_def nodeState'_def sent by auto
 
   show ?thesis
   proof (cases "isReconfiguration (v\<^sub>c i)")
@@ -3690,7 +3690,7 @@ next
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq era\<^sub>i_eq2 Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-      from committedToLocalCheckpoint' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
+      from committedTo_firstUncommittedSlot' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
       from eraMatchesLocalCheckpoint show "\<And>n. currentEra (nodeState n) = era\<^sub>i (firstUncommittedSlot (nodeState n))".
       from isQuorum_firstUncommittedSlot show "\<And>n. {q. isQuorum (nodeState n) q} = Q (era\<^sub>i (firstUncommittedSlot (nodeState n)))".
       from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
@@ -3824,7 +3824,7 @@ next
                           apply (unfold message_simps property_simps committedTo_eq era\<^sub>i_eq Q_eq promised_eq lastCommittedClusterStateBefore_eq)
     proof -
       from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
-      from committedToLocalCheckpoint' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
+      from committedTo_firstUncommittedSlot' show "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState' n))".
       from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)" .
       from JoinRequest_slot_function show "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto> \<Longrightarrow> i = i'" .
 
