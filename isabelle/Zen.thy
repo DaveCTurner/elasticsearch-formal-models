@@ -2545,35 +2545,35 @@ proof -
       case False with electionValueState_Free electionValueFree' n'_vote show ?thesis
         by (unfold nodeState'_def, auto)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
 
       from electionValueFree'
       have electionValueFree: "electionValueState (nodeState n) = ElectionValueFree"
         apply (unfold nodeState'_def)
-        apply (auto simp add: nd' n_eq addElectionVote_def Let_def)
+        apply (auto simp add: nd' addElectionVote_def Let_def)
         using ElectionValueState.distinct
         by (metis nd_def)
 
       from n'_vote have "n' \<in> joinVotes nd \<or> n' = s"
-        by (unfold nodeState'_def, auto simp add: n_eq nd' addElectionVote_def Let_def)
+        by (unfold nodeState'_def, auto simp add: nd' addElectionVote_def Let_def)
       thus ?thesis
       proof (elim disjE)
         assume n'_vote: "n' \<in> joinVotes nd"
         with electionValueState_Free electionValueFree
-        show ?thesis by (auto simp add: nd_def n_eq)
+        show ?thesis by (auto simp add: nd_def)
       next
         assume n': "n' = s"
         show ?thesis
         proof (cases "i = firstUncommittedSlot nd")
-          case False with sent slot show ?thesis by (auto simp add: n_eq nd_def n')
+          case False with sent slot show ?thesis by (auto simp add: nd_def n')
         next
-          case True
+          case n'_eq[simp]: True
           with electionValueFree' have a: "a = None"
             unfolding nodeState'_def
-            apply (simp add: n_eq nd' addElectionVote_def Let_def)
+            apply (simp add: nd' addElectionVote_def Let_def)
             using ElectionValueState.distinct
             by (metis not_None_eq)
-          from sent slot show ?thesis by (auto simp add: n_eq nd_def n' a True)
+          from sent slot show ?thesis by (auto simp add: nd_def n' a)
         qed
       qed
     qed
@@ -2588,16 +2588,16 @@ proof -
       case False
       with electionValueState_not_Free electionValueForced' show ?thesis by (unfold nodeState'_def, auto)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
       show ?thesis
       proof (cases "electionValueState (nodeState n) = ElectionValueFree")
         case False with electionValueState_not_Free show ?thesis
-          by (unfold nodeState'_def, auto simp add: nd_def n_eq nd' addElectionVote_def Let_def)
+          by (unfold nodeState'_def, auto simp add: nd_def nd' addElectionVote_def Let_def)
       next
         case True
         with electionValueForced' have "i = firstUncommittedSlot nd \<and> a \<noteq> None"
           unfolding nodeState'_def
-          apply (simp add: n_eq nd' addElectionVote_def Let_def nd_def)
+          apply (simp add: nd' addElectionVote_def Let_def nd_def)
           by presburger
         hence i: "i = firstUncommittedSlot nd" and "a \<noteq> None" by simp_all
         then obtain t' where a: "a = Some t'" by auto
@@ -2608,19 +2608,19 @@ proof -
 
         have "joinVotes (nodeState' n) = insert s (joinVotes nd)"
           unfolding nodeState'_def
-          by (simp add: n_eq nd' addElectionVote_def Let_def)
+          by (simp add: nd' addElectionVote_def Let_def)
 
         show ?thesis
         proof (intro bexI exI conjI)
           show "s \<in> joinVotes (nodeState' n)"
             unfolding nodeState'_def
-            by (simp add: n_eq nd' addElectionVote_def Let_def)
+            by (simp add: nd' addElectionVote_def Let_def)
 
           from sent
           show "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (Some t') \<rangle>\<rightarrow> (OneNode n)"
-            by (simp add: i a n_eq nd_def)
+            by (simp add: i a nd_def)
 
-          from t show "lastAcceptedTerm (nodeState n) = Some t" by (simp add: nd_def n_eq)
+          from t show "lastAcceptedTerm (nodeState n) = Some t" by (simp add: nd_def)
           from t't show "t' \<le> t" .
         qed
       qed
@@ -2638,14 +2638,14 @@ proof -
         unfolding nodeState'_def
         by (auto)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
 
       show ?thesis
       proof (cases "electionValueState (nodeState n) = ElectionValueForced")
         case True
         with electionValueState_Forced
         have "\<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
-          by (auto simp add: n_eq)
+          by auto
         moreover have "joinVotes (nodeState n) \<subseteq> joinVotes (nodeState' n)"
           unfolding nodeState'_def
           unfolding nd' n_eq addElectionVote_def Let_def nd_def by auto
@@ -2666,11 +2666,11 @@ proof -
         proof (intro bexI exI conjI)
           from sent
           show "s \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState n)) \<rangle>\<rightarrow> (OneNode n)"
-            by (simp add: i a n_eq nd_def)
+            by (simp add: i a nd_def)
 
           show "s \<in> joinVotes (nodeState' n)"
             unfolding nodeState'_def
-            by (simp add: n_eq nd' addElectionVote_def Let_def)
+            by (simp add: nd' addElectionVote_def Let_def)
         qed
       qed
     qed
@@ -2687,10 +2687,10 @@ proof -
       case False
       with electionValueState_not_Free_max notFree' n'_vote n'_sent show ?thesis by (unfold nodeState'_def, auto)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
 
       from n'_vote have "n' \<in> joinVotes nd \<or> n' = s"
-        unfolding nodeState'_def by (auto simp add: n_eq nd' addElectionVote_def Let_def)
+        unfolding nodeState'_def by (auto simp add: nd' addElectionVote_def Let_def)
 
       thus ?thesis
       proof (elim disjE)
@@ -2699,7 +2699,7 @@ proof -
         proof (cases "electionValueState (nodeState n\<^sub>0) = ElectionValueFree")
           case False
           with electionValueState_not_Free_max n'_vote n'_sent
-          show ?thesis by (simp add: n_eq)
+          show ?thesis by simp
         next
           case True
           from electionValueState_Free [OF True n'_vote]
@@ -2707,7 +2707,7 @@ proof -
           proof (elim disjE exE conjE)
             assume "n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n\<^sub>0)) (currentTerm (nodeState n\<^sub>0)) None \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
             with n'_sent have a': "a' = None"
-              by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n_eq)
+              by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def)
             thus ?thesis by simp
           next
             fix i'' a''
@@ -2715,23 +2715,23 @@ proof -
 
             from ia n'_sent
             have i'': "i'' = (firstUncommittedSlot (nodeState n))"
-              by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def n_eq)
+              by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def)
 
             assume "i'' < firstUncommittedSlot (nodeState n\<^sub>0)"
-            with i'' show ?thesis by (simp add: n_eq)
+            with i'' show ?thesis by simp
           qed
         qed
       next
         assume n': "n' = s"
 
         from sent n'_sent have i: "i = firstUncommittedSlot nd"
-          by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def n' n_eq nd_def)
+          by (intro JoinRequest_slot_function, auto simp add: isMessageFrom_def n' nd_def)
 
         from sent n'_sent have a: "a' = a"
-          by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n' n_eq nd_def i)
+          by (intro JoinRequest_value_function, auto simp add: isMessageFrom_def n' nd_def i)
 
         from a_lastAcceptedTerm i show ?thesis
-          by (simp add: a nd_def n_eq)
+          by (simp add: a nd_def)
       qed
     qed
   qed
@@ -2759,7 +2759,7 @@ proof (cases "i = firstUncommittedSlot nd \<and> currentTerm nd \<le> t \<and> (
   from zen_axioms show ?thesis by simp
 
 next
-  case True note precondition = this
+  case precondition: True
 
   hence result: "result = (nd\<lparr>lastAcceptedTerm := Some t, lastAcceptedValue := x,
                     electionValueState := if lastAcceptedTerm nd \<noteq> Some t
@@ -2818,7 +2818,7 @@ next
   have PublishResponse'_fromTo: "\<And>s d i t'. (s \<midarrow>\<langle> PublishResponse i t' \<rangle>\<rightarrow>' d) =
     ((s \<midarrow>\<langle> PublishResponse i t' \<rangle>\<rightarrow> d)
       \<or> (s, i, t', d) = (n\<^sub>0, firstUncommittedSlot nd, t, OneNode (sender message)))"
-    by (unfold isMessageFromTo'_def isMessageFromTo_def, auto simp add: messages' True)
+    by (unfold isMessageFromTo'_def isMessageFromTo_def, auto simp add: messages' precondition)
 
   have PublishResponse'_from:
     "\<And>s i t'. (s \<midarrow>\<langle> PublishResponse i t' \<rangle>\<leadsto>') =
@@ -2846,7 +2846,7 @@ next
     proof (unfold messages', intro send_PublishResponse [OF sent] allI impI)
       fix i' t' a'
       assume "n\<^sub>0 \<midarrow>\<langle> JoinRequest i' t' a' \<rangle>\<leadsto>"
-      from JoinRequest_currentTerm [OF this] True show "t' \<le> t" using nd_def by auto
+      from JoinRequest_currentTerm [OF this] precondition show "t' \<le> t" using nd_def by auto
     qed
 
     from currentNode_nodeState show "\<And>n. currentNode (nodeState n) = n".
@@ -2891,15 +2891,15 @@ next
       show "\<And>t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>' \<Longrightarrow> t' \<le> t"
         by (auto simp add: PublishResponse' nodeState'_def)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
       fix t' t''
       assume "lastAcceptedTerm (nodeState' n) = Some t'"
       hence t': "t' = t"
-        by (simp add: n_eq nodeState'_def)
+        by (simp add: nodeState'_def)
 
       assume "n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t'' \<rangle>\<leadsto>'"
       hence "n\<^sub>0 \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n\<^sub>0)) t'' \<rangle>\<leadsto> \<or> t'' = t"
-        by (simp add: PublishResponse' n_eq nd_def t')
+        by (simp add: PublishResponse' nd_def t')
 
       thus "t'' \<le> t'"
       proof (elim disjE)
@@ -2936,18 +2936,17 @@ next
       with not_Free n'_vote n'_sent electionValueState_not_Free_max
       show ?thesis by (simp add: nodeState'_def)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
       from not_Free n'_vote n'_sent electionValueState_not_Free_max
-      have 1: "maxTermOption a' (lastAcceptedTerm (nodeState n\<^sub>0)) = lastAcceptedTerm (nodeState n\<^sub>0)"
-        by (simp add: n_eq)
+      have 1: "maxTermOption a' (lastAcceptedTerm (nodeState n\<^sub>0)) = lastAcceptedTerm (nodeState n\<^sub>0)" by simp
 
       show ?thesis
       proof (cases "lastAcceptedTerm (nodeState n\<^sub>0)")
         case None
         with 1 show ?thesis by simp
       next
-        case (Some t') note Some1 = this
-        from Some precondition have t't: "t' \<le> t" by (simp add: nd_def)
+        case Some1: (Some t')
+        with precondition have t't: "t' \<le> t" by (simp add: nd_def)
         show ?thesis
         proof (cases a')
           case None thus ?thesis by simp
@@ -2956,7 +2955,7 @@ next
           from Some 1 Some1 have "t'' \<le> t'"
             by (cases "t'' \<le> t'", auto simp add: max_def)
           with t't have "t'' \<le> t" by simp
-          thus ?thesis by (simp add: n_eq Some nodeState'_def max_def)
+          thus ?thesis by (simp add: Some nodeState'_def max_def)
         qed
       qed
     qed
@@ -2968,11 +2967,11 @@ next
     proof (cases "n = n\<^sub>0")
       case False with forced' electionValueState_Forced show ?thesis by (simp add: nodeState'_def)
     next
-      case True note n_eq = this
+      case n_eq[simp]: True
       from forced' have "electionValueState (nodeState n\<^sub>0) = ElectionValueForced
         \<and> lastAcceptedTerm nd = Some t"
         by (cases "lastAcceptedTerm nd \<noteq> Some t \<and> electionValueState nd = ElectionValueForced",
-            simp_all add: n_eq nodeState'_def electionValueState', simp add: nd_def)
+            simp_all add: nodeState'_def electionValueState', simp add: nd_def)
 
       hence forced: "electionValueState (nodeState n\<^sub>0) = ElectionValueForced"
         and unchanged: "lastAcceptedTerm nd = Some t"
@@ -2981,7 +2980,7 @@ next
       with electionValueState_Forced [of n\<^sub>0]
       show ?thesis
         unfolding nodeState'_def
-        by (auto simp add: n_eq nd_def)
+        by (auto simp add: nd_def)
     qed
   qed
 qed
