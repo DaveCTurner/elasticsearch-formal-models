@@ -143,7 +143,7 @@ with the previous term.\<close>
 definition ensureCurrentTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "ensureCurrentTerm t nd \<equiv>
-        if currentTerm nd = t
+        if t \<le> currentTerm nd
             then nd
             else nd
               \<lparr> joinVotes := {}

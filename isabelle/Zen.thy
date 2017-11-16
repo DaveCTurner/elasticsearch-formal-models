@@ -1483,7 +1483,7 @@ locale zenStep = zen +
                                      destination = Broadcast,
                                      payload = msg \<rparr>"
 
-lemma currentTerm_ensureCurrentTerm[simp]: "currentTerm (ensureCurrentTerm t nd) = t"
+lemma currentTerm_ensureCurrentTerm[simp]: "currentTerm nd \<le> t \<Longrightarrow> currentTerm (ensureCurrentTerm t nd) = t"
   by (auto simp add: ensureCurrentTerm_def)
 
 lemma (in zenStep)
@@ -2051,17 +2051,16 @@ next
 qed
 
 lemma (in zenStep) ensureCurrentTerm_invariants:
-  assumes t: "currentTerm nd \<le> t"
   assumes nd': "nd' = ensureCurrentTerm t nd"
   assumes messages': "messages' = messages"
   shows "zen messages' nodeState'"
-proof (cases "currentTerm nd = t")
+proof (cases "t \<le> currentTerm nd")
   case True
   hence "nodeState' = nodeState"
     by (intro ext, unfold nodeState'_def, auto simp add: nd' ensureCurrentTerm_def nd_def)
   with zen_axioms messages' show ?thesis by simp
 next
-  case False
+  case False hence t: "currentTerm nd < t" by simp
 
   have message_simps[simp]:
     "\<And>s p d. (s \<midarrow>\<langle> p \<rangle>\<rightarrow>' d) = (s \<midarrow>\<langle> p \<rangle>\<rightarrow> d)"
@@ -2085,7 +2084,7 @@ next
     "electionValueState (nodeState' n\<^sub>0) = ElectionValueFree"
     "publishPermitted (nodeState' n\<^sub>0) = True"
     "publishVotes (nodeState' n\<^sub>0) = {}"
-    using False
+    using t
     by (unfold nodeState'_def, auto simp add: nd_def isQuorum_def nd' ensureCurrentTerm_def)
 
   have currentTerm_increases: "\<And>n. currentTerm (nodeState n) \<le> currentTerm (nodeState' n)"
@@ -2167,7 +2166,7 @@ next
       with PublishRequest_currentTerm sent have "t' \<le> currentTerm nd" by (simp add: nd_def)
       also note t
       also have "t = currentTerm (nodeState' n)" by (simp add: True)
-      finally show ?thesis .
+      finally show ?thesis by simp
     qed
 
     assume not_requested: "publishPermitted (nodeState' n)"
@@ -2488,7 +2487,8 @@ next
   have nd'_eq: "nodeState' n\<^sub>0 = nd'"
     by (simp add: nodeState'_def)
 
-  have currentTerm_nd': "currentTerm nd' = t" by (simp add: nd')
+  from True
+  have currentTerm_nd': "currentTerm nd' = t" by (auto simp add: nd')
 
   have "zen messages' (\<lambda> n. if n = n\<^sub>0 then nd' else nodeState' n)"
   proof (intro zenStep.sendJoinRequest_invariants [OF zenStep1], unfold nd'_eq currentTerm_nd', fold response_def)
@@ -2516,7 +2516,7 @@ next
     fix t'
     assume lastAcceptedTerm_Some: "lastAcceptedTerm nd' = Some t'"
     hence "lastAcceptedTerm (nodeState n\<^sub>0) =  Some t'"
-      by (cases "currentTerm nd = t", auto simp add: nd' ensureCurrentTerm_def nd_def)
+      by (cases "t \<le> currentTerm nd", auto simp add: nd' ensureCurrentTerm_def nd_def)
     with True new_term
     show "t' < t" by (simp add: nd_def)
   qed
@@ -4076,8 +4076,6 @@ proof -
           show "zenStep messages nodeState messages m"
             by (intro_locales, intro zenStep_axioms.intro, simp_all)
 
-          from `currentTerm nd \<le> t` show "currentTerm (nodeState n\<^sub>0) \<le> t" by simp
-
           show "nd1 = ensureCurrentTerm t (nodeState n\<^sub>0)" by (simp add: nd1_def)
         qed simp
 
@@ -4093,8 +4091,9 @@ proof -
         have currentNode_nd1[simp]: "currentNode nd1 = n\<^sub>0"
           by (auto simp add: nd1_def ensureCurrentTerm_def)
 
+        from True'
         have currentTerm_nd1[simp]: "currentTerm nd1 = t"
-          by (simp add: nd1_def ensureCurrentTerm_def)
+          by (auto simp add: nd1_def ensureCurrentTerm_def)
 
         have currentEra_nd1[simp]: "currentEra nd1 = currentEra nd"
           by (simp add: nd1_def ensureCurrentTerm_def)
