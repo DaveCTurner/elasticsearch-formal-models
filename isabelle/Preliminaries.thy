@@ -8,37 +8,9 @@ begin
 
 subsection \<open>Eras\<close>
 
-text \<open>Eras are numbered from $0$. To keep the types separate in the proof, we define a separate
-type for them:\<close>
+text \<open>Eras are identified as natural numbers.\<close>
 
-datatype Era = e\<^sub>0 | nextEra Era
-
-text \<open>This is followed by some routine development to help the prover understand that they
-behave like natural numbers. First, they are ordered:\<close>
-
-text \<open>The isomorphism with the natural numbers is spelled out in full.\<close>
-
-fun natOfEra :: "Era \<Rightarrow> nat" where
-  "natOfEra e\<^sub>0 = 0" | "natOfEra (nextEra e) = Suc (natOfEra e)"
-fun eraOfNat :: "nat \<Rightarrow> Era" where
-  "eraOfNat 0 = e\<^sub>0" | "eraOfNat (Suc n) = nextEra (eraOfNat n)"
-
-lemma eraOfNat_inv[simp]: "eraOfNat (natOfEra e) = e" by (induct e, simp_all)
-lemma natOfEra_inv[simp]: "natOfEra (eraOfNat n) = n" by (induct n, simp_all)
-lemma natOfEra_inj[simp]: "(natOfEra e\<^sub>1 = natOfEra e\<^sub>2) = (e\<^sub>1 = e\<^sub>2)" by (metis eraOfNat_inv)
-
-instantiation Era :: linorder
-begin
-definition less_Era where "e\<^sub>1 < e\<^sub>2 \<equiv> natOfEra e\<^sub>1 < natOfEra e\<^sub>2"
-definition less_eq_Era where "e\<^sub>1 \<le> e\<^sub>2 \<equiv> natOfEra e\<^sub>1 \<le> natOfEra e\<^sub>2"
-instance proof
-  fix e\<^sub>1 e\<^sub>2 :: Era
-  show "e\<^sub>1 \<le> e\<^sub>2 \<Longrightarrow> e\<^sub>2 \<le> e\<^sub>1 \<Longrightarrow> e\<^sub>1 = e\<^sub>2"
-    by (metis eq_iff eraOfNat_inv less_eq_Era_def)
-qed (auto simp add: less_eq_Era_def less_Era_def)
-end
-
-lemma lt_e0[simp]: "e < e\<^sub>0 = False" by (auto simp add: less_Era_def)
+type_synonym Era = nat
 
 subsection \<open>Terms\<close>
 
@@ -55,7 +27,7 @@ text \<open>Terms are ordered lexicographically:\<close>
 
 instantiation Term :: linorder
 begin
-definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [natOfEra \<circ> era\<^sub>t, termInEra]"
+definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [era\<^sub>t, termInEra]"
 definition less_eq_Term where "(t\<^sub>1::Term) \<le> t\<^sub>2 \<equiv> (t\<^sub>1 < t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
 instance proof
   fix x y :: Term
@@ -67,7 +39,7 @@ end
 
 lemma lt_term: "t\<^sub>1 < t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
       \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2)))"
-  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def less_Era_def)
+  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def)
 
 lemma era\<^sub>t_mono: "t\<^sub>1 \<le> t\<^sub>2 \<Longrightarrow> era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" using less_eq_Term_def lt_term by auto
 
@@ -78,7 +50,7 @@ lemma term_induct [case_names less]:
   assumes "\<And>t\<^sub>1. (\<forall> t\<^sub>2. t\<^sub>2 < t\<^sub>1 \<longrightarrow> P t\<^sub>2) \<Longrightarrow> P t\<^sub>1"
   shows "P t"
 proof -
-  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [natOfEra \<circ> era\<^sub>t, termInEra]"
+  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [era\<^sub>t, termInEra]"
     by (auto simp add: less_Term_def)
 
   have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 < (t\<^sub>2 :: Term) }"

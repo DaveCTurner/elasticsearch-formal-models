@@ -37,14 +37,14 @@ locale zenMessages =
   defines "v\<^sub>c i \<equiv> v i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>)"
     (* the era of a slot *)
   fixes era\<^sub>i :: "nat \<Rightarrow> Era"
-  defines "era\<^sub>i i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c j) })"
+  defines "era\<^sub>i i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
     (* the (unique) slot in an era containing a reconfiguration *)
   fixes reconfig :: "Era \<Rightarrow> nat"
   defines "reconfig e
       \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
     (* the configuration of an era *)
   fixes Q :: "Era \<Rightarrow> Node set set"
-  defines "Q e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
+  defines "Q e \<equiv> case e of 0 \<Rightarrow> Q\<^sub>0 | Suc e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
     (* predicate to say whether an applicable JoinRequest has been sent *)
   fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
   defines "promised i s dn t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow> (OneNode dn)"
@@ -146,7 +146,7 @@ proof -
 qed
 
 lemma (in zenMessages) era\<^sub>i_step:
-  "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then nextEra (era\<^sub>i i) else era\<^sub>i i)"
+  "era\<^sub>i (Suc i) = (if isReconfiguration (v\<^sub>c i) then Suc (era\<^sub>i i) else era\<^sub>i i)"
 proof (cases "isReconfiguration (v\<^sub>c i)")
   case True
   hence "{j. j < Suc i \<and> isReconfiguration (v\<^sub>c j)}
@@ -171,7 +171,7 @@ proof (induct i)
     assume "i' \<le> i"
     with Suc.hyps have "era\<^sub>i i' \<le> era\<^sub>i i" .
     also have "... \<le> era\<^sub>i (Suc i)"
-      using era\<^sub>i_step less_eq_Era_def by auto
+      using era\<^sub>i_step by auto
     finally show ?thesis .
   qed simp
 qed simp
@@ -182,13 +182,11 @@ lemma (in zenMessages) era\<^sub>i_contiguous:
   using assms
 proof (induct i)
   case 0
-  then show ?case
-    apply (auto simp add: era\<^sub>i_def less_eq_Era_def)
-    using natOfEra_inj by fastforce
+  then show ?case by (auto simp add: era\<^sub>i_def)
 next
   case (Suc i)
   then show ?case
-    by (metis antisym_conv1 era\<^sub>i_step le_SucI less_Era_def less_Suc_eq_le less_eq_Era_def natOfEra.simps(2))
+    by (metis antisym_conv1 era\<^sub>i_step le_SucI less_Suc_eq_le)
 qed
 
 lemma (in zenMessages) PublishResponse_era:
@@ -213,7 +211,7 @@ proof -
   next
     case (Suc i e)
     have "e < era\<^sub>i i \<or> (e = era\<^sub>i i \<and> isReconfiguration (v\<^sub>c i))"
-      by (metis Suc.prems(1) dual_order.antisym era\<^sub>i_step leI less_Era_def natOfEra.simps(2) not_less_less_Suc_eq)
+      by (metis Suc.prems(1) era\<^sub>i_step not_less_less_Suc_eq)
     thus ?case
     proof (elim disjE conjE)
       assume a: "e < era\<^sub>i i"
@@ -244,7 +242,7 @@ lemma (in zenMessages) reconfig_eq:
   assumes "era\<^sub>i j = e"
   shows "j = reconfig e"
   using assms
-  by (metis era\<^sub>i_mono era\<^sub>i_step lessI less_Era_def less_antisym less_eq_Suc_le natOfEra.simps(2) not_less reconfig_era reconfig_isReconfiguration)
+  by (metis era\<^sub>i_mono era\<^sub>i_step lessI less_antisym less_eq_Suc_le not_less reconfig_era reconfig_isReconfiguration)
 
 lemma (in zenMessages) promised_long_def: "\<exists>d. promised i s d t
      \<equiv> (s \<midarrow>\<langle> JoinRequest i t None \<rangle>\<leadsto>
@@ -819,9 +817,9 @@ proof -
 
   define v' where "\<And>i t. v' i t \<equiv> THE x. \<langle> PublishRequest i t x \<rangle>\<leadsto>'"
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>)"
-  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)}"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
-  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+  define Q' where "\<And>e. Q' e \<equiv> case e of 0 \<Rightarrow> Q\<^sub>0 | Suc e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
 
   have v_eq: "\<And>i t. v' i t = (if (i, t) = (i\<^sub>0, t\<^sub>0) then x\<^sub>0 else v i t)"
   proof -
@@ -884,13 +882,13 @@ proof -
         with eq era\<^sub>i_step show ?thesis by simp
       next
         case True
-        with era\<^sub>i_step have nextEra: "era\<^sub>i (Suc i) = nextEra (era\<^sub>i i)" by simp
+        with era\<^sub>i_step have nextEra: "era\<^sub>i (Suc i) = Suc (era\<^sub>i i)" by simp
 
         show ?thesis
         proof (unfold nextEra, simp add: Q_def Q'_def reconfig'_eq,
             intro cong [OF refl, where f = getConf] v\<^sub>c_eq reconfig_isCommitted)
           show "era\<^sub>i i < era\<^sub>i (Suc i)"
-            by (simp add: less_Era_def nextEra)
+            by (simp add: nextEra)
           from Suc.prems show "committed\<^sub>< (Suc i)" .
         qed
       qed
@@ -1135,9 +1133,9 @@ proof -
   define isCommitted' where "\<And>i. isCommitted' i \<equiv> \<exists>t. \<langle> ApplyCommit i t \<rangle>\<leadsto>'"
   define committedTo' ("committed\<^sub><'") where "\<And>i. committed\<^sub><' i \<equiv> \<forall>j < i. isCommitted' j"
   define v\<^sub>c' where "\<And>i. v\<^sub>c' i \<equiv> v i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
-  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> eraOfNat (card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)})"
+  define era\<^sub>i' where "\<And>i. era\<^sub>i' i \<equiv> card {j. j < i \<and> isReconfiguration (v\<^sub>c' j)}"
   define reconfig' where "\<And>e. reconfig' e \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
-  define Q' where "\<And>e. Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+  define Q' where "\<And>e. Q' e \<equiv> case e of 0 \<Rightarrow> Q\<^sub>0 | Suc e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
 
   have committedTo_current: "committed\<^sub>< i\<^sub>0"
     using assms by (metis PublishRequest_committedTo Q_member_member PublishResponse_PublishRequest)
@@ -1226,9 +1224,8 @@ proof -
   proof -
     fix e i assume "committed\<^sub>< i" "e \<le> era\<^sub>i i"
     thus "Q' e = Q e" 
-      apply (cases e, simp add: Q_def Q'_def)
-      using Q'_def
-      by (metis Era.simps(5) Q_def lessI less_eq_Era_def less_le_trans natOfEra.simps(2) not_less reconfig'_eq reconfig_isCommitted v\<^sub>c_eq)
+      apply (cases e, simp_all add: Q_def Q'_def reconfig'_eq v\<^sub>c_eq)
+      by (metis lessI less_le_trans reconfig_isCommitted v\<^sub>c_eq)
   qed
 
   show ?thesis
@@ -1457,14 +1454,14 @@ locale zenStep = zen +
   defines "v\<^sub>c' i \<equiv> v' i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>')"
     (* the era of a slot *)
   fixes era\<^sub>i' :: "nat \<Rightarrow> Era"
-  defines "era\<^sub>i' i \<equiv> eraOfNat (card { j. j < i \<and> isReconfiguration (v\<^sub>c' j) })"
+  defines "era\<^sub>i' i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c' j) }"
     (* the (unique) slot in an era containing a reconfiguration *)
   fixes reconfig' :: "Era \<Rightarrow> nat"
   defines "reconfig' e
       \<equiv> THE i. isCommitted' i \<and> isReconfiguration (v\<^sub>c' i) \<and> era\<^sub>i' i = e"
     (* the configuration of an era *)
   fixes Q' :: "Era \<Rightarrow> Node set set"
-  defines "Q' e \<equiv> case e of e\<^sub>0 \<Rightarrow> Q\<^sub>0 | nextEra e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
+  defines "Q' e \<equiv> case e of 0 \<Rightarrow> Q\<^sub>0 | Suc e' \<Rightarrow> getConf (v\<^sub>c' (reconfig' e'))"
     (* predicate to say whether an applicable JoinRequest has been sent *)
   fixes promised' :: "nat \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
   defines "promised' i s dn t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow>' (OneNode dn)"
@@ -1726,13 +1723,13 @@ next
         with eq era\<^sub>i_step show ?thesis by simp
       next
         case True
-        with era\<^sub>i_step have nextEra: "era\<^sub>i (Suc i) = nextEra (era\<^sub>i i)" by simp
+        with era\<^sub>i_step have nextEra: "era\<^sub>i (Suc i) = Suc (era\<^sub>i i)" by simp
 
         show ?thesis
         proof (unfold nextEra, simp add: Q_def Q'_def reconfig_eq,
             intro cong [OF refl, where f = getConf] v\<^sub>c_eq reconfig_isCommitted)
           show "era\<^sub>i i < era\<^sub>i (Suc i)"
-            by (simp add: less_Era_def nextEra)
+            by (simp add: nextEra)
           from Suc.prems show "committed\<^sub>< (Suc i)" .
         qed
       qed
@@ -3225,10 +3222,10 @@ next
     fix e i assume a: "committed\<^sub>< i" "e \<le> era\<^sub>i i"
     thus "Q' e = Q e" 
     proof (cases e)
-      case e\<^sub>0 thus ?thesis by (simp add: Q_def Q'_def)
+      case 0 thus ?thesis by (simp add: Q_def Q'_def)
     next
-      case (nextEra e')
-      with a have lt: "e' < era\<^sub>i i" by (simp add: less_Era_def less_eq_Era_def)
+      case (Suc e')
+      with a have lt: "e' < era\<^sub>i i" by simp
 
       from a lt have reconfig_eq[simp]: "reconfig' e' = reconfig e'"
         by (intro reconfig_eq)
@@ -3237,7 +3234,7 @@ next
       have v\<^sub>c_eq[simp]: "v\<^sub>c' (reconfig e') = v\<^sub>c (reconfig e')"
         by (intro v\<^sub>c_eq reconfig_isCommitted)
 
-      show ?thesis unfolding Q_def Q'_def nextEra by simp
+      show ?thesis unfolding Q_def Q'_def Suc by simp
     qed
   qed
 
@@ -3784,7 +3781,7 @@ next
     with lastAcceptedValue_eq have lastAcceptedValue_eq: "lastAcceptedValue nd = Reconfigure newConfig" by simp
 
     have nd': "nd' = nd
-      \<lparr> currentEra := nextEra (currentEra nd)
+      \<lparr> currentEra := Suc (currentEra nd)
       , currentConfiguration := newConfig
       , joinVotes := {}
       , electionWon := False
@@ -3806,7 +3803,7 @@ next
       by (simp add: nodeState'_def)
 
     from era\<^sub>i_step [of "firstUncommittedSlot (nodeState n\<^sub>0)"] True
-    have era\<^sub>i_firstUncommittedSlot: "era\<^sub>i (firstUncommittedSlot (nodeState' n\<^sub>0)) = nextEra (era\<^sub>i (firstUncommittedSlot (nodeState n\<^sub>0)))"
+    have era\<^sub>i_firstUncommittedSlot: "era\<^sub>i (firstUncommittedSlot (nodeState' n\<^sub>0)) = Suc (era\<^sub>i (firstUncommittedSlot (nodeState n\<^sub>0)))"
       by (simp add: nd_def i)
 
     have reconfig'_eq: "reconfig (era\<^sub>i i) = i"
@@ -3814,7 +3811,7 @@ next
       from sent show "committed\<^sub>< (firstUncommittedSlot (nodeState' n\<^sub>0))"
         by (simp, intro isCommitted_committedTo_Suc, auto simp add: isCommitted_def i)
       show "era\<^sub>i i < era\<^sub>i (firstUncommittedSlot (nodeState' n\<^sub>0))"
-        by (unfold era\<^sub>i_firstUncommittedSlot, simp add: i nd_def less_Era_def)
+        by (unfold era\<^sub>i_firstUncommittedSlot, simp add: i nd_def)
     qed
 
     with Reconfigure have Q'_eq: "Q (era\<^sub>i (firstUncommittedSlot (nodeState' n\<^sub>0))) = Rep_Configuration newConfig"

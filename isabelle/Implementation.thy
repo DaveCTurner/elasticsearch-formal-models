@@ -253,7 +253,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
     "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
         NoOp \<Rightarrow> nd
       | Reconfigure Q \<Rightarrow> nd
-          \<lparr> currentEra := nextEra (currentEra nd) (* TODO also update term to Term 0 in the next era *)
+          \<lparr> currentEra := currentEra nd + 1 (* TODO also update term to Term 0 in the next era *)
           , currentConfiguration := Q
           , joinVotes := {}
           , electionWon := False
@@ -339,8 +339,8 @@ definition initialNodeState :: "Node \<Rightarrow> NodeData"
   where "initialNodeState n =
       \<lparr> currentNode = n
       , firstUncommittedSlot = 0
-      , currentTerm = Term e\<^sub>0 0
-      , currentEra = e\<^sub>0
+      , currentTerm = Term 0 0
+      , currentEra = 0
       , currentConfiguration = Abs_Configuration Q\<^sub>0
       , currentClusterState = ClusterState 0
       , lastAcceptedTerm = None
