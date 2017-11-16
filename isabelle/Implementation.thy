@@ -84,6 +84,7 @@ fun maxTermOption :: "Term option \<Rightarrow> Term option \<Rightarrow> Term o
 
 lemma maxTermOption_t_None[simp]: "maxTermOption mt None = mt" by (cases mt, auto)
 lemma maxTermOption_None_t[simp]: "maxTermOption None mt = mt" by (cases mt, auto)
+lemma maxTermOption_diagonal[simp]: "maxTermOption p p = p" by (cases p, simp_all)
 
 lemma 
   assumes "maxTermOption p1 p2 = None"
@@ -98,12 +99,6 @@ subsection \<open>Node implementation\<close>
 
 text \<open>Each node holds the following local data.\<close>
 
-(* TODO get rid of this and just reject the messages that would have led to ElectionValueUnknown. *) 
-datatype ElectionValueState
-  = ElectionValueFree (* all received promises carried no previously-accepted term. Can propose anything. *)
-  | ElectionValueUnknown (* received a promise carrying a previously-accepted term, but it wasn't the local lastAcceptedTerm so it is unknown. Cannot propose anything. *)
-  | ElectionValueForced (* received a promise carrying a previously-accepted term equal to the local lastAcceptedTerm. Can propose the last-accepted value. *)
-
 record NodeData =
   currentNode :: Node (* identity of this node *)
   firstUncommittedSlot :: Slot (* all slots strictly below this one are committed *)
@@ -117,7 +112,7 @@ record NodeData =
   (* election data *)
   joinVotes :: "Node set" (* set of nodes that have sent a JoinRequest for the current currentTerm *)
   electionWon :: bool
-  electionValueState :: ElectionValueState (* if True, must propose lastAcceptedValue for this slot on winning an election; if False, can propose anything *)
+  electionValueForced :: bool (* if True, must propose lastAcceptedValue for this slot on winning an election; if False, can propose anything *)
   (* learner data *)
   publishPermitted :: bool (* if True, may publish a value for this slot/term pair; if False, must not: either there is definitely a PublishRequest in flight, or we've just rebooted. *)
   publishVotes :: "Node set"
@@ -130,7 +125,7 @@ text \<open>This method publishes a value via a @{term PublishRequest} message.\
 definition publishValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "publishValue x nd \<equiv>
-        if electionWon nd \<and> publishPermitted nd \<and> electionValueState nd \<noteq> ElectionValueUnknown
+        if electionWon nd \<and> publishPermitted nd
               then ( nd \<lparr> publishPermitted := False \<rparr>
                    , Some (PublishRequest
                              (firstUncommittedSlot nd)
@@ -149,7 +144,7 @@ definition ensureCurrentTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> NodeD
               \<lparr> joinVotes := {}
               , currentTerm := t
               , electionWon := False
-              , electionValueState := ElectionValueFree
+              , electionValueForced := False
               , publishPermitted := True
               , publishVotes := {} \<rparr>"
 
@@ -159,13 +154,7 @@ definition addElectionVote :: "Node \<Rightarrow> Slot => Term option \<Rightarr
   where
     "addElectionVote s i a nd \<equiv> let newVotes = insert s (joinVotes nd)
       in nd \<lparr> joinVotes := newVotes
-            , electionValueState :=
-                if i = firstUncommittedSlot nd \<and> a \<noteq> None
-                then if a = lastAcceptedTerm nd
-                          \<or> electionValueState nd = ElectionValueForced
-                         then ElectionValueForced
-                         else ElectionValueUnknown
-                else electionValueState nd
+            , electionValueForced := electionValueForced nd \<or> (a \<noteq> None \<and> i = firstUncommittedSlot nd)
             , electionWon := isQuorum nd newVotes \<rparr>"
 
 text \<open>Clients request the cluster to achieve consensus on certain values using the @{term ClientValue}
@@ -173,10 +162,7 @@ message which is handled as follows.\<close>
 
 definition handleClientValue :: "Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
-    "handleClientValue x nd \<equiv>
-      if electionValueState nd = ElectionValueFree
-        then publishValue x nd
-        else (nd, None)"
+    "handleClientValue x nd \<equiv> if electionValueForced nd then (nd, None) else publishValue x nd"
 
 text \<open>A @{term StartJoin} message is checked for acceptability and then handled by updating the
 node's term and yielding a @{term JoinRequest} message as follows.\<close>
@@ -199,14 +185,17 @@ yielding a @{term PublishRequest} message.\<close>
 definition handleJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> Term option \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleJoinRequest s i t a nd \<equiv>
-         if i \<le> firstUncommittedSlot nd
+         if t = currentTerm nd
              \<and> era\<^sub>t t = currentEra nd
-             \<and> currentTerm nd \<le> t
-             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)
-          then let nd1 = ensureCurrentTerm t nd;
-                   nd2 = addElectionVote s i a nd1
-               in publishValue (lastAcceptedValue nd2) nd2
+             \<and> \<not> electionWon nd
+             \<and> (i < firstUncommittedSlot nd
+                \<or> (i = firstUncommittedSlot nd
+                    \<and> (a = None 
+                        \<or> a = lastAcceptedTerm nd
+                        \<or> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd
+                              \<and> electionValueForced nd))))
+          then let nd1 = addElectionVote s i a nd
+               in publishValue (lastAcceptedValue nd1) nd1
           else (nd, None)"
 (* TODO show this is equivalent to recursing to (handleJoinRequest ... None) if given an earlier slot *)
 
@@ -219,11 +208,8 @@ definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value 
           if i = firstUncommittedSlot nd
                 \<and> currentTerm nd \<le> t
                 \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t)
-          then ( nd \<lparr> electionValueState := if lastAcceptedTerm nd \<noteq> Some t
-                                            \<and> electionValueState nd = ElectionValueForced
-                                            then ElectionValueUnknown
-                                            else electionValueState nd,
-                      lastAcceptedTerm := Some t,
+                \<and> \<not> electionValueForced nd
+          then ( nd \<lparr> lastAcceptedTerm := Some t,
                       lastAcceptedValue := x \<rparr>
                , Some (PublishResponse i t))
           else (nd, None)"
@@ -257,7 +243,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
           , currentConfiguration := Q
           , joinVotes := {}
           , electionWon := False
-          , electionValueState := ElectionValueFree \<rparr>
+          , electionValueForced := False \<rparr>
       | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
@@ -272,7 +258,7 @@ definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData 
                      , lastAcceptedValue := NoOp
                      , lastAcceptedTerm := None
                      , publishPermitted := True
-                     , electionValueState := ElectionValueFree
+                     , electionValueForced := False
                      , publishVotes := {} \<rparr>
           else nd"
 
@@ -292,7 +278,7 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       , lastAcceptedValue = lastAcceptedValue nd
       , joinVotes = {}
       , electionWon = False
-      , electionValueState = ElectionValueFree
+      , electionValueForced = False
       , publishPermitted = False
       , publishVotes = {} \<rparr>"
 
@@ -347,7 +333,7 @@ definition initialNodeState :: "Node \<Rightarrow> NodeData"
       , lastAcceptedValue = NoOp
       , joinVotes = {}
       , electionWon = False
-      , electionValueState = ElectionValueFree
+      , electionValueForced = False
       , publishPermitted = False
       , publishVotes = {} \<rparr>"
 
