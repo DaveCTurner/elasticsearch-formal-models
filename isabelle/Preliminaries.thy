@@ -8,9 +8,15 @@ begin
 
 subsection \<open>Eras\<close>
 
-text \<open>Eras are identified as natural numbers.\<close>
+text \<open>Eras are identified by natural numbers.\<close>
 
 type_synonym Era = nat
+
+subsection \<open>Slots\<close>
+
+text \<open>Slots are identified by natural numbers.\<close>
+
+type_synonym Slot = nat
 
 subsection \<open>Terms\<close>
 

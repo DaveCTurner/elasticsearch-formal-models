@@ -19,11 +19,11 @@ message refers to a slot number.\<close>
 
 datatype Message
   = StartJoin Term
-  | JoinRequest nat Term "Term option" (* TODO the second term, if present, is in the same era as the first, so just use its termInEra *)
+  | JoinRequest Slot Term "Term option" (* TODO the second term, if present, is in the same era as the first, so just use its termInEra *)
   | ClientValue Value
-  | PublishRequest nat Term Value
-  | PublishResponse nat Term
-  | ApplyCommit nat Term
+  | PublishRequest Slot Term Value
+  | PublishResponse Slot Term
+  | ApplyCommit Slot Term
   | Reboot
 (* TODO also need a message to represent a catch-up *)
 
@@ -106,7 +106,7 @@ datatype ElectionValueState
 
 record NodeData =
   currentNode :: Node (* identity of this node *)
-  firstUncommittedSlot :: nat (* all slots strictly below this one are committed *)
+  firstUncommittedSlot :: Slot (* all slots strictly below this one are committed *)
   currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
   currentEra :: Era (* era of the firstUncommittedSlot slot *) (* TODO just use "era\<^sub>t currentTerm" *)
   currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set set" *)
@@ -155,7 +155,7 @@ definition ensureCurrentTerm :: "Term \<Rightarrow> NodeData \<Rightarrow> NodeD
 
 text \<open>This method updates the node's state on receipt of a vote (a @{term JoinRequest}) in an election.\<close>
 
-definition addElectionVote :: "Node \<Rightarrow> nat => Term option \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition addElectionVote :: "Node \<Rightarrow> Slot => Term option \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "addElectionVote s i a nd \<equiv> let newVotes = insert s (joinVotes nd)
       in nd \<lparr> joinVotes := newVotes
@@ -196,7 +196,7 @@ definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeDa
 text \<open>A @{term JoinRequest} message is checked for acceptability and then handled as follows, perhaps
 yielding a @{term PublishRequest} message.\<close>
 
-definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> Term option \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
+definition handleJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> Term option \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleJoinRequest s i t a nd \<equiv>
          if i \<le> firstUncommittedSlot nd
@@ -213,7 +213,7 @@ definition handleJoinRequest :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rig
 text \<open>A @{term PublishRequest} message is checked for acceptability and then handled as follows,
 yielding a @{term PublishResponse} message.\<close>
 
-definition handlePublishRequest :: "nat \<Rightarrow> Term \<Rightarrow> Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
+definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishRequest i t x nd \<equiv>
           if i = firstUncommittedSlot nd
@@ -239,7 +239,7 @@ text \<open>A @{term PublishResponse} message is checked for acceptability and h
 this message, together with the previously-received messages, forms a quorum of votes then the
 value is committed, yielding an @{term ApplyCommit} message.\<close>
 
-definition handlePublishResponse :: "Node \<Rightarrow> nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
+definition handlePublishResponse :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handlePublishResponse s i t nd \<equiv>
         if i = firstUncommittedSlot nd \<and> t = currentTerm nd
@@ -263,7 +263,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
 and \texttt{ClusterState} via the @{term applyValue} method. It yields no messages.\<close>
 
-definition handleApplyCommit :: "nat \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "handleApplyCommit i t nd \<equiv> 
         if i = firstUncommittedSlot nd \<and> lastAcceptedTerm nd = Some t

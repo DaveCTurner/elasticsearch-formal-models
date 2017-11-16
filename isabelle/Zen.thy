@@ -24,35 +24,35 @@ locale zenMessages =
   fixes isMessage :: "Message \<Rightarrow> bool" ("\<langle> _ \<rangle>\<leadsto>" [55])
   defines "\<langle> m \<rangle>\<leadsto> \<equiv> \<exists> s. s \<midarrow>\<langle> m \<rangle>\<leadsto>"
     (* value proposed in a slot & a term *)
-  fixes v :: "nat \<Rightarrow> Term \<Rightarrow> Value"
+  fixes v :: "Slot \<Rightarrow> Term \<Rightarrow> Value"
   defines "v i t \<equiv> THE x. \<langle> PublishRequest i t x \<rangle>\<leadsto>"
     (* whether a slot is committed *)
-  fixes isCommitted :: "nat \<Rightarrow> bool"
+  fixes isCommitted :: "Slot \<Rightarrow> bool"
   defines "isCommitted i \<equiv> \<exists> t. \<langle> ApplyCommit i t \<rangle>\<leadsto>"
     (* whether all preceding slots are committed *)
-  fixes committedTo :: "nat \<Rightarrow> bool" ("committed\<^sub><")
+  fixes committedTo :: "Slot \<Rightarrow> bool" ("committed\<^sub><")
   defines "committed\<^sub>< i \<equiv> \<forall> j < i. isCommitted j" 
     (* the committed value in a slot *)
-  fixes v\<^sub>c :: "nat \<Rightarrow> Value"
+  fixes v\<^sub>c :: "Slot \<Rightarrow> Value"
   defines "v\<^sub>c i \<equiv> v i (SOME t. \<langle> ApplyCommit i t \<rangle>\<leadsto>)"
     (* the era of a slot *)
-  fixes era\<^sub>i :: "nat \<Rightarrow> Era"
+  fixes era\<^sub>i :: "Slot \<Rightarrow> Era"
   defines "era\<^sub>i i \<equiv> card { j. j < i \<and> isReconfiguration (v\<^sub>c j) }"
     (* the (unique) slot in an era containing a reconfiguration *)
-  fixes reconfig :: "Era \<Rightarrow> nat"
+  fixes reconfig :: "Era \<Rightarrow> Slot"
   defines "reconfig e
       \<equiv> THE i. isCommitted i \<and> isReconfiguration (v\<^sub>c i) \<and> era\<^sub>i i = e"
     (* the configuration of an era *)
   fixes Q :: "Era \<Rightarrow> Node set set"
   defines "Q e \<equiv> case e of 0 \<Rightarrow> Q\<^sub>0 | Suc e' \<Rightarrow> getConf (v\<^sub>c (reconfig e'))"
     (* predicate to say whether an applicable JoinRequest has been sent *)
-  fixes promised :: "nat \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
+  fixes promised :: "Slot \<Rightarrow> Node \<Rightarrow> Node \<Rightarrow> Term \<Rightarrow> bool"
   defines "promised i s dn t \<equiv> \<exists> i' \<le> i. \<exists> a. s \<midarrow>\<langle> JoinRequest i' t a \<rangle>\<rightarrow> (OneNode dn)"
     (* set of previously-accepted terms *)
-  fixes prevAccepted :: "nat \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
+  fixes prevAccepted :: "Slot \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> Term set"
   defines "prevAccepted i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto> }"
-  fixes lastCommittedClusterStateBefore :: "nat \<Rightarrow> ClusterState"
+  fixes lastCommittedClusterStateBefore :: "Slot \<Rightarrow> ClusterState"
   defines "lastCommittedClusterStateBefore i \<equiv>
     if \<exists> j < i. \<exists> cs. v\<^sub>c j = SetClusterState cs
     then THE cs. v\<^sub>c (GREATEST j. j < i \<and> (\<exists> cs. v\<^sub>c j = SetClusterState cs)) = SetClusterState cs
