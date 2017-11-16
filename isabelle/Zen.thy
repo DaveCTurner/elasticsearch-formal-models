@@ -3409,6 +3409,36 @@ proof -
   qed
 qed
 
+lemma (in zenStep) handleClientValue_invariants:
+  fixes x
+  defines "result \<equiv> handleClientValue x nd"
+  assumes nd': "nd' = fst result"
+  assumes messages': "messages' = send broadcast result"
+  shows "zen messages' nodeState'"
+proof (cases "electionValueState nd = ElectionValueFree")
+  case False
+  hence "handleClientValue x nd = (nd, None)" by (auto simp add: handleClientValue_def)
+  hence [simp]: "result = (nd, None)" by (simp add: result_def)
+  have [simp]: "messages' = messages" by (simp add: messages')
+  have [simp]: "nodeState' = nodeState" unfolding nodeState'_def by (intro ext, simp add: nd' nd_def)
+  from zen_axioms show ?thesis by simp
+next
+  case True
+  hence handleClientValue_eq[simp]: "handleClientValue x nd = publishValue x nd"
+    by (auto simp add: handleClientValue_def)
+
+  have result: "result = publishValue x nd"
+    unfolding result_def by simp
+
+  show ?thesis
+  proof (intro publishValue_invariants)
+    show "nd' = fst (publishValue x nd)" by (simp add: result nd')
+    show "messages' = send broadcast (publishValue x nd)" by (simp_all add: messages' result)
+    from True show "electionValueState nd = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue nd"
+      by simp
+  qed
+qed
+
 lemma (in zenStep) handleJoinRequest_invariants:
   fixes s i t a
   defines "result \<equiv> handleJoinRequest s i t a nd"
@@ -3422,17 +3452,9 @@ proof (cases "i \<le> firstUncommittedSlot nd
              \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
              \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)")
   case False
-  have [simp]: "result = (nd, None)"
-    unfolding result_def handleJoinRequest_def
-    by (simp add: False Let_def)
-
-  have [simp]: "messages' = messages"
-    by (simp add: messages')
-
-  have [simp]: "nodeState' = nodeState"
-    unfolding nodeState'_def
-    by (intro ext, simp add: nd' nd_def)
-
+  have [simp]: "result = (nd, None)" unfolding result_def handleJoinRequest_def by (simp add: False Let_def)
+  have [simp]: "messages' = messages" by (simp add: messages')
+  have [simp]: "nodeState' = nodeState" unfolding nodeState'_def by (intro ext, simp add: nd' nd_def)
   from zen_axioms show ?thesis by simp
 next
   case True
@@ -4212,31 +4234,11 @@ proof -
         unfolding result_def ProcessMessage_def ClientValue dest_True broadcast'_def by simp
 
       show ?thesis
-      proof (cases "electionValueState nd = ElectionValueFree") (* TODO this should be in a separate lemma, handleClientValue_invariants *)
-        case False
-        hence "handleClientValue x nd = (nd, None)"
-          by (auto simp add: handleClientValue_def)
-        hence "result = (nd, None)"
-          by (simp add: result broadcast'_def)
-        thus ?thesis by (intro noop)
-      next
-        case True
-        hence handleClientValue_eq[simp]: "handleClientValue x nd = publishValue x nd"
-          by (auto simp add: handleClientValue_def)
-
-        have result: "result = broadcast' (publishValue x nd)"
-          unfolding result_def ProcessMessage_def ClientValue dest_True broadcast'_def by simp
-
-        show ?thesis
-          unfolding nodeState'_def
-        proof (intro zenStep.publishValue_invariants [OF zenStep])
-          show "fst result = fst (publishValue x (nodeState n\<^sub>0))"
-            by (simp add: result)
-          show "messages' = send (\<lambda>msg. \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = msg\<rparr>) (publishValue x (nodeState n\<^sub>0))"
-            by (simp_all add: messages'_def result broadcast'_def publishValue_def)
-          from True show "electionValueState (nodeState n\<^sub>0) = ElectionValueForced \<Longrightarrow> x = lastAcceptedValue (nodeState n\<^sub>0)"
-            by simp
-        qed
+        unfolding nodeState'_def
+      proof (intro zenStep.handleClientValue_invariants [OF zenStep])
+        show "fst result = fst (handleClientValue x (nodeState n\<^sub>0))" by (simp add: result)
+        show "messages' = send (\<lambda>msg. \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = msg\<rparr>) (handleClientValue x (nodeState n\<^sub>0))"
+          by (auto simp add:  messages'_def result broadcast'_def handleClientValue_def publishValue_def)
       qed
 
     next
