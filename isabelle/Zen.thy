@@ -3409,6 +3409,142 @@ proof -
   qed
 qed
 
+lemma (in zenStep) handleJoinRequest_invariants:
+  fixes s i t a
+  defines "result \<equiv> handleJoinRequest s i t a nd"
+  assumes nd': "nd' = fst result"
+  assumes messages': "messages' = send broadcast result"
+  assumes sent: "s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
+  shows "zen messages' nodeState'"
+proof (cases "i \<le> firstUncommittedSlot nd
+             \<and> era\<^sub>t t = currentEra nd
+             \<and> currentTerm nd \<le> t
+             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)")
+  case False
+  have [simp]: "result = (nd, None)"
+    unfolding result_def handleJoinRequest_def
+    by (simp add: False Let_def)
+
+  have [simp]: "messages' = messages"
+    by (simp add: messages')
+
+  have [simp]: "nodeState' = nodeState"
+    unfolding nodeState'_def
+    by (intro ext, simp add: nd' nd_def)
+
+  from zen_axioms show ?thesis by simp
+next
+  case True
+  hence True': "i \<le> firstUncommittedSlot nd"
+    "era\<^sub>t t = currentEra nd"
+    "currentTerm nd \<le> t"
+    "currentTerm nd = t \<Longrightarrow> \<not> electionWon nd"
+    "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd"
+    by auto
+  hence False_eq: "(i \<le> firstUncommittedSlot nd
+             \<and> era\<^sub>t t = currentEra nd
+             \<and> currentTerm nd \<le> t
+             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
+             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)) = True"
+    by auto
+
+  define m where "m \<equiv> \<lparr> sender = s, destination = OneNode n\<^sub>0, payload = JoinRequest i t a \<rparr>"
+  from sent have m_message: "m \<in> messages" by (simp add: m_def isMessageFromTo_def)
+  have sender_m[simp]: "sender m = s" by (simp add: m_def)
+
+  define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
+  define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
+
+  have zen1: "zen messages nodeState1"
+    unfolding nodeState1_def
+  proof (intro zenStep.ensureCurrentTerm_invariants)
+    from m_message
+    show "zenStep messages nodeState messages m"
+      by (intro_locales, intro zenStep_axioms.intro, simp_all)
+
+    show "nd1 = ensureCurrentTerm t (nodeState n\<^sub>0)" by (simp add: nd1_def nd_def)
+  qed simp
+
+  note zenStep.zenStepI
+
+  from zen1 m_message
+  have zenStep1: "zenStep messages nodeState1 messages m"
+    by (intro_locales, simp_all add: zen_def zenStep_axioms_def)
+
+  define newVotes where "newVotes \<equiv> insert (sender m) (joinVotes nd1)"
+  define nd2 where "nd2 \<equiv> addElectionVote (sender m) i a nd1"
+  define nodeState2 where "\<And>n. nodeState2 n \<equiv> if n = n\<^sub>0 then nd2 else nodeState1 n"
+
+  have nd1[simp]: "nodeState1 n\<^sub>0 = nd1" by (simp add: nodeState1_def)
+
+  have currentNode_nd1[simp]: "currentNode nd1 = n\<^sub>0"
+    by (auto simp add: nd1_def ensureCurrentTerm_def nd_def currentNode_nodeState)
+
+  from True'
+  have currentTerm_nd1[simp]: "currentTerm nd1 = t"
+    by (auto simp add: nd1_def ensureCurrentTerm_def)
+
+  have currentEra_nd1[simp]: "currentEra nd1 = currentEra nd"
+    by (simp add: nd1_def ensureCurrentTerm_def)
+
+  have firstUncommittedSlot_nd1[simp]: "firstUncommittedSlot nd1 = firstUncommittedSlot nd"
+    by (simp add: nd1_def ensureCurrentTerm_def)
+
+  from True'
+  have electionWon_nd1[simp]: "\<not> electionWon nd1"
+    by (simp add: nd1_def ensureCurrentTerm_def)
+
+  have zen2: "zen messages nodeState2"
+    unfolding nodeState2_def
+    using `era\<^sub>t t = currentEra nd` `i \<le> firstUncommittedSlot nd`
+  proof (intro zenStep.addElectionVote_invariants)
+    from m_message zen1
+    show "zenStep messages nodeState1 messages m"
+      by (intro_locales, simp add: zen_def, intro zenStep_axioms.intro, simp_all)
+
+    show "nd2 = addElectionVote (sender m) i a (nodeState1 n\<^sub>0)" by (simp add: nd2_def)
+
+    from sent
+    show "\<lparr>sender = sender m, destination = OneNode n\<^sub>0, payload = JoinRequest i (currentTerm (nodeState1 n\<^sub>0)) a\<rparr> \<in> messages"
+      by (simp add: isMessageFromTo_def)
+
+    from True' show "maxTermOption a (lastAcceptedTerm (nodeState1 n\<^sub>0)) = lastAcceptedTerm (nodeState1 n\<^sub>0) \<or> i < firstUncommittedSlot (nodeState1 n\<^sub>0)"
+      by (simp add: nd1_def ensureCurrentTerm_def)
+
+  qed simp_all
+
+  from zen2 m_message messages_subset
+  have zenStep2: "zenStep messages nodeState2 messages' m"
+    by (intro_locales, simp_all add: zen_def zenStep_axioms_def)
+
+  from True'
+  have "handleJoinRequest (sender m) i t a nd = publishValue (lastAcceptedValue nd2) nd2"
+    apply (auto simp add: handleJoinRequest_def nd2_def nd1_def)         
+     apply metis
+    by metis
+  hence result: "result = publishValue (lastAcceptedValue nd2) nd2"
+    unfolding result_def ProcessMessage_def by simp
+
+  have nodeState': "nodeState' = (\<lambda>n. if n = n\<^sub>0 then fst result else nodeState2 n)"
+    by (intro ext, simp add: nodeState'_def nodeState2_def nodeState1_def nd')
+
+  have nd2[simp]: "nodeState2 n\<^sub>0 = nd2" by (simp add: nodeState2_def)
+
+  have currentNode_nd2[simp]: "currentNode nd2 = n\<^sub>0"
+    by (auto simp add: nd2_def addElectionVote_def Let_def)
+
+  show ?thesis
+    unfolding nodeState'
+  proof (intro zenStep.publishValue_invariants [OF zenStep2])
+    show "fst result = fst (publishValue (lastAcceptedValue nd2) (nodeState2 n\<^sub>0))"
+      by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: result publishValue_def)
+    show "lastAcceptedValue nd2 = lastAcceptedValue (nodeState2 n\<^sub>0)" by simp
+    show "messages' = send (\<lambda>msg. \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = msg\<rparr>) (publishValue (lastAcceptedValue nd2) (nodeState2 n\<^sub>0))"
+      by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: messages' broadcast_def result publishValue_def)
+  qed
+qed
+
 lemma (in zenStep) handlePublishResponse_invariants:
   fixes s i t
   defines "result \<equiv> handlePublishResponse s i t nd"
@@ -3920,6 +4056,18 @@ fun insertOption :: "RoutedMessage option \<Rightarrow> RoutedMessage set \<Righ
     "insertOption None = id"
   | "insertOption (Some m) = insert m"
 
+lemma currentNode_ensureCurrentTerm[simp]: "currentNode (ensureCurrentTerm t nd) = currentNode nd"
+  by (auto simp add: ensureCurrentTerm_def)
+
+lemma currentNode_publishValue[simp]: "currentNode (fst (publishValue x nd)) = currentNode nd"
+  by (auto simp add: publishValue_def)
+
+lemma currentNode_addElectionVote[simp]: "currentNode (addElectionVote s i a nd) = currentNode nd"
+  by (auto simp add: addElectionVote_def Let_def)
+
+lemma currentNode_handleJoinRequest[simp]: "currentNode (fst (handleJoinRequest s i t a nd)) = currentNode nd"
+  by (auto simp add: handleJoinRequest_def Let_def)
+
 text \<open>\pagebreak\<close>
 
 lemma initial_state_satisfies_invariants:
@@ -4038,120 +4186,23 @@ proof -
         using isMessageTo_def apply fastforce
         by auto
 
+      have result: "result = broadcast' (handleJoinRequest (sender m) i t a nd)"
+        unfolding result_def ProcessMessage_def JoinRequest dest_True broadcast'_def by simp
+
       show ?thesis
-      proof (cases "i \<le> firstUncommittedSlot nd
-             \<and> era\<^sub>t t = currentEra nd
-             \<and> currentTerm nd \<le> t
-             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)")
-        case False
-        have "result = (nd, None)"
-        unfolding result_def ProcessMessage_def dest_True JoinRequest
-          by (simp add: handleJoinRequest_def False)
-        thus ?thesis by (intro noop)
-      next
-        case True
-        hence True': "i \<le> firstUncommittedSlot nd"
-          "era\<^sub>t t = currentEra nd"
-          "currentTerm nd \<le> t"
-          "currentTerm nd = t \<Longrightarrow> \<not> electionWon nd"
-          "maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd"
-          by auto
-        hence False_eq: "(i \<le> firstUncommittedSlot nd
-             \<and> era\<^sub>t t = currentEra nd
-             \<and> currentTerm nd \<le> t
-             \<and> (currentTerm nd = t \<longrightarrow> \<not> electionWon nd)
-             \<and> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<or> i < firstUncommittedSlot nd)) = True"
-          by auto
+        unfolding nodeState'_def
+      proof (intro zenStep.handleJoinRequest_invariants [OF zenStep])
+        show "fst result = fst (handleJoinRequest (sender m) i t a (nodeState n\<^sub>0))"
+          by (simp add: result)
 
-        (* TODO this should be in a separate lemma, handleJoinRequest_invariants *)
+        from currentNode_handleJoinRequest [of "sender m" i t a nd]
+        show "messages' = send (\<lambda>msg. \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = msg\<rparr>) (handleJoinRequest (sender m) i t a (nodeState n\<^sub>0))"
+          apply (cases "handleJoinRequest (sender m) i t a nd", cases "snd (handleJoinRequest (sender m) i t a nd)")
+          by (auto simp add: messages'_def result broadcast'_def commitIfQuorate_def)
 
-        define nd1 where "nd1 \<equiv> ensureCurrentTerm t nd"
-        define nodeState1 where "\<And>n. nodeState1 n \<equiv> if n = n\<^sub>0 then nd1 else nodeState n"
-
-        have zen1: "zen messages nodeState1"
-          unfolding nodeState1_def
-        proof (intro zenStep.ensureCurrentTerm_invariants)
-          from `m \<in> messages`
-          show "zenStep messages nodeState messages m"
-            by (intro_locales, intro zenStep_axioms.intro, simp_all)
-
-          show "nd1 = ensureCurrentTerm t (nodeState n\<^sub>0)" by (simp add: nd1_def)
-        qed simp
-
-        from zen1
-        have zenStep1: "zenStep messages nodeState1 messages' m" by (intro zenStepI)
-
-        define newVotes where "newVotes \<equiv> insert (sender m) (joinVotes nd1)"
-        define nd2 where "nd2 \<equiv> addElectionVote (sender m) i a nd1"
-        define nodeState2 where "\<And>n. nodeState2 n \<equiv> if n = n\<^sub>0 then nd2 else nodeState1 n"
-
-        have nd1[simp]: "nodeState1 n\<^sub>0 = nd1" by (simp add: nodeState1_def)
-
-        have currentNode_nd1[simp]: "currentNode nd1 = n\<^sub>0"
-          by (auto simp add: nd1_def ensureCurrentTerm_def)
-
-        from True'
-        have currentTerm_nd1[simp]: "currentTerm nd1 = t"
-          by (auto simp add: nd1_def ensureCurrentTerm_def)
-
-        have currentEra_nd1[simp]: "currentEra nd1 = currentEra nd"
-          by (simp add: nd1_def ensureCurrentTerm_def)
-
-        have firstUncommittedSlot_nd1[simp]: "firstUncommittedSlot nd1 = firstUncommittedSlot nd"
-          by (simp add: nd1_def ensureCurrentTerm_def)
-
-        from True'
-        have electionWon_nd1[simp]: "\<not> electionWon nd1"
-          by (simp add: nd1_def ensureCurrentTerm_def)
-
-        have zen2: "zen messages nodeState2"
-          unfolding nodeState2_def
-          using `era\<^sub>t t = currentEra nd` `i \<le> firstUncommittedSlot nd`
-        proof (intro zenStep.addElectionVote_invariants)
-          from `m \<in> messages` zen1
-          show "zenStep messages nodeState1 messages m"
-            by (intro_locales, simp add: zen_def, intro zenStep_axioms.intro, simp_all)
-
-          show "nd2 = addElectionVote (sender m) i a (nodeState1 n\<^sub>0)" by (simp add: nd2_def)
-
-          from m
-          show "\<lparr>sender = sender m, destination = OneNode n\<^sub>0, payload = JoinRequest i (currentTerm (nodeState1 n\<^sub>0)) a\<rparr> \<in> messages"
-            by (simp add: isMessageFromTo_def)
-
-          from True' show "maxTermOption a (lastAcceptedTerm (nodeState1 n\<^sub>0)) = lastAcceptedTerm (nodeState1 n\<^sub>0) \<or> i < firstUncommittedSlot (nodeState1 n\<^sub>0)"
-            by (simp add: nd1_def ensureCurrentTerm_def)
-
-        qed simp_all
-
-        from zen2
-        have zenStep2: "zenStep messages nodeState2 messages' m" by (intro zenStepI)
-
-        from True'
-        have "handleJoinRequest (sender m) i t a nd = publishValue (lastAcceptedValue nd2) nd2"
-          apply (auto simp add: handleJoinRequest_def nd2_def nd1_def)         
-          apply metis
-          by metis
-        hence result: "result = broadcast' (publishValue (lastAcceptedValue nd2) nd2)"
-          unfolding result_def ProcessMessage_def dest_True JoinRequest broadcast'_def by simp
-
-        have nodeState': "nodeState' = (\<lambda>n. if n = n\<^sub>0 then fst result else nodeState2 n)"
-          by (intro ext, simp add: nodeState'_def nodeState2_def nodeState1_def)
-
-        have nd2[simp]: "nodeState2 n\<^sub>0 = nd2" by (simp add: nodeState2_def)
-
-        have currentNode_nd2[simp]: "currentNode nd2 = n\<^sub>0"
-          by (auto simp add: nd2_def addElectionVote_def Let_def)
-
-        show ?thesis
-          unfolding nodeState'
-        proof (intro zenStep.publishValue_invariants [OF zenStep2])
-          show "fst result = fst (publishValue (lastAcceptedValue nd2) (nodeState2 n\<^sub>0))"
-            by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: result publishValue_def broadcast'_def)
-          show "lastAcceptedValue nd2 = lastAcceptedValue (nodeState2 n\<^sub>0)" by simp
-          show "messages' = send (\<lambda>msg. \<lparr>sender = n\<^sub>0, destination = Broadcast, payload = msg\<rparr>) (publishValue (lastAcceptedValue nd2) (nodeState2 n\<^sub>0))"
-            by (cases "electionWon nd2 \<and> publishPermitted nd2", simp_all add: messages'_def result broadcast'_def publishValue_def)
-        qed
+        from m
+        show "\<lparr>sender = sender m, destination = OneNode n\<^sub>0, payload = JoinRequest i t a\<rparr> \<in> messages"
+          by (auto simp add: JoinRequest isMessageFromTo_def)
       qed
 
     next
