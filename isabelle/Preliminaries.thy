@@ -6,12 +6,6 @@ theory Preliminaries
   imports Main
 begin
 
-subsection \<open>Eras\<close>
-
-text \<open>Eras are identified by natural numbers.\<close>
-
-type_synonym Era = nat
-
 subsection \<open>Slots\<close>
 
 text \<open>Slots are identified by natural numbers.\<close>
@@ -20,52 +14,9 @@ type_synonym Slot = nat
 
 subsection \<open>Terms\<close>
 
-subsubsection \<open>Definitions\<close>
+text \<open>Terms are identified by natural numbers.\<close>
 
-text \<open>Terms are pairs of an @{type Era} together with an \textit{election number} within the era.\<close>
-
-datatype Term = Term Era nat
-
-fun era\<^sub>t :: "Term \<Rightarrow> Era" where "era\<^sub>t (Term e _) = e"
-fun termInEra :: "Term \<Rightarrow> nat" where "termInEra (Term _ n) = n"
-
-text \<open>Terms are ordered lexicographically:\<close>
-
-instantiation Term :: linorder
-begin
-definition less_Term where "t\<^sub>1 < t\<^sub>2 \<equiv> (t\<^sub>1, t\<^sub>2) \<in> measures [era\<^sub>t, termInEra]"
-definition less_eq_Term where "(t\<^sub>1::Term) \<le> t\<^sub>2 \<equiv> (t\<^sub>1 < t\<^sub>2 \<or> t\<^sub>1 = t\<^sub>2)"
-instance proof
-  fix x y :: Term
-  show "x \<le> y \<or> y \<le> x"
-    apply (cases x, cases y)
-    by (auto simp add: less_Term_def less_eq_Term_def)
-qed (auto simp add: less_Term_def less_eq_Term_def)
-end
-
-lemma lt_term: "t\<^sub>1 < t\<^sub>2 = (era\<^sub>t t\<^sub>1 < era\<^sub>t t\<^sub>2
-      \<or> (era\<^sub>t t\<^sub>1 = era\<^sub>t t\<^sub>2 \<and> (termInEra t\<^sub>1 < termInEra t\<^sub>2)))"
-  by (cases t\<^sub>1, cases t\<^sub>2, simp add: less_Term_def)
-
-lemma era\<^sub>t_mono: "t\<^sub>1 \<le> t\<^sub>2 \<Longrightarrow> era\<^sub>t t\<^sub>1 \<le> era\<^sub>t t\<^sub>2" using less_eq_Term_def lt_term by auto
-
-text \<open>Terms support wellfounded induction:\<close>
-
-lemma term_induct [case_names less]:
-  fixes t :: Term
-  assumes "\<And>t\<^sub>1. (\<forall> t\<^sub>2. t\<^sub>2 < t\<^sub>1 \<longrightarrow> P t\<^sub>2) \<Longrightarrow> P t\<^sub>1"
-  shows "P t"
-proof -
-  have p: "{ (t\<^sub>1, t\<^sub>2). t\<^sub>1 < t\<^sub>2 } = measures [era\<^sub>t, termInEra]"
-    by (auto simp add: less_Term_def)
-
-  have term_lt_wf: "wf { (t\<^sub>1, t\<^sub>2). t\<^sub>1 < (t\<^sub>2 :: Term) }"
-    by (unfold p, simp)
-
-  show ?thesis
-    using assms
-    apply (rule wf_induct [OF term_lt_wf]) by auto
-qed
+type_synonym Term = nat
 
 subsubsection \<open>Maximum term of a set\<close>
 

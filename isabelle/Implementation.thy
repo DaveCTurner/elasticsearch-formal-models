@@ -19,7 +19,7 @@ message refers to a slot number.\<close>
 
 datatype Message
   = StartJoin Term
-  | JoinRequest Slot Term "Term option" (* TODO the second term, if present, is in the same era as the first, so just use its termInEra *)
+  | JoinRequest Slot Term "Term option"
   | ClientValue Value
   | PublishRequest Slot Term Value
   | PublishResponse Slot Term
@@ -103,11 +103,10 @@ record NodeData =
   currentNode :: Node (* identity of this node *)
   firstUncommittedSlot :: Slot (* all slots strictly below this one are committed *)
   currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
-  currentEra :: Era (* era of the firstUncommittedSlot slot *) (* TODO just use "era\<^sub>t currentTerm" *)
   currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set set" *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
-  lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *) (* TODO use the era\<^sub>t of currentTerm *)
+  lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *)
   lastAcceptedValue :: Value (* value accepted in lastAcceptedTerm, or NoOp *)
   (* election data *)
   joinVotes :: "Node set" (* set of nodes that have sent a JoinRequest for the current currentTerm *)
@@ -171,7 +170,6 @@ definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeDa
   where
     "handleStartJoin t nd \<equiv>
         if currentTerm nd < t 
-             \<and> era\<^sub>t t = currentEra nd
              \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' < t)
           then ( ensureCurrentTerm t nd
                , Some (JoinRequest (firstUncommittedSlot nd)
@@ -186,7 +184,6 @@ definition handleJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Ri
   where
     "handleJoinRequest s i t a nd \<equiv>
          if t = currentTerm nd
-             \<and> era\<^sub>t t = currentEra nd
              \<and> \<not> electionWon nd
              \<and> (i < firstUncommittedSlot nd
                 \<or> (i = firstUncommittedSlot nd
@@ -239,8 +236,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
     "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
         NoOp \<Rightarrow> nd
       | Reconfigure Q \<Rightarrow> nd
-          \<lparr> currentEra := currentEra nd + 1 (* TODO also update term to Term 0 in the next era *)
-          , currentConfiguration := Q
+          \<lparr> currentConfiguration := Q
           , joinVotes := {}
           , electionWon := False
           , electionValueForced := False \<rparr>
@@ -271,7 +267,6 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       \<lparr> currentNode = currentNode nd
       , firstUncommittedSlot = firstUncommittedSlot nd
       , currentTerm = currentTerm nd
-      , currentEra = currentEra nd
       , currentConfiguration = currentConfiguration nd
       , currentClusterState = currentClusterState nd
       , lastAcceptedTerm = lastAcceptedTerm nd
@@ -325,8 +320,7 @@ definition initialNodeState :: "Node \<Rightarrow> NodeData"
   where "initialNodeState n =
       \<lparr> currentNode = n
       , firstUncommittedSlot = 0
-      , currentTerm = Term 0 0
-      , currentEra = 0
+      , currentTerm = 0
       , currentConfiguration = Abs_Configuration Q\<^sub>0
       , currentClusterState = ClusterState 0
       , lastAcceptedTerm = None
