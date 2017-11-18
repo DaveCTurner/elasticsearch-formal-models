@@ -240,7 +240,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
           , joinVotes := {}
           , electionWon := False
           , electionValueForced := False \<rparr>
-      | SetClusterState s \<Rightarrow> nd \<lparr> currentClusterState := s \<rparr>"
+      | ClusterStateDiff diff \<Rightarrow> nd \<lparr> currentClusterState := diff (currentClusterState nd) \<rparr>"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
 and \texttt{ClusterState} via the @{term applyValue} method. It yields no messages.\<close>

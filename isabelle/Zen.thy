@@ -52,7 +52,7 @@ locale zenMessages =
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto> }"
   fixes lastCommittedClusterStateBefore :: "Slot \<Rightarrow> ClusterState"
   defines "lastCommittedClusterStateBefore \<equiv> nat_inductive_def (ClusterState 0)
-      (\<lambda>i CSi. case v\<^sub>c i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> CSi)"
+      (\<lambda>i CSi. case v\<^sub>c i of ClusterStateDiff diff \<Rightarrow> diff CSi | _ \<Rightarrow> CSi)"
 
     (* ASSUMPTIONS *)
   assumes JoinRequest_future:
@@ -102,8 +102,8 @@ lemma (in zenMessages) Q_simps[simp]:
 
 lemma (in zenMessages) lastCommittedClusterStateBefore_simps[simp]:
   "lastCommittedClusterStateBefore 0 = ClusterState 0"
-  "lastCommittedClusterStateBefore (Suc i) = (case v\<^sub>c i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> lastCommittedClusterStateBefore i)"
-  unfolding lastCommittedClusterStateBefore_def by simp_all
+  "lastCommittedClusterStateBefore (Suc i) = (case v\<^sub>c i of ClusterStateDiff diff \<Rightarrow> diff | _ \<Rightarrow> id) (lastCommittedClusterStateBefore i)"
+  unfolding lastCommittedClusterStateBefore_def by (simp, cases "v\<^sub>c i", auto)
 
 declare [[goals_limit = 40]]
 
@@ -409,7 +409,7 @@ locale zenStep = zen +
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto>' }"
   fixes lastCommittedClusterStateBefore' :: "nat \<Rightarrow> ClusterState"
   defines "lastCommittedClusterStateBefore' \<equiv> nat_inductive_def (ClusterState 0)
-      (\<lambda>i CSi. case v\<^sub>c' i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> CSi)"
+      (\<lambda>i CSi. case v\<^sub>c' i of ClusterStateDiff diff \<Rightarrow> diff CSi | _ \<Rightarrow> CSi)"
   fixes sendTo :: "Destination \<Rightarrow> (NodeData * Message option) \<Rightarrow> RoutedMessage set"
   defines "sendTo d result \<equiv> case snd result of
     None \<Rightarrow> messages | Some m \<Rightarrow> insert \<lparr> sender = n\<^sub>0, destination = d, payload = m \<rparr> messages"
@@ -424,8 +424,8 @@ lemma (in zenStep) Q'_simps[simp]:
 
 lemma (in zenStep) lastCommittedClusterStateBefore'_simps[simp]:
   "lastCommittedClusterStateBefore' 0 = ClusterState 0"
-  "lastCommittedClusterStateBefore' (Suc i) = (case v\<^sub>c' i of SetClusterState cs \<Rightarrow> cs | _ \<Rightarrow> lastCommittedClusterStateBefore' i)"
-  unfolding lastCommittedClusterStateBefore'_def by simp_all
+  "lastCommittedClusterStateBefore' (Suc i) = (case v\<^sub>c' i of ClusterStateDiff diff \<Rightarrow> diff | _ \<Rightarrow> id) (lastCommittedClusterStateBefore' i)"
+  unfolding lastCommittedClusterStateBefore'_def by (simp, cases "v\<^sub>c' i", auto)
 
 lemma (in zenStep) sendTo_simps[simp]:
   "sendTo d (nd'', None) = messages"
@@ -2296,7 +2296,7 @@ next
       thus "\<And>n. ?thesis n"
         by (unfold nodeState'_def, auto simp add: lastAcceptedValue_eq nd_def nd' applyAcceptedValue_def isQuorum_def handleApplyCommit_def)
     next
-      case SetClusterState
+      case ClusterStateDiff
       thus "\<And>n. ?thesis n"
         by (unfold nodeState'_def, auto simp add: lastAcceptedValue_eq nd_def nd' applyAcceptedValue_def isQuorum_def handleApplyCommit_def)
     next
@@ -2322,7 +2322,7 @@ next
       with i t show "\<And>n. ?thesis n"
         by (unfold nodeState'_def, auto simp add: lastAcceptedValue_eq nd_def nd' applyAcceptedValue_def isQuorum_def handleApplyCommit_def)
     next
-      case SetClusterState
+      case ClusterStateDiff
       with i t show "\<And>n. ?thesis n"
         by (unfold nodeState'_def, auto simp add: lastAcceptedValue_eq nd_def nd' applyAcceptedValue_def isQuorum_def handleApplyCommit_def)
     next
@@ -2428,9 +2428,9 @@ next
         next
           case Reconfigure with False show ?thesis by simp
         next
-          case (SetClusterState sc)
-          with lastAcceptedValue_eq have "lastAcceptedValue nd = SetClusterState sc" by simp
-          with SetClusterState True i t
+          case (ClusterStateDiff diff)
+          with lastAcceptedValue_eq have "lastAcceptedValue nd = ClusterStateDiff diff" by simp
+          with ClusterStateDiff True i t currentClusterState_lastCommittedClusterStateBefore
           show ?thesis
             unfolding nodeState'_def
             by (simp add: nd' nd_def applyAcceptedValue_def handleApplyCommit_def)
