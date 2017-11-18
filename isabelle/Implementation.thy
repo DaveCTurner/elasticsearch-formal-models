@@ -24,6 +24,8 @@ datatype Message
   | PublishRequest Slot Term Value
   | PublishResponse Slot Term
   | ApplyCommit Slot Term
+  | CatchUpRequest
+  | CatchUpResponse Slot Configuration ClusterState
   | Reboot
 (* TODO also need a message to represent a catch-up *)
 
@@ -258,6 +260,27 @@ definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData 
                      , publishVotes := {} \<rparr>
           else nd"
 
+definition handleCatchUpRequest :: "NodeData \<Rightarrow> (NodeData * Message option)"
+  where
+    "handleCatchUpRequest nd = (nd, Some (CatchUpResponse (firstUncommittedSlot nd)
+                                              (currentConfiguration nd) (currentClusterState nd)))"
+
+definition handleCatchUpResponse :: "Slot \<Rightarrow> Configuration \<Rightarrow> ClusterState \<Rightarrow> NodeData \<Rightarrow> NodeData"
+  where
+    "handleCatchUpResponse i conf cs nd \<equiv>
+      if firstUncommittedSlot nd < i
+        then nd \<lparr> firstUncommittedSlot := i
+                , lastAcceptedValue := NoOp
+                , lastAcceptedTerm := None
+                , publishPermitted := False
+                , electionValueForced := False
+                , publishVotes := {}
+                , currentConfiguration := conf
+                , currentClusterState := cs
+                , joinVotes := {}
+                , electionWon := False \<rparr>
+        else nd"
+
 text \<open>A @{term Reboot} message simulates the effect of a reboot, discarding any ephemeral state but
 preserving the persistent state. It yields no messages.\<close>
 
@@ -309,6 +332,10 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
               \<Rightarrow> respondToAll (handlePublishResponse (sender msg) i t nd)
           | ApplyCommit i t
               \<Rightarrow> (handleApplyCommit i t nd, None)
+          | CatchUpRequest
+              \<Rightarrow> respondToSender (handleCatchUpRequest nd)
+          | CatchUpResponse i conf cs
+              \<Rightarrow> (handleCatchUpResponse i conf cs nd, None)
           | Reboot
               \<Rightarrow> (handleReboot nd, None)
         else (nd, None)"
