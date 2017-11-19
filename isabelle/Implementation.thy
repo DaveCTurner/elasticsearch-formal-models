@@ -217,7 +217,6 @@ definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value 
     "handlePublishRequest i t x nd \<equiv>
           if i = firstUncommittedSlot nd
                 \<and> t = currentTerm nd
-                \<and> \<not> electionValueForced nd
           then ( nd \<lparr> lastAcceptedTerm := Some t,
                       lastAcceptedValue := x \<rparr>
                , Some (PublishResponse i t))
