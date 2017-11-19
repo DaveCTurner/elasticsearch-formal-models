@@ -171,7 +171,6 @@ definition handleStartJoin :: "Term \<Rightarrow> NodeData \<Rightarrow> (NodeDa
   where
     "handleStartJoin t nd \<equiv>
         if currentTerm nd < t 
-             \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' < t)
           then ( ensureCurrentTerm t nd
                , Some (JoinRequest (firstUncommittedSlot nd)
                                      t
@@ -218,7 +217,6 @@ definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value 
     "handlePublishRequest i t x nd \<equiv>
           if i = firstUncommittedSlot nd
                 \<and> t = currentTerm nd
-                \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t)
                 \<and> \<not> electionValueForced nd
           then ( nd \<lparr> lastAcceptedTerm := Some t,
                       lastAcceptedValue := x \<rparr>

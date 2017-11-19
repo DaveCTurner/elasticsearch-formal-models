@@ -1030,7 +1030,7 @@ lemma (in zenStep) handleStartJoin_invariants:
   assumes sent: "s \<midarrow>\<langle> StartJoin t \<rangle>\<leadsto>"
   assumes messages': "messages' = sendTo (OneNode s) result"
   shows "zen messages' nodeState'"
-proof (cases "currentTerm nd < t \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' < t)")
+proof (cases "currentTerm nd < t")
   case False
   hence result: "result = (nd, None)" by (simp add: result_def handleStartJoin_def)
   have "messages' = messages" by (auto simp add: messages' result)
@@ -1076,7 +1076,7 @@ next
   proof (intro zenStep.sendJoinRequest_invariants [OF zenStep1], unfold nd'_eq currentTerm_nd', simp_all add: messages' result)
     show "\<And>i a. \<forall>d. \<lparr>sender = n\<^sub>0, destination = d, payload = JoinRequest i t a\<rparr> \<notin> messages"
       using nd_def new_term zen.JoinRequest_currentTerm zen_axioms by fastforce
-    show "\<And>t'. lastAcceptedTerm nd = Some t' \<Longrightarrow> t' < t" using True by auto
+    show "\<And>t'. lastAcceptedTerm nd = Some t' \<Longrightarrow> t' < t" using True lastAcceptedTerm_Some_currentTerm unfolding nd_def by fastforce
   qed
 qed
 
@@ -1702,7 +1702,7 @@ lemma (in zenStep) handlePublishRequest_invariants:
   assumes messages': "messages' = sendTo (OneNode s) result"
   assumes sent: "s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>"
   shows "zen messages' nodeState'"
-proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t) \<and> \<not> electionValueForced nd")
+proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd \<and> \<not> electionValueForced nd")
   case False
   hence [simp]: "result = (nd, None)"
     by (simp add: result_def handlePublishRequest_def)
@@ -1840,8 +1840,8 @@ next
       by (metis nd'_def nodeState_unchanged option.inject)
 
     from lastAcceptedTerm_Some_max show "\<And>n t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>' \<Longrightarrow> t' \<le> t" 
-      using precondition property_simps unfolding PublishResponse' nd_def 
-      by (smt Pair_inject case_optionE dual_order.trans lastAcceptedTerm_None less_or_eq_imp_le nd'_def nodeState_unchanged option.inject)
+      using precondition property_simps unfolding PublishResponse' nd_def
+      by (metis Pair_inject dual_order.trans lastAcceptedTerm_None lastAcceptedTerm_Some_currentTerm nd'_def nodeState_unchanged not_None_eq option.inject order_refl)
 
     from electionValueForced_JoinRequest show "\<And>n. electionValueForced (nodeState n) \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)"
       using precondition property_simps unfolding PublishResponse' nd_def 
