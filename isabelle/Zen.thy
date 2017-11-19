@@ -1072,7 +1072,6 @@ qed
 lemma (in zenStep) addElectionVote_invariants:
   assumes nd': "nd' = addElectionVote s i a nd"
   assumes messages': "messages' = messages"
-  assumes not_won: "\<not> electionWon nd"
   assumes sent: "s \<midarrow>\<langle> JoinRequest i (currentTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
   assumes precondition:
     "i < firstUncommittedSlot nd
@@ -1603,7 +1602,6 @@ lemma (in zenStep) handleJoinRequest_invariants:
   assumes sent: "s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<rightarrow> (OneNode n\<^sub>0)"
   shows "zen messages' nodeState'"
 proof (cases "t = currentTerm nd
-             \<and> \<not> electionWon nd
              \<and> (i < firstUncommittedSlot nd
                 \<or> (i = firstUncommittedSlot nd
                     \<and> (a = None 
@@ -1619,7 +1617,6 @@ next
   case True
   hence True': "i \<le> firstUncommittedSlot nd"
     "t = currentTerm nd"
-    "\<not> electionWon nd"
     "i < firstUncommittedSlot nd \<or> (i = firstUncommittedSlot nd \<and> (a = None \<or> a = lastAcceptedTerm nd \<or> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<and> electionValueForced nd)))"
     by auto
 
@@ -1637,7 +1634,6 @@ next
   proof (intro zenStep.zenStepI1 [OF zenStep1] zenStep.addElectionVote_invariants [OF zenStep1] refl messages_subset,
       fold nd_def isMessageFromTo_def)
     show "nodeState1 n\<^sub>0 = addElectionVote s i a nd" by (simp add: nodeState1_def nd1_def)
-    from True' show "\<not> electionWon nd" by simp
     from True' sent show "s \<midarrow>\<langle> JoinRequest i (currentTerm nd) a \<rangle>\<rightarrow> (OneNode n\<^sub>0)" by simp
     from True' show "i < firstUncommittedSlot nd \<or> i = firstUncommittedSlot nd \<and> (a = None \<or> a = lastAcceptedTerm nd \<or> maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd \<and> electionValueForced nd)" by simp
     show "\<And>n. n \<noteq> n\<^sub>0 \<Longrightarrow> nodeState1 n = nodeState' n" unfolding nodeState1_def nodeState'_def by simp

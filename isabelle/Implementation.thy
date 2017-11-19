@@ -185,7 +185,6 @@ definition handleJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Ri
   where
     "handleJoinRequest s i t a nd \<equiv>
          if t = currentTerm nd
-             \<and> \<not> electionWon nd
              \<and> (i < firstUncommittedSlot nd
                 \<or> (i = firstUncommittedSlot nd
                     \<and> (a = None 
@@ -202,7 +201,6 @@ lemma handleJoinRequest_recurse:
         then handleJoinRequest s (firstUncommittedSlot nd) t None nd
         else if t = currentTerm nd
               \<and> i = firstUncommittedSlot nd
-              \<and> \<not> electionWon nd
               \<and> (a = None 
                   \<or> a = lastAcceptedTerm nd
                   \<or> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd
