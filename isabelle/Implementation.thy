@@ -25,7 +25,7 @@ datatype Message
   | PublishResponse Slot Term
   | ApplyCommit Slot Term
   | CatchUpRequest
-  | CatchUpResponse Slot Configuration ClusterState
+  | CatchUpResponse Slot "Node set" ClusterState
   | Reboot
 
 text \<open>Some prose descriptions of these messages follows, in order to give a bit more of an
@@ -104,7 +104,7 @@ record NodeData =
   currentNode :: Node (* identity of this node *)
   firstUncommittedSlot :: Slot (* all slots strictly below this one are committed *)
   currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
-  currentConfiguration :: Configuration (* configuration of the currentEra *) (* TODO just use "Node set set" *)
+  currentVotingNodes :: "Node set" (* configuration of the currentEra - the set of voting nodes *)
   currentClusterState :: ClusterState (* last-committed cluster state *)
   (* acceptor data *)
   lastAcceptedTerm :: "Term option" (* term that was last accepted in this slot, if any *)
@@ -118,7 +118,7 @@ record NodeData =
   publishVotes :: "Node set"
 
 definition isQuorum :: "NodeData \<Rightarrow> Node set \<Rightarrow> bool"
-  where "isQuorum nd q \<equiv> q \<in> Rep_Configuration (currentConfiguration nd)"
+  where "isQuorum nd q \<equiv> q \<in> majorities (currentVotingNodes nd)"
 
 text \<open>This method publishes a value via a @{term PublishRequest} message.\<close>
 
@@ -251,8 +251,8 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
   where
     "applyAcceptedValue nd \<equiv> case lastAcceptedValue nd of
         NoOp \<Rightarrow> nd
-      | Reconfigure Q \<Rightarrow> nd
-          \<lparr> currentConfiguration := Q
+      | Reconfigure votingNodes \<Rightarrow> nd
+          \<lparr> currentVotingNodes := set votingNodes
           , joinVotes := {}
           , electionWon := False
           , electionValueForced := False \<rparr>
@@ -277,9 +277,9 @@ definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData 
 definition handleCatchUpRequest :: "NodeData \<Rightarrow> (NodeData * Message option)"
   where
     "handleCatchUpRequest nd = (nd, Some (CatchUpResponse (firstUncommittedSlot nd)
-                                              (currentConfiguration nd) (currentClusterState nd)))"
+                                              (currentVotingNodes nd) (currentClusterState nd)))"
 
-definition handleCatchUpResponse :: "Slot \<Rightarrow> Configuration \<Rightarrow> ClusterState \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition handleCatchUpResponse :: "Slot \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
     "handleCatchUpResponse i conf cs nd \<equiv>
       if firstUncommittedSlot nd < i
@@ -289,7 +289,7 @@ definition handleCatchUpResponse :: "Slot \<Rightarrow> Configuration \<Rightarr
                 , publishPermitted := False
                 , electionValueForced := False
                 , publishVotes := {}
-                , currentConfiguration := conf
+                , currentVotingNodes := conf
                 , currentClusterState := cs
                 , joinVotes := {}
                 , electionWon := False \<rparr>
@@ -304,7 +304,7 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
       \<lparr> currentNode = currentNode nd
       , firstUncommittedSlot = firstUncommittedSlot nd
       , currentTerm = currentTerm nd
-      , currentConfiguration = currentConfiguration nd
+      , currentVotingNodes = currentVotingNodes nd
       , currentClusterState = currentClusterState nd
       , lastAcceptedTerm = lastAcceptedTerm nd
       , lastAcceptedValue = lastAcceptedValue nd
@@ -362,7 +362,7 @@ definition initialNodeState :: "Node \<Rightarrow> NodeData"
       \<lparr> currentNode = n
       , firstUncommittedSlot = 0
       , currentTerm = 0
-      , currentConfiguration = Abs_Configuration Q\<^sub>0
+      , currentVotingNodes = V\<^sub>0
       , currentClusterState = ClusterState 0
       , lastAcceptedTerm = None
       , lastAcceptedValue = NoOp

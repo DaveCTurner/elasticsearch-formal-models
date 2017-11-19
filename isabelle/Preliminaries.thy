@@ -86,28 +86,47 @@ text \<open>It is useful to be able to talk about whether sets-of-sets-of nodes 
 definition intersects :: "Node set set \<Rightarrow> Node set set \<Rightarrow> bool" (infixl "\<frown>" 50)
   where "A \<frown> B \<equiv> \<forall> a \<in> A. \<forall> b \<in> B. a \<inter> b \<noteq> {}"
 
-text \<open>A configuration of the system defines the sets of master-eligible nodes that can be counted as a quorum.
-The initial configuration of the system is fixed to some arbitrary (valid) value.\<close>
+definition majorities :: "Node set \<Rightarrow> Node set set"
+  where "majorities votingNodes = { q. card votingNodes < card (q \<inter> votingNodes) * 2 }"
 
-definition Q\<^sub>0 :: "Node set set" where "Q\<^sub>0 \<equiv> SOME Q. Q \<frown> Q"
+lemma majorities_nonempty: assumes "q \<in> majorities Q" shows "q \<noteq> {}"
+  using assms by (auto simp add: majorities_def)
 
-lemma Q\<^sub>0_intersects: "Q\<^sub>0 \<frown> Q\<^sub>0"
-proof -
-  define P :: "Node set set \<Rightarrow> bool" where "\<And>Q. P Q \<equiv> Q \<frown> Q"
-  have Q\<^sub>0_eq: "Q\<^sub>0 = (SOME Q. P Q)" by (simp add: P_def Q\<^sub>0_def)
-  have "P Q\<^sub>0" proof (unfold Q\<^sub>0_eq, intro someI)
-    show "P {}" by (auto simp add: P_def intersects_def)
+lemma majorities_member: assumes "q \<in> majorities Q" obtains n where "n \<in> q"
+  using majorities_nonempty assms by fastforce
+
+lemma majorities_intersect:
+  assumes "finite votingNodes"
+  shows "majorities votingNodes \<frown> majorities votingNodes"
+  unfolding intersects_def
+proof (intro ballI notI)
+  fix q\<^sub>1 assume q\<^sub>1: "q\<^sub>1 \<in> majorities votingNodes"
+  fix q\<^sub>2 assume q\<^sub>2: "q\<^sub>2 \<in> majorities votingNodes"
+  assume disj: "q\<^sub>1 \<inter> q\<^sub>2 = {}"
+
+  have 1: "card ((q\<^sub>1 \<inter> votingNodes) \<union> (q\<^sub>2 \<inter> votingNodes)) = card (q\<^sub>1 \<inter> votingNodes) + card (q\<^sub>2 \<inter> votingNodes)"
+  proof (intro card_Un_disjoint)
+    from assms show "finite (q\<^sub>1 \<inter> votingNodes)" by simp
+    from assms show "finite (q\<^sub>2 \<inter> votingNodes)" by simp
+    from disj show "q\<^sub>1 \<inter> votingNodes \<inter> (q\<^sub>2 \<inter> votingNodes) = {}" by auto
   qed
-  thus ?thesis by (simp add: P_def)
+
+  have "card ((q\<^sub>1 \<inter> votingNodes) \<union> (q\<^sub>2 \<inter> votingNodes)) \<le> card votingNodes" by (simp add: assms card_mono)
+  hence 2: "2 * card (q\<^sub>1 \<inter> votingNodes) + 2 * card (q\<^sub>2 \<inter> votingNodes) \<le> 2 * card votingNodes" by (simp add: 1)
+
+  from q\<^sub>1 q\<^sub>2 have 3: "card votingNodes + card votingNodes < 2 * card (q\<^sub>1 \<inter> votingNodes) + 2 * card (q\<^sub>2 \<inter> votingNodes)"
+    unfolding majorities_def by auto
+
+  from 2 3 show False by simp
 qed
 
-text \<open>A valid configuration is one in which all quorums intersect.\<close>
+text \<open>A configuration of the system defines the sets of master-eligible nodes whose votes count when calculating quorums.
+The initial configuration of the system is fixed to some arbitrary value.\<close>
 
-typedef Configuration = "{Q :: Node set set. Q \<frown> Q}"
-proof (intro exI CollectI)
-  show "{} \<frown> {}"
-    by (simp add: intersects_def)
-qed
+definition V\<^sub>0 :: "Node set" where "V\<^sub>0 \<equiv> SOME V. finite V"
+
+lemma finite_V\<^sub>0: "finite V\<^sub>0" unfolding V\<^sub>0_def by (intro someI, auto)
+lemma V\<^sub>0_intersects: "majorities V\<^sub>0 \<frown> majorities V\<^sub>0" using finite_V\<^sub>0 by (intro majorities_intersect)
 
 subsection \<open>Values\<close>
 
@@ -119,8 +138,8 @@ datatype ClusterState = ClusterState nat
 
 datatype Value
   = NoOp
-  | Reconfigure Configuration
-  | ClusterStateDiff "ClusterState \<Rightarrow> ClusterState"
+  | Reconfigure "Node list" (* update the set of voting nodes. A list rather than a set to force it to be finite *)
+  | ClusterStateDiff "ClusterState \<Rightarrow> ClusterState" (* a ClusterState diff *)
 
 text \<open>Some useful definitions and lemmas follow.\<close>
 
@@ -128,20 +147,14 @@ fun isReconfiguration :: "Value \<Rightarrow> bool"
   where "isReconfiguration (Reconfigure _) = True"
   | "isReconfiguration _ = False"
 
-fun getConf :: "Value \<Rightarrow> Node set set"
-  where "getConf (Reconfigure conf) = Rep_Configuration conf"
-  | "getConf _                      = Rep_Configuration (SOME _. False)"
+fun getConf :: "Value \<Rightarrow> Node set"
+  where "getConf (Reconfigure conf) = set conf"
+  | "getConf _                      = {}"
 
-lemma getConf_intersects: "getConf v \<frown> getConf v"
-  by (metis (no_types, lifting) Rep_Configuration getConf.elims mem_Collect_eq)
+lemma getConf_finite: "finite (getConf v)"
+  by (metis List.finite_set getConf.elims infinite_imp_nonempty)
 
-definition reconfigure :: "Node set set \<Rightarrow> Value"
-  where "reconfigure Q = Reconfigure (Abs_Configuration Q)"
-
-lemma getConf_reconfigure: "Q \<frown> Q \<Longrightarrow> getConf (reconfigure Q) = Q"
-  by (simp add: Abs_Configuration_inverse reconfigure_def)
-
-lemma reconfigure_isReconfiguration: "isReconfiguration (reconfigure Q)"
-  by (simp add: reconfigure_def)
+lemma getConf_intersects: "majorities (getConf v) \<frown> majorities (getConf v)"
+  by (simp add: getConf_finite majorities_intersect)
 
 end
