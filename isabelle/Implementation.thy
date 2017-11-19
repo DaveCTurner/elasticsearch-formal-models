@@ -194,21 +194,6 @@ definition handleJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Ri
                in publishValue (lastAcceptedValue nd1) nd1
           else (nd, None)"
 
-lemma handleJoinRequest_recurse:
-  shows "handleJoinRequest s i t a nd
-    = (if i < firstUncommittedSlot nd
-        then handleJoinRequest s (firstUncommittedSlot nd) t None nd
-        else if t = currentTerm nd
-              \<and> i = firstUncommittedSlot nd
-              \<and> (a = None 
-                  \<or> a = lastAcceptedTerm nd
-                  \<or> (maxTermOption a (lastAcceptedTerm nd) = lastAcceptedTerm nd
-                        \<and> electionValueForced nd))
-            then let nd1 = addElectionVote s i a nd
-               in publishValue (lastAcceptedValue nd1) nd1
-          else (nd, None))"
-  unfolding handleJoinRequest_def Let_def addElectionVote_def by auto
-
 text \<open>A @{term PublishRequest} message is checked for acceptability and then handled as follows,
 yielding a @{term PublishResponse} message.\<close>
 
