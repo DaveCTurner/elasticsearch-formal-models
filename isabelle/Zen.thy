@@ -2423,6 +2423,7 @@ next
       "\<And>n. currentNode (nodeState' n) = currentNode (nodeState n)"
       "\<And>n. currentTerm (nodeState' n) = currentTerm (nodeState n)"
       "\<And>n. currentClusterState (nodeState' n) = currentClusterState (nodeState n)"
+      "\<And>n. joinVotes (nodeState' n) = joinVotes (nodeState n)"
       unfolding nodeState'_def by (auto simp add: nd' handleApplyCommit_def applyAcceptedValue_def nd_def)
 
     have updated_properties:
@@ -2433,8 +2434,7 @@ next
       "\<And>n. lastAcceptedTerm (nodeState' n) = (if n = n\<^sub>0 then None else lastAcceptedTerm (nodeState n))" 
       "\<And>n. lastAcceptedValue (nodeState' n) = (if n = n\<^sub>0 then NoOp else lastAcceptedValue (nodeState n))"
       "\<And>n. currentVotingNodes (nodeState' n) = (if n = n\<^sub>0 then set newConfig else currentVotingNodes (nodeState n))"
-      "\<And>n. joinVotes (nodeState' n) = (if n = n\<^sub>0 then {} else joinVotes (nodeState n))"
-      "\<And>n. electionWon (nodeState' n) = (electionWon (nodeState n) \<and> n \<noteq> n\<^sub>0)"
+      "\<And>n. electionWon (nodeState' n) = (if n = n\<^sub>0 then joinVotes nd \<in> majorities (set newConfig) else electionWon (nodeState n))"
       "\<And>n. isQuorum (nodeState' n) = (if n = n\<^sub>0 then (\<lambda>q. q \<in> majorities (set newConfig)) else isQuorum (nodeState n))"
       "\<And>n. currentVotingNodes (nodeState' n) = (if n = n\<^sub>0 then set newConfig else currentVotingNodes (nodeState n))"
       unfolding nodeState'_def using i t lastAcceptedValue_eq
@@ -2483,23 +2483,25 @@ next
       from lastAcceptedTerm_Some_max show "\<And>t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto> \<Longrightarrow> t' \<le> t" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
 
-      from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (joinVotes (nodeState' n))"
+      from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState' n) (joinVotes (nodeState n))"
+        unfolding updated_properties apply (cases "n = n\<^sub>0", auto simp add: nd_def) done
+
+      from electionValueFree_JoinRequest show "\<And>n'. \<not> electionValueForced (nodeState' n) \<Longrightarrow> n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n) \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))" 
+        unfolding updated_properties apply (cases "n = n\<^sub>0", auto)
+        by (meson isMessageFromTo_def le_imp_less_Suc zen.joinVotes zen_axioms)
+
+      from electionValueForced_JoinRequest show "electionValueForced (nodeState' n) \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
 
-      from electionValueFree_JoinRequest show "\<And>n'. \<not> electionValueForced (nodeState' n) \<Longrightarrow> n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) None \<rangle>\<rightarrow> (OneNode n) \<or> (\<exists>i<firstUncommittedSlot (nodeState' n). \<exists>a. n' \<midarrow>\<langle> JoinRequest i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))" 
-        unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
-
-      from electionValueForced_JoinRequest show "electionValueForced (nodeState' n) \<Longrightarrow> \<exists>n'\<in>joinVotes (nodeState' n). n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) (lastAcceptedTerm (nodeState' n)) \<rangle>\<rightarrow> (OneNode n)" 
-        unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
-
-      from electionValueForced_max show "\<And>n' a'. electionValueForced (nodeState' n) \<Longrightarrow> n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)" 
+      from electionValueForced_max show "\<And>n' a'. electionValueForced (nodeState' n) \<Longrightarrow> n' \<in> joinVotes (nodeState n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState' n)) = lastAcceptedTerm (nodeState' n)" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
 
       from publishVotes show "\<And>n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
 
-      from joinVotes show "\<And>n'. n' \<in> joinVotes (nodeState' n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState n))" 
-        unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
+      from joinVotes show "\<And>n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState' n)) n' n (currentTerm (nodeState n))" 
+        unfolding updated_properties apply (cases "n = n\<^sub>0", auto)
+        by (meson le_SucI promised_def)
 
       from firstUncommittedSlot_PublishRequest show "\<And>i t x. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done

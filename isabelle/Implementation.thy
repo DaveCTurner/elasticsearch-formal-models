@@ -251,9 +251,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
         NoOp \<Rightarrow> nd
       | Reconfigure votingNodes \<Rightarrow> nd
           \<lparr> currentVotingNodes := set votingNodes
-          , joinVotes := {}
-          , electionWon := False
-          , electionValueForced := False \<rparr>
+          , electionWon := joinVotes nd \<in> majorities (set votingNodes) \<rparr>
       | ClusterStateDiff diff \<Rightarrow> nd \<lparr> currentClusterState := diff (currentClusterState nd) \<rparr>"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
