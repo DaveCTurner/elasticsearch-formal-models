@@ -243,8 +243,8 @@ definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData 
   where
     "handleApplyCommit i t nd \<equiv> 
         if i = firstUncommittedSlot nd \<and> lastAcceptedTerm nd = Some t
-          then applyAcceptedValue
-                  nd \<lparr> firstUncommittedSlot := i + 1
+          then (applyAcceptedValue nd)
+                     \<lparr> firstUncommittedSlot := i + 1
                      , lastAcceptedValue := NoOp
                      , lastAcceptedTerm := None
                      , publishPermitted := True
