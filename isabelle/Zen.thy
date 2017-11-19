@@ -324,6 +324,8 @@ locale zen = zenMessages +
   assumes lastAcceptedTerm_Some_max: "\<And>n t t'. lastAcceptedTerm (nodeState n) = Some t
     \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) t' \<rangle>\<leadsto>
     \<Longrightarrow> t' \<le> t"
+  assumes lastAcceptedTerm_Some_currentTerm: "\<And>n t. lastAcceptedTerm (nodeState n) = Some t
+    \<Longrightarrow> t \<le> currentTerm (nodeState n)"
   assumes lastAcceptedTerm_Some_value: "\<And>n t. lastAcceptedTerm (nodeState n) = Some t
     \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>"
   assumes JoinRequest_currentTerm:
@@ -460,6 +462,7 @@ lemma (in zenStep)
   assumes "\<And>n t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t \<rangle>\<leadsto>'"
   assumes "\<And>n t t'. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState' n)) t' \<rangle>\<leadsto>' \<Longrightarrow> t' \<le> t"
   assumes "\<And>n t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t (lastAcceptedValue (nodeState' n)) \<rangle>\<leadsto>'"
+  assumes "\<And>n t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
   assumes "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
   assumes "\<And>n i i' t a a'. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> n \<midarrow>\<langle> JoinRequest i' t a' \<rangle>\<leadsto>' \<Longrightarrow> i = i'"
   assumes "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
@@ -600,6 +603,7 @@ proof -
     from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
   qed
 qed
 
@@ -704,6 +708,7 @@ proof -
     from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
   qed
 qed
 
@@ -849,6 +854,11 @@ next
     from electionValueForced_max
     show "\<And>n' a'. electionValueForced (nodeState' n) \<Longrightarrow> n' \<in> joinVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> JoinRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState' n)) a' \<rangle>\<rightarrow> (OneNode n) \<Longrightarrow> maxTermOption a' (lastAcceptedTerm (nodeState n)) = lastAcceptedTerm (nodeState n)"
       unfolding nodeState'_def by (cases "n = n\<^sub>0", auto simp add: nd'_def)
+
+    from lastAcceptedTerm_Some_currentTerm currentTerm_increases
+    show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState' n)"
+      using dual_order.trans by blast
+
   qed
 qed
 
@@ -958,6 +968,7 @@ proof -
     from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     from JoinRequest_currentTerm show "\<And>n i t a. n \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto>' \<Longrightarrow> t \<le> currentTerm (nodeState n)"
       unfolding JoinRequest' by (auto simp add: nd_def)
@@ -1156,6 +1167,7 @@ proof -
     from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState' n))"
       unfolding updated_properties by (auto simp add: nd_def)
@@ -1415,6 +1427,7 @@ next
     from currentClusterState_lastCommittedClusterStateBefore show "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))".
     from joinVotes show "\<And>n n'. n' \<in> joinVotes (nodeState n) \<Longrightarrow> promised (firstUncommittedSlot (nodeState n)) n' n (currentTerm (nodeState n))".
     from currentVotingNodes_firstUncommittedSlot show "\<And>n. currentVotingNodes (nodeState n) = V (firstUncommittedSlot (nodeState n))".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     {
       fix i conf cs assume a: "\<langle> CatchUpResponse i conf cs \<rangle>\<leadsto>"
@@ -1689,7 +1702,7 @@ lemma (in zenStep) handlePublishRequest_invariants:
   assumes messages': "messages' = sendTo (OneNode s) result"
   assumes sent: "s \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>"
   shows "zen messages' nodeState'"
-proof (cases "i = firstUncommittedSlot nd \<and> currentTerm nd \<le> t \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t) \<and> \<not> electionValueForced nd")
+proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t) \<and> \<not> electionValueForced nd")
   case False
   hence [simp]: "result = (nd, None)"
     by (simp add: result_def handlePublishRequest_def)
@@ -1708,7 +1721,7 @@ next
 
   hence result: "result = (nd\<lparr>lastAcceptedTerm := Some t, lastAcceptedValue := x\<rparr>,
       Some (PublishResponse i t))"
-    by (simp add: result_def handlePublishRequest_def)
+    by (auto simp add: result_def handlePublishRequest_def)
 
   have messages': "messages' = insert \<lparr> sender = n\<^sub>0, destination = OneNode s, payload = PublishResponse i t \<rparr> messages"
     by (simp add: messages' result)
@@ -1804,10 +1817,10 @@ next
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
 
     from JoinRequest_future show "\<And>i i' s t t' a. s \<midarrow>\<langle> JoinRequest i t a \<rangle>\<leadsto> \<Longrightarrow> i < i' \<Longrightarrow> t' < t \<Longrightarrow> \<not> s \<midarrow>\<langle> PublishResponse i' t' \<rangle>\<leadsto>'" 
-      using precondition unfolding PublishResponse' nd_def by (metis JoinRequest_currentTerm Pair_inject dual_order.trans leD)
+      using precondition unfolding PublishResponse' nd_def by (metis JoinRequest_currentTerm Pair_inject leD)
 
     from JoinRequest_None show "\<And>i s t t'. s \<midarrow>\<langle> JoinRequest i t None \<rangle>\<leadsto> \<Longrightarrow> t' < t \<Longrightarrow> \<not> s \<midarrow>\<langle> PublishResponse i t' \<rangle>\<leadsto>'"
-      using precondition unfolding PublishResponse' nd_def by (metis JoinRequest_currentTerm Pair_inject dual_order.trans leD)
+      using precondition unfolding PublishResponse' nd_def by (metis JoinRequest_currentTerm Pair_inject leD)
 
     from JoinRequest_Some_PublishResponse show "\<And>i s t t'. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto> \<Longrightarrow> s \<midarrow>\<langle> PublishResponse i t' \<rangle>\<leadsto>'"
       using precondition unfolding PublishResponse' nd_def by metis
@@ -1854,6 +1867,9 @@ next
       using precondition property_simps unfolding PublishResponse' nd_def 
       by (metis isMessage_def nd'_def nodeState_unchanged option.inject sent)
 
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)"
+      using precondition property_simps unfolding PublishResponse' nd_def 
+      by (metis eq_imp_le option.inject updated_properties(1))
   qed
 qed
 
@@ -1940,6 +1956,7 @@ proof -
      from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     from publishVotes show "\<And>n n'. n' \<in> publishVotes (nodeState' n) \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
       unfolding updated_properties using sent apply auto by (metis empty_iff nd_def singleton_iff)
@@ -2130,6 +2147,7 @@ next
     from lastAcceptedTerm_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>".
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)".
     from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     {
       fix i conf cs assume a: "\<langle> CatchUpResponse i conf cs \<rangle>\<leadsto>"
@@ -2372,7 +2390,7 @@ next
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto)
         by (meson le_SucI promised_def)
 
-    from currentVotingNodes_firstUncommittedSlot show "\<And>n. currentVotingNodes (nodeState n) = V (firstUncommittedSlot (nodeState' n))"
+      from currentVotingNodes_firstUncommittedSlot show "\<And>n. currentVotingNodes (nodeState n) = V (firstUncommittedSlot (nodeState' n))"
         unfolding updated_properties using False i nd_def by (cases "n = n\<^sub>0", auto)
 
       from firstUncommittedSlot_PublishRequest show "\<And>i t x. firstUncommittedSlot (nodeState' n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>" 
@@ -2386,6 +2404,9 @@ next
 
       from PublishRequest_publishPermitted_currentTerm show "\<And>t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState' n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState' n) \<Longrightarrow> t < currentTerm (nodeState n)" 
         unfolding updated_properties apply (cases "n = n\<^sub>0", auto simp add: firstUncommittedSlot_PublishRequest) done
+
+      from lastAcceptedTerm_Some_currentTerm show "\<And>t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)"
+        unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
 
       from currentClusterState_lastCommittedClusterStateBefore
       show "currentClusterState (nodeState' n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState' n))"
@@ -2521,6 +2542,9 @@ next
 
       from currentVotingNodes_firstUncommittedSlot show "\<And>n. currentVotingNodes (nodeState' n) = V (firstUncommittedSlot (nodeState' n))"
         unfolding updated_properties committedTo_def using Reconfigure i nd_def by (cases "n = n\<^sub>0", auto)
+
+      from lastAcceptedTerm_Some_currentTerm show "\<And>t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)"
+        unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
     qed
   qed
 qed
@@ -2622,6 +2646,7 @@ proof -
     from lastAcceptedTerm_Some_value show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t (lastAcceptedValue (nodeState n)) \<rangle>\<leadsto>".
     from PublishRequest_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> t \<le> currentTerm (nodeState n)".
     from PublishRequest_publishPermitted_currentTerm show "\<And>n t x. n \<midarrow>\<langle> PublishRequest (firstUncommittedSlot (nodeState n)) t x \<rangle>\<leadsto> \<Longrightarrow> publishPermitted (nodeState n) \<Longrightarrow> t < currentTerm (nodeState n)".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     from CatchUpResponse_committedTo committedTo_firstUncommittedSlot
     show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto>' \<Longrightarrow> committed\<^sub>< i"
@@ -2788,6 +2813,9 @@ next
 
     from currentVotingNodes_firstUncommittedSlot show "\<And>n. currentVotingNodes (nodeState' n) = V (firstUncommittedSlot (nodeState' n))"
       unfolding updated_properties using CatchUpResponse_V sent by (cases "n = n\<^sub>0", auto)
+
+    from lastAcceptedTerm_Some_currentTerm show "\<And>t. lastAcceptedTerm (nodeState' n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)"
+      unfolding updated_properties apply (cases "n = n\<^sub>0", auto) done
   qed
 qed
 
@@ -2867,6 +2895,7 @@ proof -
     from CatchUpResponse_committedTo show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> committed\<^sub>< i".
     from CatchUpResponse_V show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> V i = conf".
     from CatchUpResponse_lastCommittedClusterStateBefore show "\<And>i conf cs. \<langle> CatchUpResponse i conf cs \<rangle>\<leadsto> \<Longrightarrow> lastCommittedClusterStateBefore i = cs".
+    from lastAcceptedTerm_Some_currentTerm show "\<And>n t. lastAcceptedTerm (nodeState n) = Some t \<Longrightarrow> t \<le> currentTerm (nodeState n)".
 
     from electionWon_isQuorum show "\<And>n. electionWon (nodeState' n) \<Longrightarrow> isQuorum (nodeState n) (joinVotes (nodeState' n))"
       unfolding updated_properties by simp

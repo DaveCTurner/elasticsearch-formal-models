@@ -217,7 +217,7 @@ definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value 
   where
     "handlePublishRequest i t x nd \<equiv>
           if i = firstUncommittedSlot nd
-                \<and> currentTerm nd \<le> t
+                \<and> t = currentTerm nd
                 \<and> (case lastAcceptedTerm nd of None \<Rightarrow> True | Some t' \<Rightarrow> t' \<le> t)
                 \<and> \<not> electionValueForced nd
           then ( nd \<lparr> lastAcceptedTerm := Some t,
