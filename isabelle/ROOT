@@ -6,6 +6,7 @@ session "elasticsearch-isabelle" = "HOL" +
   theories
     Preliminaries
     Implementation
+    Monadic
     OneSlot
     Zen
   document_files
