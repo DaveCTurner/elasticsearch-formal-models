@@ -2463,7 +2463,7 @@ next
       "\<And>n. lastAcceptedTerm (nodeState' n) = (if n = n\<^sub>0 then None else lastAcceptedTerm (nodeState n))" 
       "\<And>n. lastAcceptedValue (nodeState' n) = (if n = n\<^sub>0 then NoOp else lastAcceptedValue (nodeState n))"
       "\<And>n. currentVotingNodes (nodeState' n) = (if n = n\<^sub>0 then set newConfig else currentVotingNodes (nodeState n))"
-      "\<And>n. electionWon (nodeState' n) = (if n = n\<^sub>0 then joinVotes nd \<in> majorities (set newConfig) else electionWon (nodeState n))"
+      "\<And>n. electionWon (nodeState' n) = (electionWon (nodeState n) \<and> (n = n\<^sub>0 \<longrightarrow> joinVotes nd \<in> majorities (set newConfig)))"
       "\<And>n. isQuorum (nodeState' n) = (if n = n\<^sub>0 then (\<lambda>q. q \<in> majorities (set newConfig)) else isQuorum (nodeState n))"
       "\<And>n. currentVotingNodes (nodeState' n) = (if n = n\<^sub>0 then set newConfig else currentVotingNodes (nodeState n))"
       unfolding nodeState'_def using i t lastAcceptedValue_eq

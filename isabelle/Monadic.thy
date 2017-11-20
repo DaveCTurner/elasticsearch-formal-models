@@ -356,10 +356,14 @@ definition doApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> unit Action"
       (case lastAcceptedValue of 
         ClusterStateDiff diff
             \<Rightarrow> modifyCurrentClusterState diff
+
         | Reconfigure votingNodes
             \<Rightarrow> setCurrentVotingNodes (set votingNodes) \<then>
-               getJoinVotes \<bind> (\<lambda>joinVotes.
-               setElectionWon (card (joinVotes \<inter> (set votingNodes)) * 2 > card (set votingNodes)))
+               getElectionWon \<bind> (\<lambda>electionWon.
+               whenTrue electionWon (
+                 getJoinVotes \<bind> (\<lambda>joinVotes.
+                 setElectionWon (card (joinVotes \<inter> (set votingNodes)) * 2 > card (set votingNodes)))))
+
         | NoOp \<Rightarrow> return ()) \<then>
 
       setFirstUncommittedSlot (i + 1) \<then>
@@ -579,7 +583,7 @@ proof (intro runM_inject)
           by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
             doApplyCommit_def runM_bailOutIf
             gets_def getFirstUncommittedSlot_def getLastAcceptedTerm_def getLastAcceptedValue_def
-            getJoinVotes_def
+            getJoinVotes_def getElectionWon_def runM_whenTrue_thn
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
             setPublishPermitted_def setElectionValueForced_def setPublishVotes_def
             setCurrentVotingNodes_def setElectionWon_def
