@@ -374,17 +374,21 @@ definition doCatchUpRequest :: "unit Action"
     "doCatchUpRequest \<equiv>
 
       getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
+      getCurrentTerm \<bind> (\<lambda>currentTerm.
       getCurrentVotingNodes \<bind> (\<lambda>currentVotingNodes.
       getCurrentClusterState \<bind> (\<lambda>currentClusterState.
 
-      respond (CatchUpResponse firstUncommittedSlot currentVotingNodes currentClusterState))))"
+      respond (CatchUpResponse firstUncommittedSlot currentTerm currentVotingNodes currentClusterState)))))"
 
-definition doCatchUpResponse :: "Slot \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> unit Action"
+definition doCatchUpResponse :: "Slot \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> unit Action"
   where
-    "doCatchUpResponse i conf cs \<equiv>
+    "doCatchUpResponse i t conf cs \<equiv>
 
       getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
       bailOutIf (i \<le> firstUncommittedSlot) (
+
+      getCurrentTerm \<bind> (\<lambda>currentTerm.
+      bailOutIf (t \<noteq> currentTerm) (
 
       setFirstUncommittedSlot i \<then>    
       setLastAcceptedValue NoOp \<then>
@@ -395,7 +399,7 @@ definition doCatchUpResponse :: "Slot \<Rightarrow> Node set \<Rightarrow> Clust
       setCurrentVotingNodes conf \<then>
       setCurrentClusterState cs \<then>
       setJoinVotes {} \<then>
-      setElectionWon False))"
+      setElectionWon False))))"
 
 definition doReboot :: "unit Action"
   where
@@ -425,7 +429,7 @@ definition dispatchMessage :: "unit Action"
           | PublishResponse i t \<Rightarrow> doPublishResponse (sender m) i t
           | ApplyCommit i t \<Rightarrow> doApplyCommit i t
           | CatchUpRequest \<Rightarrow> doCatchUpRequest
-          | CatchUpResponse i conf cs \<Rightarrow> doCatchUpResponse i conf cs
+          | CatchUpResponse i t conf cs \<Rightarrow> doCatchUpResponse i t conf cs
           | Reboot \<Rightarrow> doReboot
           ))"
 
@@ -597,14 +601,15 @@ proof (intro runM_inject)
       with dest_ok show ?thesis
         by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
           doCatchUpRequest_def
-          gets_def getFirstUncommittedSlot_def getCurrentVotingNodes_def getCurrentClusterState_def
+          gets_def getFirstUncommittedSlot_def getCurrentVotingNodes_def getCurrentClusterState_def getCurrentTerm_def
           ProcessMessage_def handleCatchUpRequest_def)
 
     next
       case (CatchUpResponse i conf cs)
       with dest_ok show ?thesis
         by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
-            doCatchUpResponse_def gets_def getFirstUncommittedSlot_def
+            doCatchUpResponse_def gets_def getFirstUncommittedSlot_def getCurrentTerm_def
+            runM_bailOutIf
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
             setPublishPermitted_def setElectionValueForced_def setPublishVotes_def
             setCurrentVotingNodes_def setCurrentClusterState_def setJoinVotes_def
