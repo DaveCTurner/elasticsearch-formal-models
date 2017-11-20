@@ -25,7 +25,7 @@ datatype Message
   | PublishResponse Slot Term
   | ApplyCommit Slot Term
   | CatchUpRequest
-  | CatchUpResponse Slot Term "Node set" ClusterState
+  | CatchUpResponse Slot "Node set" ClusterState
   | Reboot
 
 text \<open>Some prose descriptions of these messages follows, in order to give a bit more of an
@@ -233,7 +233,7 @@ definition applyAcceptedValue :: "NodeData \<Rightarrow> NodeData"
         NoOp \<Rightarrow> nd
       | Reconfigure votingNodes \<Rightarrow> nd
           \<lparr> currentVotingNodes := set votingNodes
-          , electionWon := electionWon nd \<and> joinVotes nd \<in> majorities (set votingNodes) \<rparr>
+          , electionWon := joinVotes nd \<in> majorities (set votingNodes) \<rparr>
       | ClusterStateDiff diff \<Rightarrow> nd \<lparr> currentClusterState := diff (currentClusterState nd) \<rparr>"
 
 text \<open>An @{term ApplyCommit} message is applied to the current node's state, updating its configuration
@@ -254,14 +254,13 @@ definition handleApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> NodeData 
 
 definition handleCatchUpRequest :: "NodeData \<Rightarrow> (NodeData * Message option)"
   where
-    "handleCatchUpRequest nd = (nd, Some (CatchUpResponse (firstUncommittedSlot nd) (currentTerm nd)
+    "handleCatchUpRequest nd = (nd, Some (CatchUpResponse (firstUncommittedSlot nd)
                                               (currentVotingNodes nd) (currentClusterState nd)))"
 
-definition handleCatchUpResponse :: "Slot \<Rightarrow> Term \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> NodeData \<Rightarrow> NodeData"
+definition handleCatchUpResponse :: "Slot \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> NodeData \<Rightarrow> NodeData"
   where
-    "handleCatchUpResponse i t conf cs nd \<equiv>
+    "handleCatchUpResponse i conf cs nd \<equiv>
       if firstUncommittedSlot nd < i
-        \<and> t = currentTerm nd
         then nd \<lparr> firstUncommittedSlot := i
                 , lastAcceptedValue := NoOp
                 , lastAcceptedTerm := None
@@ -327,8 +326,8 @@ definition ProcessMessage :: "NodeData \<Rightarrow> RoutedMessage \<Rightarrow>
               \<Rightarrow> (handleApplyCommit i t nd, None)
           | CatchUpRequest
               \<Rightarrow> respondToSender (handleCatchUpRequest nd)
-          | CatchUpResponse i t conf cs
-              \<Rightarrow> (handleCatchUpResponse i t conf cs nd, None)
+          | CatchUpResponse i conf cs
+              \<Rightarrow> (handleCatchUpResponse i conf cs nd, None)
           | Reboot
               \<Rightarrow> (handleReboot nd, None)
         else (nd, None)"
