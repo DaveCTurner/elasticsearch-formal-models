@@ -1,17 +1,19 @@
 theory Monadic
-  imports Implementation
+  imports Implementation "~~/src/HOL/Library/Monad_Syntax"
 begin
 
 datatype 'a Action = Action "RoutedMessage \<Rightarrow> NodeData \<Rightarrow> (NodeData * RoutedMessage list * 'a)"
 
 definition return :: "'a \<Rightarrow> 'a Action" where "return a \<equiv> Action (\<lambda> _ nd. (nd, [], a))"
 
-definition bind :: "'a Action \<Rightarrow> ('a \<Rightarrow> 'b Action) \<Rightarrow> 'b Action" (infixr "\<bind>" 100)
-  where "ma \<bind> mf \<equiv> case ma of
+definition Action_bind :: "'a Action \<Rightarrow> ('a \<Rightarrow> 'b Action) \<Rightarrow> 'b Action"
+  where "Action_bind ma mf \<equiv> case ma of
     Action unwrapped_ma \<Rightarrow> Action (\<lambda> env nd0. case unwrapped_ma env nd0 of
       (nd1, msgs0, a) \<Rightarrow> case mf a of
         Action unwrapped_mb \<Rightarrow> case unwrapped_mb env nd1 of
           (nd2, msgs1, b) \<Rightarrow> (nd2, msgs0 @ msgs1, b))"
+
+adhoc_overloading bind Action_bind
 
 definition runM :: "'a Action \<Rightarrow> RoutedMessage \<Rightarrow> NodeData \<Rightarrow> (NodeData * RoutedMessage list * 'a)"
   where "runM ma \<equiv> case ma of Action unwrapped_ma \<Rightarrow> unwrapped_ma"
@@ -21,80 +23,34 @@ lemma runM_inject[intro]: "(\<And>rm nd. runM ma rm nd = runM mb rm nd) \<Longri
 
 lemma runM_return[simp]: "runM (return a) rm nd = (nd, [], a)" unfolding runM_def return_def by simp
 lemma runM_bind: "runM (a \<bind> f) rm nd0 = (case runM a rm nd0 of (nd1, msgs1, b) \<Rightarrow> case runM (f b) rm nd1 of (nd2, msgs2, c) \<Rightarrow> (nd2, msgs1@msgs2, c))"
-  unfolding runM_def bind_def apply (cases "a", auto)
+  unfolding runM_def Action_bind_def apply (cases "a", auto)
   by (metis (no_types, lifting) Action.case Action.exhaust case_prod_conv old.prod.exhaust)
 
-lemma return_bind[simp]: "return a \<bind> f = f a" unfolding return_def bind_def by (cases "f a", auto)
-lemma bind_return[simp]: "a \<bind> return = a" unfolding return_def bind_def by (cases "a", auto)
+lemma return_bind[simp]: "do { a' <- return a; f a' } = f a" unfolding return_def Action_bind_def by (cases "f a", auto)
+lemma bind_return[simp]: "do { a' <- f; return a' } = f" unfolding return_def Action_bind_def by (cases "f", auto)
 
-lemma bind_bind_assoc[simp]: "((a \<bind> f) \<bind> g) = (a \<bind> (\<lambda>x. f x \<bind> g))" (is "?LHS = ?RHS")
+lemma bind_bind_assoc[simp]:
+  fixes f :: "'a Action"
+  shows "do { b <- do { a <- f; g a }; h b } = do { a <- f; b <- g a; h b }" (is "?LHS = ?RHS")
 proof (intro runM_inject)
   fix nd0 rm
   show "runM ?LHS rm nd0 = runM ?RHS rm nd0"
-  proof (cases "runM a rm nd0")
+  proof (cases "runM f rm nd0")
     case fields1: (fields nd1 msgs1 b)
     show ?thesis
-    proof (cases "runM (f b) rm nd1")
+    proof (cases "runM (g b) rm nd1")
       case fields2: (fields nd2 msgs2 c)
-      show ?thesis by (cases "runM (g c) rm nd2", simp add: runM_bind fields1 fields2)
-    qed
-  qed
-qed
-
-definition thn :: "'a Action \<Rightarrow> 'b Action \<Rightarrow> 'b Action" (infixr "\<then>" 100) where "a \<then> b \<equiv> a \<bind> (\<lambda>_. b)"
-lemma runM_thn: "runM (a \<then> b) rm nd0 = (case runM a rm nd0 of (nd1, msgs1, _) \<Rightarrow> case runM b rm nd1 of (nd2, msgs2, c) \<Rightarrow> (nd2, msgs1@msgs2, c))"
-  unfolding thn_def runM_bind by simp
-
-lemma return_thn[simp]: "return a \<then> b = b" by (auto simp add: runM_thn)
-
-lemma thn_thn_assoc[simp]: "((a \<then> b) \<then> c) = (a \<then> (b \<then> c))" (is "?LHS = ?RHS")
-proof (intro runM_inject)
-  fix rm nd0
-  show "runM ?LHS rm nd0 = runM ?RHS rm nd0"
-  proof (cases "runM a rm nd0")
-    case fields1: (fields nd1 msgs1)
-    show ?thesis
-    proof (cases "runM b rm nd1")
-      case fields2: (fields nd2 msgs2)
-      show ?thesis by (cases "runM c rm nd2", simp add: runM_thn fields1 fields2)
-    qed
-  qed
-qed
-
-lemma thn_bind_assoc[simp]: "((a \<then> b) \<bind> c) = (a \<then> (b \<bind> c))" (is "?LHS = ?RHS")
-proof (intro runM_inject)
-  fix rm nd0
-  show "runM ?LHS rm nd0 = runM ?RHS rm nd0"
-  proof (cases "runM a rm nd0")
-    case fields1: (fields nd1 msgs1 r1)
-    show ?thesis
-    proof (cases "runM b rm nd1")
-      case fields2: (fields nd2 msgs2 r2)
-      show ?thesis by (cases "runM (c r2) rm nd2", simp add: runM_thn runM_bind fields1 fields2)
-    qed
-  qed
-qed
-
-lemma bind_thn_assoc[simp]: "((a \<bind> b) \<then> c) = (a \<bind> (\<lambda>x. b x \<then> c))" (is "?LHS = ?RHS")
-proof (intro runM_inject)
-  fix rm nd0
-  show "runM ?LHS rm nd0 = runM ?RHS rm nd0"
-  proof (cases "runM a rm nd0")
-    case fields1: (fields nd1 msgs1 r1)
-    show ?thesis
-    proof (cases "runM (b r1) rm nd1")
-      case fields2: (fields nd2 msgs2 r2)
-      show ?thesis by (cases "runM c rm nd2", simp add: runM_thn runM_bind fields1 fields2)
+      show ?thesis by (cases "runM (h c) rm nd2", simp add: runM_bind fields1 fields2)
     qed
   qed
 qed
 
 definition askCurrentMessage :: "RoutedMessage Action" where "askCurrentMessage \<equiv> Action (\<lambda>rm nd. (nd, [], rm))"
 lemma runM_askCurrentMessage[simp]: "runM askCurrentMessage rm nd = (nd, [], rm)" by (simp add: runM_def askCurrentMessage_def)
-lemma runM_askCurrentMessage_continue[simp]: "runM (askCurrentMessage \<bind> f) rm nd = runM (f rm) rm nd" by (simp add: runM_bind)
+lemma runM_askCurrentMessage_continue[simp]: "runM (do { m <- askCurrentMessage; f m}) rm nd = runM (f rm) rm nd" by (simp add: runM_bind)
 
-lemma ask_ask_continue[simp]: "askCurrentMessage \<bind> (\<lambda>rm. askCurrentMessage \<bind> f rm) = askCurrentMessage \<bind> (\<lambda>rm. f rm rm)" by (auto simp add: runM_bind)
-lemma ask_thn[simp]: "askCurrentMessage \<then> f = f" by (auto simp add: runM_thn)
+lemma ask_ask_continue[simp]: "do { m1 <- askCurrentMessage; m2 <- askCurrentMessage; f m1 m2 } = do { m <- askCurrentMessage; f m m}" by (auto simp add: runM_bind)
+lemma ask_thn[simp]: "do { askCurrentMessage; f } = f" by (auto simp add: runM_bind)
 
 definition getNodeData :: "NodeData Action" where "getNodeData \<equiv> Action (\<lambda>_ nd. (nd, [], nd))"
 definition setNodeData :: "NodeData \<Rightarrow> unit Action" where "setNodeData nd \<equiv> Action (\<lambda>_ _. (nd, [], ()))"
@@ -102,64 +58,21 @@ definition setNodeData :: "NodeData \<Rightarrow> unit Action" where "setNodeDat
 lemma runM_getNodeData[simp]: "runM  getNodeData      rm nd = (nd,  [], nd)" by (simp add: runM_def getNodeData_def)
 lemma runM_setNodeData[simp]: "runM (setNodeData nd') rm nd = (nd', [], ())" by (simp add: runM_def setNodeData_def)
 
-lemma runM_getNodeData_continue[simp]: "runM (getNodeData \<bind> f) rm nd = runM (f nd) rm nd" by (simp add: runM_bind)
-lemma runM_setNodeData_continue[simp]: "runM (setNodeData nd' \<then> a) rm nd = runM a rm nd'" by (simp add: runM_thn)
-
-lemma get_thn[simp]: "getNodeData \<then> f = f" by (auto simp add: runM_thn)
-lemma get_set[simp]: "getNodeData \<bind> setNodeData = return ()" by (auto simp add: runM_bind)
-lemma set_get[simp]: "setNodeData nd \<then> getNodeData = setNodeData nd \<then> return nd" by (auto simp add: runM_thn)
-lemma set_set[simp]: "setNodeData nd1 \<then> setNodeData nd2 = setNodeData nd2" by (auto simp add: runM_thn)
-
-lemma get_get_continue[simp]: "getNodeData \<bind> (\<lambda>nd. getNodeData \<bind> f nd) = getNodeData \<bind> (\<lambda> nd. f nd nd)" by (auto simp add: runM_bind)
-lemma get_set_continue[simp]: "getNodeData \<bind> (\<lambda>nd. setNodeData nd \<then> a) = a" by (auto simp add: runM_bind runM_thn)
-lemma set_get_continue[simp]: "setNodeData nd \<then> (getNodeData \<bind> a) = setNodeData nd \<then> a nd" by (auto simp add: runM_bind runM_thn)
-lemma set_set_continue[simp]: "setNodeData nd1 \<then> (setNodeData nd2 \<then> a) = setNodeData nd2 \<then> a" by (auto simp add: runM_bind runM_thn)
+lemma runM_getNodeData_continue[simp]: "runM (do { nd' <- getNodeData; f nd' }) rm nd = runM (f nd) rm nd" by (simp add: runM_bind)
+lemma runM_setNodeData_continue[simp]: "runM (do { setNodeData nd'; f }) rm nd = runM f rm nd'" by (simp add: runM_bind)
 
 definition modifyNodeData :: "(NodeData \<Rightarrow> NodeData) \<Rightarrow> unit Action" where "modifyNodeData f = getNodeData \<bind> (setNodeData \<circ> f)"
 
 lemma runM_modifyNodeData[simp]: "runM (modifyNodeData f) rm nd = (f nd, [], ())" by (simp add: modifyNodeData_def runM_bind)
-lemma runM_modifyNodeData_continue[simp]: "runM (modifyNodeData f \<then> a) rm nd = runM a rm (f nd)" by (simp add: runM_thn)
-
-lemma modify_modify[simp]: "modifyNodeData f \<then> modifyNodeData g = modifyNodeData (g \<circ> f)" by (auto simp add: runM_thn)
-lemma set_modify[simp]: "modifyNodeData f \<then> setNodeData nd = setNodeData nd" by (auto simp add: runM_thn)
-lemma modify_set[simp]: "setNodeData nd \<then> modifyNodeData f = setNodeData (f nd)" by (auto simp add: runM_thn)
-lemma modify_get[simp]: "modifyNodeData f \<then> getNodeData = getNodeData \<bind> (\<lambda> nd. modifyNodeData f \<then> return (f nd))" by (auto simp add: runM_thn runM_bind)
-
-lemma modify_modify_continue[simp]: "modifyNodeData f \<then> modifyNodeData g \<then> a = modifyNodeData (g \<circ> f) \<then> a" by (auto simp add: runM_thn)
-lemma set_modify_continue[simp]: "modifyNodeData f \<then> setNodeData nd \<then> a = setNodeData nd \<then> a" by (auto simp add: runM_thn)
-lemma modify_set_continue[simp]: "setNodeData nd \<then> modifyNodeData f \<then> a = setNodeData (f nd) \<then> a" by (auto simp add: runM_thn)
-lemma modify_get_continue[simp]: "modifyNodeData f \<then> getNodeData  \<bind> a  = getNodeData \<bind> (\<lambda> nd. modifyNodeData f \<then> a (f nd))" by (auto simp add: runM_thn runM_bind)
+lemma runM_modifyNodeData_continue[simp]: "runM (do { modifyNodeData f; a }) rm nd = runM a rm (f nd)" by (simp add: runM_bind)
 
 definition tell :: "RoutedMessage list \<Rightarrow> unit Action" where "tell rms \<equiv> Action (\<lambda>_ nd. (nd, rms, ()))"
 lemma runM_tell[simp]: "runM (tell rms) rm nd = (nd, rms, ())" by (simp add: runM_def tell_def)
-
-lemma tell_tell[simp]: "tell rms1 \<then> tell rms2 = tell (rms1@rms2)" by (auto simp add: runM_thn)
-lemma tell_set[simp]: "tell rms \<then> setNodeData nd = setNodeData nd \<then> tell rms" by (auto simp add: runM_thn)
-lemma tell_get[simp]: "tell rms \<then> getNodeData = getNodeData \<bind> (\<lambda>nd. tell rms \<then> return nd)" by (auto simp add: runM_thn runM_bind)
-lemma tell_modify[simp]: "tell rms \<then> modifyNodeData nd = modifyNodeData nd \<then> tell rms" by (auto simp add: runM_thn)
-
-lemma tell_tell_continue[simp]: "tell rms1 \<then> tell rms2 \<then> a = tell (rms1@rms2) \<then> a" by (metis tell_tell thn_thn_assoc)
-lemma tell_set_continue[simp]: "tell rms \<then> setNodeData nd \<then> a = setNodeData nd \<then> tell rms \<then> a" by (auto simp add: runM_thn)
-lemma tell_get_continue[simp]: "tell rms \<then> getNodeData \<bind> a = getNodeData \<bind> (\<lambda>nd. tell rms \<then> a nd)" by (auto simp add: runM_thn runM_bind)
-lemma tell_modify_continue[simp]: "tell rms \<then> modifyNodeData nd \<then> a = modifyNodeData nd \<then> tell rms \<then> a" by (auto simp add: runM_thn)
+lemma runM_tell_contiue[simp]: "runM (do { tell rms; a }) rm nd = (let (nd, rms', x) = runM a rm nd in (nd, rms@rms', x))" by (simp add: runM_bind tell_def)
 
 definition send :: "RoutedMessage \<Rightarrow> unit Action" where "send rm = tell [rm]"
 
-lemma send_tell[simp]: "send rm \<then> tell rms = tell (rm#rms)" by (simp add: send_def)
-lemma tell_send[simp]: "tell rms \<then> send rm = tell (rms@[rm])" by (simp add: send_def)
-lemma send_send[simp]: "send rm1 \<then> send rm2 = tell [rm1,rm2]" by (simp add: send_def)
-lemma send_set[simp]: "send rm \<then> setNodeData nd = setNodeData nd \<then> send rm" by (simp add: send_def)
-lemma send_get[simp]: "send rm \<then> getNodeData = getNodeData \<bind> (\<lambda>nd. send rm \<then> return nd)" by (simp add: send_def)
-lemma send_modify[simp]: "send rm \<then> modifyNodeData nd = modifyNodeData nd \<then> send rm" by (simp add: send_def)
-
-lemma send_tell_continue[simp]: "send rm \<then> tell rms \<then> a = tell (rm#rms) \<then> a" by (simp add: send_def)
-lemma tell_send_continue[simp]: "tell rms \<then> send rm \<then> a = tell (rms@[rm]) \<then> a" by (simp add: send_def)
-lemma send_send_continue[simp]: "send rm1 \<then> send rm2 \<then> a = tell [rm1,rm2] \<then> a" by (simp add: send_def)
-lemma send_set_continue[simp]: "send rm \<then> setNodeData nd \<then> a = setNodeData nd \<then> send rm \<then> a" by (simp add: send_def)
-lemma send_get_continue[simp]: "send rm \<then> getNodeData \<bind> a = getNodeData \<bind> (\<lambda>nd. send rm \<then> a nd)" by (simp add: send_def)
-lemma send_modify_continue[simp]: "send rm \<then> modifyNodeData nd \<then> a = modifyNodeData nd \<then> send rm \<then> a" by (simp add: send_def)
-
-definition gets :: "(NodeData \<Rightarrow> 'a) \<Rightarrow> 'a Action" where "gets f \<equiv> getNodeData \<bind> (\<lambda>nd. return (f nd))"
+definition gets :: "(NodeData \<Rightarrow> 'a) \<Rightarrow> 'a Action" where "gets f \<equiv> do { nd <- getNodeData; return (f nd) }"
 definition getCurrentClusterState where "getCurrentClusterState = gets currentClusterState"
 definition getCurrentNode where "getCurrentNode = gets currentNode"
 definition getCurrentTerm where "getCurrentTerm = gets currentTerm"
@@ -192,210 +105,240 @@ definition modifyJoinVotes where "modifyJoinVotes = modifies joinVotes_update"
 definition modifyPublishVotes where "modifyPublishVotes = modifies publishVotes_update"
 definition modifyCurrentClusterState where "modifyCurrentClusterState = modifies currentClusterState_update"
 
-definition whenTrue :: "bool \<Rightarrow> unit Action \<Rightarrow> unit Action" where "whenTrue c a \<equiv> if c then a else return ()"
-definition bailOutIf :: "bool \<Rightarrow> unit Action \<Rightarrow> unit Action" where "bailOutIf \<equiv> whenTrue \<circ> Not"
+definition "when" :: "bool \<Rightarrow> unit Action \<Rightarrow> unit Action" where "when c a \<equiv> if c then a else return ()"
+definition unless :: "bool \<Rightarrow> unit Action \<Rightarrow> unit Action" where "unless \<equiv> when \<circ> Not"
 
-lemma whenTrue_simps[simp]:
-  "whenTrue True a = a"
-  "whenTrue False a = return ()"
-  "bailOutIf True a = return ()"
-  "bailOutIf False a = a"
-  unfolding whenTrue_def bailOutIf_def by auto
+lemma runM_when: "runM (when c a) rm nd = (if c then runM a rm nd else (nd, [], ()))"
+  by (auto simp add: when_def)
+lemma runM_unless: "runM (unless c a) rm nd = (if c then (nd, [], ()) else runM a rm nd)"
+  by (auto simp add: unless_def when_def)
 
-lemma runM_whenTrue: "runM (whenTrue c a) rm nd = (if c then runM a rm nd else (nd, [], ()))"
-  by (auto simp add: whenTrue_def)
-lemma runM_bailOutIf: "runM (bailOutIf c a) rm nd = (if c then (nd, [], ()) else runM a rm nd)"
-  by (auto simp add: bailOutIf_def)
-
-lemma runM_whenTrue_thn: "runM (whenTrue c a \<then> b) rm nd = (if c then runM (a \<then> b) rm nd else runM b rm nd)"
-  by (auto simp add: whenTrue_def)
+lemma runM_when_continue: "runM (do { when c a; b }) rm nd = (if c then runM (do {a;b}) rm nd else runM b rm nd)"
+  by (auto simp add: when_def)
+lemma runM_unless_continue: "runM (do { unless c a; b }) rm nd = (if c then runM b rm nd else runM (do {a;b}) rm nd)"
+  by (auto simp add: unless_def when_def)
 
 definition whenCorrectDestination :: "unit Action \<Rightarrow> unit Action"
-  where "whenCorrectDestination go \<equiv> getCurrentNode \<bind> (\<lambda>n. askCurrentMessage \<bind> (\<lambda>m. whenTrue (destination m \<in> { Broadcast, OneNode n }) go))"
+  where "whenCorrectDestination go \<equiv> do {
+    n <- getCurrentNode;
+    m <- askCurrentMessage;
+    when (destination m \<in> { Broadcast, OneNode n }) go
+  }"
 
 lemma runM_whenCorrectDestination:
   "runM (whenCorrectDestination go) rm nd = (if destination rm \<in> { Broadcast, OneNode (currentNode nd) } then runM go rm nd else (nd, [], ()))"
-  by (simp add: whenCorrectDestination_def getCurrentNode_def gets_def)
+  by (simp add: whenCorrectDestination_def getCurrentNode_def gets_def runM_when)
 
 definition broadcast :: "Message \<Rightarrow> unit Action"
-  where "broadcast msg \<equiv> getCurrentNode \<bind> (\<lambda>n. send \<lparr> sender = n, destination = Broadcast, payload = msg \<rparr>)"
+  where "broadcast msg \<equiv> do {
+       n <- getCurrentNode;
+       send \<lparr> sender = n, destination = Broadcast, payload = msg \<rparr>
+    }"
 
 lemma runM_broadcast[simp]: "runM (broadcast msg) rm nd = (nd, [\<lparr> sender = currentNode nd, destination = Broadcast, payload = msg \<rparr>], ())"
   by (simp add: broadcast_def getCurrentNode_def gets_def send_def)
 
 definition respond :: "Message \<Rightarrow> unit Action"
-  where "respond msg \<equiv> getCurrentNode \<bind> (\<lambda>n. askCurrentMessage \<bind> (\<lambda>m. send \<lparr> sender = n, destination = OneNode (sender m), payload = msg \<rparr>))"
+  where "respond msg \<equiv> do {
+       n <- getCurrentNode;
+       m <- askCurrentMessage;
+       send \<lparr> sender = n, destination = OneNode (sender m), payload = msg \<rparr>
+    }"
 
 lemma runM_respond[simp]: "runM (respond msg) rm nd = (nd, [\<lparr> sender = currentNode nd, destination = OneNode (sender rm), payload = msg \<rparr>], ())"
   by (simp add: respond_def getCurrentNode_def gets_def send_def)
 
 definition doStartJoin :: "Term \<Rightarrow> unit Action"
   where
-    "doStartJoin newTerm \<equiv>
+    "doStartJoin newTerm \<equiv> do {
+        currentTerm \<leftarrow> getCurrentTerm;
+        unless (newTerm \<le> currentTerm) (do {
 
-      getCurrentTerm \<bind> (\<lambda>currentTerm.
-      bailOutIf (newTerm \<le> currentTerm) (
+          setJoinVotes {};
+          setElectionWon False;
+          setCurrentTerm newTerm;
+          setElectionValueForced False;
+          setPublishPermitted True;
+          setPublishVotes {};
+  
+          firstUncommittedSlot \<leftarrow> getFirstUncommittedSlot;
+          lastAcceptedTerm \<leftarrow> getLastAcceptedTerm;
+          respond (JoinRequest firstUncommittedSlot newTerm lastAcceptedTerm)
 
-      setJoinVotes {} \<then>
-      setElectionWon False \<then>
-      setCurrentTerm newTerm \<then>
-      setElectionValueForced False \<then>
-      setPublishPermitted True \<then>
-      setPublishVotes {} \<then>
-
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      getLastAcceptedTerm \<bind> (\<lambda>lastAcceptedTerm.
-      respond (JoinRequest firstUncommittedSlot newTerm lastAcceptedTerm)))))"
+        })
+      }"
 
 definition doJoinRequestCurrentSlot :: "Node \<Rightarrow> Term option \<Rightarrow> unit Action"
   where
-    "doJoinRequestCurrentSlot requestSender requestLastAcceptedTerm \<equiv>
+    "doJoinRequestCurrentSlot requestSender requestLastAcceptedTerm \<equiv> do {
 
-      getLastAcceptedTerm \<bind> (\<lambda>lastAcceptedTerm.
-      getElectionValueForced \<bind> (\<lambda>electionValueForced.
+        lastAcceptedTerm <- getLastAcceptedTerm;
+        electionValueForced <- getElectionValueForced;
 
-      whenTrue (requestLastAcceptedTerm = None
-             \<or> requestLastAcceptedTerm = lastAcceptedTerm
-             \<or> (maxTermOption requestLastAcceptedTerm lastAcceptedTerm = lastAcceptedTerm \<and> electionValueForced)) (
-
-        modifyJoinVotes (insert requestSender) \<then>
-        whenTrue (requestLastAcceptedTerm \<noteq> None) (setElectionValueForced True) \<then>
-
-        getJoinVotes \<bind> (\<lambda>joinVotes.
-        getCurrentVotingNodes \<bind> (\<lambda>currentVotingNodes.
-
-        let electionWon' = card (joinVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes in
-        setElectionWon electionWon' \<then>
-        bailOutIf (\<not> electionWon') (
-
-        getPublishPermitted \<bind> (\<lambda>publishPermitted.
-        bailOutIf (\<not> publishPermitted) (
-        setPublishPermitted False \<then>
-
-        getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-        getCurrentTerm \<bind> (\<lambda>currentTerm.
-        getLastAcceptedValue \<bind> (\<lambda>lastAcceptedValue.
-        broadcast (PublishRequest firstUncommittedSlot currentTerm lastAcceptedValue))))))))))))"
+        when (requestLastAcceptedTerm = None
+               \<or> requestLastAcceptedTerm = lastAcceptedTerm
+               \<or> (maxTermOption requestLastAcceptedTerm lastAcceptedTerm = lastAcceptedTerm \<and> electionValueForced)) (do {
+  
+          modifyJoinVotes (insert requestSender);
+          when (requestLastAcceptedTerm \<noteq> None) (setElectionValueForced True);
+  
+          joinVotes <- getJoinVotes;
+          currentVotingNodes <- getCurrentVotingNodes;
+  
+          let electionWon' = card (joinVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes;
+          setElectionWon electionWon';
+          when electionWon' (do {
+  
+            publishPermitted <- getPublishPermitted;
+            when publishPermitted (do {
+              setPublishPermitted False;
+  
+              firstUncommittedSlot <- getFirstUncommittedSlot;
+              currentTerm <- getCurrentTerm;
+              lastAcceptedValue <- getLastAcceptedValue;
+              broadcast (PublishRequest firstUncommittedSlot currentTerm lastAcceptedValue)
+            })
+          })
+        })
+      }"
 
 definition doJoinRequest :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> Term option \<Rightarrow> unit Action"
   where
-    "doJoinRequest s i t a \<equiv>
+    "doJoinRequest s i t a \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      bailOutIf (firstUncommittedSlot < i) (
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      unless (firstUncommittedSlot < i) (do {
 
-      getCurrentTerm \<bind> (\<lambda>currentTerm.
-      bailOutIf (t \<noteq> currentTerm) (
+        currentTerm <- getCurrentTerm;
+        when (t = currentTerm) (do {
 
-      if i = firstUncommittedSlot
-        then doJoinRequestCurrentSlot s a
-        else doJoinRequestCurrentSlot s None))))"
+          if i = firstUncommittedSlot
+            then doJoinRequestCurrentSlot s a
+            else doJoinRequestCurrentSlot s None
+        })
+      })
+    }"
 
 definition doClientValue :: "Value \<Rightarrow> unit Action"
   where
-    "doClientValue x \<equiv>
+    "doClientValue x \<equiv> do {
       
-      getElectionWon \<bind> (\<lambda>electionWon.
-      bailOutIf (\<not> electionWon) (
+      electionWon <- getElectionWon;
+      when electionWon (do {
  
-      getPublishPermitted \<bind> (\<lambda>publishPermitted.
-      bailOutIf (\<not> publishPermitted) (
-
-      getElectionValueForced \<bind> (\<lambda>electionValueForced.
-      bailOutIf (electionValueForced) (
-
-      setPublishPermitted False \<then>
-
-      getCurrentTerm \<bind> (\<lambda>currentTerm.
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      broadcast (PublishRequest firstUncommittedSlot currentTerm x)))))))))"
+        publishPermitted <- getPublishPermitted;
+        when publishPermitted (do {
+  
+          electionValueForced <- getElectionValueForced;
+          unless electionValueForced (do {
+      
+            setPublishPermitted False;
+      
+            currentTerm <- getCurrentTerm;
+            firstUncommittedSlot <- getFirstUncommittedSlot;
+            broadcast (PublishRequest firstUncommittedSlot currentTerm x)
+          })
+        })
+      })
+    }"      
 
 definition doPublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value \<Rightarrow> unit Action"
   where
-    "doPublishRequest i t x \<equiv>
+    "doPublishRequest i t x \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      bailOutIf (i \<noteq> firstUncommittedSlot) (
-
-      getCurrentTerm \<bind> (\<lambda>currentTerm.
-      bailOutIf (t \<noteq> currentTerm) (
-
-      setLastAcceptedTerm (Some t) \<then>
-      setLastAcceptedValue x \<then>
-      respond (PublishResponse i t)))))"
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      when (i = firstUncommittedSlot) (do {
+  
+        currentTerm <- getCurrentTerm;
+        when (t = currentTerm) (do {
+    
+          setLastAcceptedTerm (Some t);
+          setLastAcceptedValue x;
+          respond (PublishResponse i t)
+        })
+      })
+    }"
 
 definition doPublishResponse :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> unit Action"
   where
-    "doPublishResponse s i t \<equiv>
+    "doPublishResponse s i t \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      bailOutIf (i \<noteq> firstUncommittedSlot) (
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      when (i = firstUncommittedSlot) (do {
+  
+        currentTerm <- getCurrentTerm;
+        when (t = currentTerm) (do {
 
-      getCurrentTerm \<bind> (\<lambda>currentTerm.
-      bailOutIf (t \<noteq> currentTerm) (
-
-      modifyPublishVotes (insert s) \<then>
-      getPublishVotes \<bind> (\<lambda>publishVotes.
-      getCurrentVotingNodes \<bind> (\<lambda>currentVotingNodes.
-      whenTrue (card (publishVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes) (
-
-        broadcast (ApplyCommit i t))))))))"
+          modifyPublishVotes (insert s);
+          publishVotes <- getPublishVotes;
+          currentVotingNodes <- getCurrentVotingNodes;
+          when (card (publishVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes)
+            (broadcast (ApplyCommit i t))
+        })
+      })
+    }"
 
 definition doApplyCommit :: "Slot \<Rightarrow> Term \<Rightarrow> unit Action"
   where
-    "doApplyCommit i t \<equiv>
+    "doApplyCommit i t \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      bailOutIf (i \<noteq> firstUncommittedSlot) (
-
-      getLastAcceptedTerm \<bind> (\<lambda>lastAcceptedTerm.
-      bailOutIf (Some t \<noteq> lastAcceptedTerm) (
-
-      getLastAcceptedValue \<bind> (\<lambda>lastAcceptedValue.
-
-      (case lastAcceptedValue of 
-        ClusterStateDiff diff
-            \<Rightarrow> modifyCurrentClusterState diff
-        | Reconfigure votingNodes
-            \<Rightarrow> setCurrentVotingNodes (set votingNodes) \<then>
-               getJoinVotes \<bind> (\<lambda>joinVotes.
-               setElectionWon (card (joinVotes \<inter> (set votingNodes)) * 2 > card (set votingNodes)))
-        | NoOp \<Rightarrow> return ()) \<then>
-
-      setFirstUncommittedSlot (i + 1) \<then>
-      setLastAcceptedValue NoOp \<then>
-      setLastAcceptedTerm None \<then>
-      setPublishPermitted True \<then>
-      setElectionValueForced False \<then>
-      setPublishVotes {})))))"
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      when (i = firstUncommittedSlot) (do {
+  
+        lastAcceptedTerm <- getLastAcceptedTerm;
+        when (Some t = lastAcceptedTerm) (do {
+    
+          lastAcceptedValue <- getLastAcceptedValue;
+          (case lastAcceptedValue of 
+            ClusterStateDiff diff
+                \<Rightarrow> modifyCurrentClusterState diff
+            | Reconfigure votingNodes \<Rightarrow> do {
+                   setCurrentVotingNodes (set votingNodes);
+                   joinVotes <- getJoinVotes;
+                   setElectionWon (card (joinVotes \<inter> (set votingNodes)) * 2 > card (set votingNodes))
+                 }
+            | NoOp \<Rightarrow> return ());
+    
+          setFirstUncommittedSlot (i + 1);
+          setLastAcceptedValue NoOp;
+          setLastAcceptedTerm None;
+          setPublishPermitted True;
+          setElectionValueForced False;
+          setPublishVotes {}
+        })
+      })
+    }"
 
 definition doCatchUpRequest :: "unit Action"
   where
-    "doCatchUpRequest \<equiv>
+    "doCatchUpRequest \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      getCurrentVotingNodes \<bind> (\<lambda>currentVotingNodes.
-      getCurrentClusterState \<bind> (\<lambda>currentClusterState.
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      currentVotingNodes <- getCurrentVotingNodes;
+      currentClusterState <- getCurrentClusterState;
 
-      respond (CatchUpResponse firstUncommittedSlot currentVotingNodes currentClusterState))))"
+      respond (CatchUpResponse firstUncommittedSlot currentVotingNodes currentClusterState)
+    }"
 
 definition doCatchUpResponse :: "Slot \<Rightarrow> Node set \<Rightarrow> ClusterState \<Rightarrow> unit Action"
   where
-    "doCatchUpResponse i conf cs \<equiv>
+    "doCatchUpResponse i conf cs \<equiv> do {
 
-      getFirstUncommittedSlot \<bind> (\<lambda>firstUncommittedSlot.
-      bailOutIf (i \<le> firstUncommittedSlot) (
-
-      setFirstUncommittedSlot i \<then>    
-      setLastAcceptedValue NoOp \<then>
-      setLastAcceptedTerm None \<then>
-      setPublishPermitted False \<then>
-      setElectionValueForced False \<then>
-      setPublishVotes {} \<then>
-      setCurrentVotingNodes conf \<then>
-      setCurrentClusterState cs \<then>
-      setJoinVotes {} \<then>
-      setElectionWon False))"
+      firstUncommittedSlot <- getFirstUncommittedSlot;
+      unless (i \<le> firstUncommittedSlot) (do {
+  
+        setFirstUncommittedSlot i;    
+        setLastAcceptedValue NoOp;
+        setLastAcceptedTerm None;
+        setPublishPermitted False;
+        setElectionValueForced False;
+        setPublishVotes {};
+        setCurrentVotingNodes conf;
+        setCurrentClusterState cs;
+        setJoinVotes {};
+        setElectionWon False
+      })
+    }"
 
 definition doReboot :: "unit Action"
   where
@@ -417,7 +360,7 @@ definition ProcessMessageAction :: "unit Action"
   where "ProcessMessageAction \<equiv> Action (\<lambda> rm nd. case ProcessMessage nd rm of (nd', messageOption) \<Rightarrow> (nd', case messageOption of None \<Rightarrow> [] | Some m \<Rightarrow> [m], ()))"
 
 definition dispatchMessage :: "unit Action"
-  where "dispatchMessage \<equiv> whenCorrectDestination (askCurrentMessage \<bind> (\<lambda>m. case payload m of
+  where "dispatchMessage \<equiv> whenCorrectDestination (do { m <- askCurrentMessage; case payload m of
           StartJoin t \<Rightarrow> doStartJoin t
           | JoinRequest i t a \<Rightarrow> doJoinRequest (sender m) i t a
           | ClientValue x \<Rightarrow> doClientValue x
@@ -427,7 +370,7 @@ definition dispatchMessage :: "unit Action"
           | CatchUpRequest \<Rightarrow> doCatchUpRequest
           | CatchUpResponse i conf cs \<Rightarrow> doCatchUpResponse i conf cs
           | Reboot \<Rightarrow> doReboot
-          ))"
+          })"
 
 lemma monadic_implementation_is_faithful:
   "dispatchMessage = ProcessMessageAction"
@@ -438,7 +381,7 @@ proof (intro runM_inject)
     case False
     thus ?thesis
       unfolding ProcessMessageAction_def dispatchMessage_def whenCorrectDestination_def getCurrentNode_def gets_def ProcessMessage_def Let_def
-      by auto
+      by (simp add: runM_when)
   next
     case dest_ok: True
 
@@ -462,19 +405,19 @@ proof (intro runM_inject)
       proof cases
         case a
         with StartJoin dest_ok show ?thesis
-          by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination ProcessMessage_def Let_def
+          by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination ProcessMessage_def Let_def runM_unless
               doStartJoin_def getCurrentTerm_def gets_def getLastAcceptedTerm_def setJoinVotes_def sets_def setCurrentTerm_def setElectionValueForced_def
               setPublishPermitted_def setPublishVotes_def getFirstUncommittedSlot_def handleStartJoin_def ensureCurrentTerm_def setElectionWon_def)
       next
         case b
         with StartJoin dest_ok show ?thesis
           by (cases "lastAcceptedTerm nd ", simp_all add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination ProcessMessage_def Let_def
-              doStartJoin_def getCurrentTerm_def gets_def getLastAcceptedTerm_def setJoinVotes_def sets_def setCurrentTerm_def setElectionValueForced_def
+              doStartJoin_def getCurrentTerm_def gets_def getLastAcceptedTerm_def setJoinVotes_def sets_def setCurrentTerm_def setElectionValueForced_def runM_unless
               setPublishPermitted_def setPublishVotes_def getFirstUncommittedSlot_def handleStartJoin_def ensureCurrentTerm_def setElectionWon_def)
       next
         case c with StartJoin dest_ok show ?thesis
           by (cases "lastAcceptedTerm nd", simp_all add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination ProcessMessage_def Let_def
-              doStartJoin_def getCurrentTerm_def gets_def getLastAcceptedTerm_def setJoinVotes_def sets_def setCurrentTerm_def setElectionValueForced_def
+              doStartJoin_def getCurrentTerm_def gets_def getLastAcceptedTerm_def setJoinVotes_def sets_def setCurrentTerm_def setElectionValueForced_def runM_unless
               setPublishPermitted_def setPublishVotes_def getFirstUncommittedSlot_def handleStartJoin_def ensureCurrentTerm_def setElectionWon_def)
       qed
 
@@ -485,7 +428,7 @@ proof (intro runM_inject)
       proof (cases "firstUncommittedSlot nd < i")
         case True
         with JoinRequest dest_ok show ?thesis
-          by (simp add: dispatchMessage_def runM_whenCorrectDestination
+          by (simp add: dispatchMessage_def runM_whenCorrectDestination runM_unless
               doJoinRequest_def gets_def getFirstUncommittedSlot_def ProcessMessage_def
               ProcessMessageAction_def handleJoinRequest_def)
       next
@@ -495,7 +438,7 @@ proof (intro runM_inject)
         proof (cases "t = currentTerm nd")
           case False
           with JoinRequest dest_ok le show ?thesis
-            by (simp add: dispatchMessage_def runM_whenCorrectDestination
+            by (simp add: dispatchMessage_def runM_whenCorrectDestination runM_when runM_unless
                 doJoinRequest_def gets_def getFirstUncommittedSlot_def getCurrentTerm_def
                 ProcessMessage_def ProcessMessageAction_def handleJoinRequest_def)
 
@@ -506,8 +449,8 @@ proof (intro runM_inject)
           proof (cases "i = firstUncommittedSlot nd")
             case False
             with JoinRequest dest_ok le t show ?thesis
-              by (simp add: dispatchMessage_def runM_whenCorrectDestination Let_def
-                doJoinRequest_def doJoinRequestCurrentSlot_def runM_bailOutIf
+              by (simp add: dispatchMessage_def runM_whenCorrectDestination Let_def runM_when_continue
+                doJoinRequest_def doJoinRequestCurrentSlot_def runM_when runM_unless
                 gets_def getFirstUncommittedSlot_def getCurrentTerm_def getLastAcceptedTerm_def
                 getElectionValueForced_def getJoinVotes_def getCurrentVotingNodes_def
                 getPublishPermitted_def getLastAcceptedValue_def
@@ -520,7 +463,7 @@ proof (intro runM_inject)
             with JoinRequest dest_ok le t show ?thesis
               by (simp add: dispatchMessage_def runM_whenCorrectDestination Let_def
                   doJoinRequest_def doJoinRequestCurrentSlot_def
-                  runM_bailOutIf runM_whenTrue_thn runM_whenTrue
+                  runM_unless runM_when runM_when_continue
                   gets_def getFirstUncommittedSlot_def getCurrentTerm_def getLastAcceptedTerm_def
                   getElectionValueForced_def getJoinVotes_def getCurrentVotingNodes_def
                   getPublishPermitted_def getLastAcceptedValue_def
@@ -536,24 +479,24 @@ proof (intro runM_inject)
       case (ClientValue x) with dest_ok show ?thesis
         by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
             doClientValue_def gets_def getElectionValueForced_def getElectionWon_def
-            runM_bailOutIf getPublishPermitted_def setPublishPermitted_def sets_def
+            runM_unless getPublishPermitted_def setPublishPermitted_def sets_def
             getCurrentTerm_def getFirstUncommittedSlot_def ProcessMessage_def handleClientValue_def
-            publishValue_def)
+            publishValue_def runM_when)
 
     next
       case (PublishRequest i t x) with dest_ok show ?thesis
         by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
           doPublishRequest_def gets_def getCurrentTerm_def getFirstUncommittedSlot_def
-          sets_def setLastAcceptedTerm_def setLastAcceptedValue_def respond_def getCurrentNode_def runM_bailOutIf send_def
-          ProcessMessage_def handlePublishRequest_def)
+          sets_def setLastAcceptedTerm_def setLastAcceptedValue_def respond_def getCurrentNode_def runM_unless send_def
+          ProcessMessage_def handlePublishRequest_def runM_when)
 
     next
       case (PublishResponse i t) with dest_ok show ?thesis
         by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
           doPublishResponse_def gets_def getCurrentTerm_def getFirstUncommittedSlot_def
-          broadcast_def getCurrentNode_def runM_bailOutIf send_def
+          broadcast_def getCurrentNode_def runM_unless send_def
           modifyPublishVotes_def modifies_def getPublishVotes_def getCurrentVotingNodes_def
-          runM_whenTrue
+          runM_when
           ProcessMessage_def handlePublishResponse_def commitIfQuorate_def isQuorum_def majorities_def)
 
     next
@@ -564,7 +507,7 @@ proof (intro runM_inject)
         case NoOp
         with ApplyCommit dest_ok show ?thesis
           by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
-            doApplyCommit_def runM_bailOutIf
+            doApplyCommit_def runM_unless runM_when
             gets_def getFirstUncommittedSlot_def getLastAcceptedTerm_def getLastAcceptedValue_def
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
             setPublishPermitted_def setElectionValueForced_def setPublishVotes_def
@@ -573,7 +516,7 @@ proof (intro runM_inject)
         case Reconfigure
         with ApplyCommit dest_ok show ?thesis
           by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
-            doApplyCommit_def runM_bailOutIf
+            doApplyCommit_def runM_unless runM_when
             gets_def getFirstUncommittedSlot_def getLastAcceptedTerm_def getLastAcceptedValue_def
             getJoinVotes_def
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
@@ -584,7 +527,7 @@ proof (intro runM_inject)
         case ClusterStateDiff
         with ApplyCommit dest_ok show ?thesis
           by (simp add: ProcessMessageAction_def dispatchMessage_def runM_whenCorrectDestination
-            doApplyCommit_def runM_bailOutIf
+            doApplyCommit_def runM_unless runM_when
             gets_def getFirstUncommittedSlot_def getLastAcceptedTerm_def getLastAcceptedValue_def
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
             modifies_def modifyCurrentClusterState_def
@@ -608,7 +551,7 @@ proof (intro runM_inject)
             sets_def setFirstUncommittedSlot_def setLastAcceptedValue_def setLastAcceptedTerm_def
             setPublishPermitted_def setElectionValueForced_def setPublishVotes_def
             setCurrentVotingNodes_def setCurrentClusterState_def setJoinVotes_def
-            setElectionWon_def
+            setElectionWon_def runM_unless
             ProcessMessage_def handleCatchUpResponse_def)
 
     next
