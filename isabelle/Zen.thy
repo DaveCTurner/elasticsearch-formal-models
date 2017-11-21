@@ -3217,4 +3217,32 @@ proof -
   finally show ?thesis .
 qed
 
+lemma (in zen) one_master_per_term_with_consistent_voting_nodes:
+  assumes won1: "electionWon (nodeState n\<^sub>1)"
+  assumes won2: "electionWon (nodeState n\<^sub>2)"
+  assumes terms: "currentTerm (nodeState n\<^sub>1) = currentTerm (nodeState n\<^sub>2)"
+  assumes majorities: "majorities (currentVotingNodes (nodeState n\<^sub>1)) \<frown> majorities (currentVotingNodes (nodeState n\<^sub>2))"
+  shows "n\<^sub>1 = n\<^sub>2"
+proof -
+  from won1 electionWon_isQuorum isQuorum_def
+  have jv1: "joinVotes (nodeState n\<^sub>1) \<in> majorities (currentVotingNodes (nodeState n\<^sub>1))" by simp
+
+  from won2 electionWon_isQuorum isQuorum_def currentVotingNodes_firstUncommittedSlot
+  have jv2: "joinVotes (nodeState n\<^sub>2) \<in> majorities (currentVotingNodes (nodeState n\<^sub>2))" by simp
+
+  from jv1 jv2 majorities
+  have "joinVotes (nodeState n\<^sub>1) \<inter> joinVotes (nodeState n\<^sub>2) \<noteq> {}" unfolding intersects_def by auto
+  then obtain n where n1: "n \<in> joinVotes (nodeState n\<^sub>1)" and n2: "n \<in> joinVotes (nodeState n\<^sub>2)" by auto
+
+  from n1 obtain i1 a1 where sent1: "n \<midarrow>\<langle> JoinRequest i1 (currentTerm (nodeState n\<^sub>1)) a1 \<rangle>\<rightarrow> (OneNode n\<^sub>1)"
+    using joinVotes unfolding promised_def by blast
+
+  from n2 obtain i2 a2 where sent2: "n \<midarrow>\<langle> JoinRequest i2 (currentTerm (nodeState n\<^sub>2)) a2 \<rangle>\<rightarrow> (OneNode n\<^sub>2)"
+    using joinVotes unfolding promised_def by blast
+
+  from sent1 sent2 terms have "OneNode n\<^sub>1 = OneNode n\<^sub>2" by (intro JoinRequest_unique_destination, auto)
+  thus ?thesis by simp
+qed
+
+
 end
