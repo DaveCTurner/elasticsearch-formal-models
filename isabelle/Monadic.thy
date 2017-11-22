@@ -269,11 +269,15 @@ definition doPublishResponse :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Ri
         currentTerm <- getCurrentTerm;
         when (t = currentTerm) (do {
 
-          modifyPublishVotes (insert s);
-          publishVotes <- getPublishVotes;
           currentVotingNodes <- getCurrentVotingNodes;
-          when (card (publishVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes)
-            (broadcast (ApplyCommit i t))
+          when (s \<in> currentVotingNodes) (do {
+
+            modifyPublishVotes (insert s);
+            publishVotes <- getPublishVotes;
+            currentVotingNodes <- getCurrentVotingNodes;
+            when (card publishVotes * 2 > card currentVotingNodes)
+              (broadcast (ApplyCommit i t))
+          })
         })
       })
     }"
