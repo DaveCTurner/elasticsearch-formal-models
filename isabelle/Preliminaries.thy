@@ -123,9 +123,10 @@ qed
 text \<open>A configuration of the system defines the sets of master-eligible nodes whose votes count when calculating quorums.
 The initial configuration of the system is fixed to some arbitrary value.\<close>
 
-definition V\<^sub>0 :: "Node set" where "V\<^sub>0 \<equiv> SOME V. finite V"
+consts Vs\<^sub>0 :: "Node list"
+definition V\<^sub>0 :: "Node set" where "V\<^sub>0 \<equiv> set Vs\<^sub>0"
 
-lemma finite_V\<^sub>0: "finite V\<^sub>0" unfolding V\<^sub>0_def by (intro someI, auto)
+lemma finite_V\<^sub>0: "finite V\<^sub>0" unfolding V\<^sub>0_def by auto
 lemma V\<^sub>0_intersects: "majorities V\<^sub>0 \<frown> majorities V\<^sub>0" using finite_V\<^sub>0 by (intro majorities_intersect)
 
 subsection \<open>Values\<close>
