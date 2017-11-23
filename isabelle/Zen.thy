@@ -51,7 +51,7 @@ locale zenMessages =
   defines "prevAccepted i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto> }"
   fixes lastCommittedClusterStateBefore :: "Slot \<Rightarrow> ClusterState"
-  defines "lastCommittedClusterStateBefore \<equiv> nat_inductive_def (ClusterState 0)
+  defines "lastCommittedClusterStateBefore \<equiv> nat_inductive_def CS\<^sub>0
       (\<lambda>i CSi. case v\<^sub>c i of ClusterStateDiff diff \<Rightarrow> diff CSi | _ \<Rightarrow> CSi)"
 
     (* ASSUMPTIONS *)
@@ -107,7 +107,7 @@ lemma (in zenMessages) V_simps[simp]:
   unfolding V_def by simp_all
 
 lemma (in zenMessages) lastCommittedClusterStateBefore_simps[simp]:
-  "lastCommittedClusterStateBefore 0 = ClusterState 0"
+  "lastCommittedClusterStateBefore 0 = CS\<^sub>0"
   "lastCommittedClusterStateBefore (Suc i) = (case v\<^sub>c i of ClusterStateDiff diff \<Rightarrow> diff | _ \<Rightarrow> id) (lastCommittedClusterStateBefore i)"
   unfolding lastCommittedClusterStateBefore_def by (simp, cases "v\<^sub>c i", auto)
 
@@ -415,7 +415,7 @@ locale zenStep = zen +
   defines "prevAccepted' i t senders
       \<equiv> {t'. \<exists> s \<in> senders. s \<midarrow>\<langle> JoinRequest i t (Some t') \<rangle>\<leadsto>' }"
   fixes lastCommittedClusterStateBefore' :: "nat \<Rightarrow> ClusterState"
-  defines "lastCommittedClusterStateBefore' \<equiv> nat_inductive_def (ClusterState 0)
+  defines "lastCommittedClusterStateBefore' \<equiv> nat_inductive_def CS\<^sub>0
       (\<lambda>i CSi. case v\<^sub>c' i of ClusterStateDiff diff \<Rightarrow> diff CSi | _ \<Rightarrow> CSi)"
   fixes sendTo :: "Destination \<Rightarrow> (NodeData * Message option) \<Rightarrow> RoutedMessage set"
   defines "sendTo d result \<equiv> case snd result of
@@ -430,7 +430,7 @@ lemma (in zenStep) V'_simps[simp]:
   unfolding V'_def by simp_all
 
 lemma (in zenStep) lastCommittedClusterStateBefore'_simps[simp]:
-  "lastCommittedClusterStateBefore' 0 = ClusterState 0"
+  "lastCommittedClusterStateBefore' 0 = CS\<^sub>0"
   "lastCommittedClusterStateBefore' (Suc i) = (case v\<^sub>c' i of ClusterStateDiff diff \<Rightarrow> diff | _ \<Rightarrow> id) (lastCommittedClusterStateBefore' i)"
   unfolding lastCommittedClusterStateBefore'_def by (simp, cases "v\<^sub>c' i", auto)
 

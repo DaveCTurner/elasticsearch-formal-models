@@ -136,6 +136,7 @@ the configuration of the system or set a new \texttt{ClusterState}. \texttt{Clus
 are modelled simply as natural numbers.\<close>
 
 datatype ClusterState = ClusterState nat
+consts CS\<^sub>0 :: ClusterState
 
 datatype Value
   = NoOp

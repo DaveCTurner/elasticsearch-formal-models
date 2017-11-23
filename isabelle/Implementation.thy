@@ -341,7 +341,7 @@ definition initialNodeState :: "Node \<Rightarrow> NodeData"
       , firstUncommittedSlot = 0
       , currentTerm = 0
       , currentVotingNodes = V\<^sub>0
-      , currentClusterState = ClusterState 0
+      , currentClusterState = CS\<^sub>0
       , lastAcceptedTerm = None
       , lastAcceptedValue = NoOp
       , joinVotes = {}
