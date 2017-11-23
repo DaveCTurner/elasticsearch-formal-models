@@ -151,7 +151,7 @@ lemma runM_respond[simp]: "runM (respond msg) rm nd = (nd, [\<lparr> sender = cu
 definition doStartJoin :: "Term \<Rightarrow> unit Action"
   where
     "doStartJoin newTerm \<equiv> do {
-        currentTerm \<leftarrow> getCurrentTerm;
+        currentTerm <- getCurrentTerm;
         unless (newTerm \<le> currentTerm) (do {
 
           setJoinVotes {};
@@ -161,8 +161,8 @@ definition doStartJoin :: "Term \<Rightarrow> unit Action"
           setPublishPermitted True;
           setPublishVotes {};
   
-          firstUncommittedSlot \<leftarrow> getFirstUncommittedSlot;
-          lastAcceptedTerm \<leftarrow> getLastAcceptedTerm;
+          firstUncommittedSlot <- getFirstUncommittedSlot;
+          lastAcceptedTerm <- getLastAcceptedTerm;
           respond (JoinRequest firstUncommittedSlot newTerm lastAcceptedTerm)
 
         })
