@@ -273,11 +273,14 @@ definition doVote :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> T
       when electionWon' (do {
         electionValueForced <- getElectionValueForced;
         publishPermitted <- getPublishPermitted;
-        when (publishPermitted \<and> electionValueForced) (do {
-          setPublishPermitted False;
+        when publishPermitted (do {
 
-          lastAcceptedValue <- gets lastAcceptedValue; (* NB must be present since electionValueForced *)
-          broadcast (PublishRequest firstUncommittedSlot currentTerm lastAcceptedValue)
+          when electionValueForced (do {
+            setPublishPermitted False;
+
+            lastAcceptedValue <- gets lastAcceptedValue; (* NB must be present since electionValueForced *)
+            broadcast (PublishRequest firstUncommittedSlot currentTerm lastAcceptedValue)
+          })
         })
       })
     }"
