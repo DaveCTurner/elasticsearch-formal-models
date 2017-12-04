@@ -310,16 +310,21 @@ text \<open>A set of invariants which relate the states of the individual nodes 
 locale zen = zenMessages +
   fixes nodeState :: "Node \<Rightarrow> NodeData"
   assumes currentNode_nodeState: "\<And>n. currentNode (nodeState n) = n"
-  assumes committedTo_firstUncommittedSlot: "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
+  assumes committedTo_firstUncommittedSlot:
+    "\<And>n. committed\<^sub>< (firstUncommittedSlot (nodeState n))"
   assumes currentVotingNodes_firstUncommittedSlot:
     "\<And>n. currentVotingNodes (nodeState n) = V (firstUncommittedSlot (nodeState n))"
   assumes firstUncommittedSlot_PublishRequest:
     "\<And>i n t x. firstUncommittedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishRequest i t x \<rangle>\<leadsto>"
   assumes lastAcceptedSlot_firstUncommittedSlot:
-    "\<And>n. lastAcceptedTerm (nodeState n) \<noteq> NO_TERM \<Longrightarrow> lastAcceptedSlot (nodeState n) \<le> firstUncommittedSlot (nodeState n)"
+    "\<And>n. lastAcceptedTerm (nodeState n) \<noteq> NO_TERM
+    \<Longrightarrow> lastAcceptedSlot (nodeState n) \<le> firstUncommittedSlot (nodeState n)"
   assumes lastAcceptedSlot_PublishResponse:
-    "\<And>i n t. lastAcceptedTerm (nodeState n) \<noteq> NO_TERM \<Longrightarrow> lastAcceptedSlot (nodeState n) < i \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
-  assumes lastAcceptedTerm_None: "\<And>n i t. lastAcceptedTerm (nodeState n) = NO_TERM \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
+    "\<And>i n t. lastAcceptedTerm (nodeState n) \<noteq> NO_TERM
+    \<Longrightarrow> lastAcceptedSlot (nodeState n) < i
+    \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
+  assumes lastAcceptedTerm_None: "\<And>n i t. lastAcceptedTerm (nodeState n) = NO_TERM
+    \<Longrightarrow> \<not> n \<midarrow>\<langle> PublishResponse i t \<rangle>\<leadsto>"
   assumes lastAcceptedTerm_Some_sent: "\<And>n t. lastAcceptedTerm (nodeState n) = SomeTerm t
     \<Longrightarrow> n \<midarrow>\<langle> PublishResponse (lastAcceptedSlot (nodeState n)) t \<rangle>\<leadsto>"
   assumes lastAcceptedTerm_Some_max: "\<And>n t t'. lastAcceptedTerm (nodeState n) = SomeTerm t
@@ -353,24 +358,28 @@ locale zen = zenMessages +
     \<or> (\<exists> i < firstUncommittedSlot (nodeState n). \<exists> a.
         n' \<midarrow>\<langle> Vote i (currentTerm (nodeState n)) a \<rangle>\<rightarrow> (OneNode n))"
   assumes electionValueForced_Vote: "\<And>n.
-    \<lbrakk> electionValueForced (nodeState n); \<not> (\<exists> x. \<langle> PublishRequest (firstUncommittedSlot (nodeState n))
-                                                              (currentTerm (nodeState n)) x \<rangle>\<leadsto>) \<rbrakk>
+    \<lbrakk> electionValueForced (nodeState n);
+      \<not> (\<exists> x. \<langle> PublishRequest (firstUncommittedSlot (nodeState n))
+                               (currentTerm (nodeState n)) x \<rangle>\<leadsto>) \<rbrakk>
     \<Longrightarrow> \<exists> n' \<in> joinVotes (nodeState n).
          (n' \<midarrow>\<langle> Vote (firstUncommittedSlot (nodeState n))
                                (currentTerm (nodeState n))
                                (lastAcceptedTermInSlot (nodeState n)) \<rangle>\<rightarrow> (OneNode n))"
   assumes electionValueForced_max: "\<And>n n' a'.
     \<lbrakk> electionValueForced (nodeState n);
-      \<not> (\<exists> x. \<langle> PublishRequest (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) x \<rangle>\<leadsto>);
+      \<not> (\<exists> x. \<langle> PublishRequest (firstUncommittedSlot (nodeState n))
+                               (currentTerm (nodeState n)) x \<rangle>\<leadsto>);
       n' \<in> joinVotes (nodeState n);
       n' \<midarrow>\<langle> Vote (firstUncommittedSlot (nodeState n))
                                 (currentTerm (nodeState n))
                                 a' \<rangle>\<rightarrow> (OneNode n) \<rbrakk>
     \<Longrightarrow> a' \<le> lastAcceptedTermInSlot (nodeState n)"
   assumes publishVotes: "\<And>n n'. n' \<in> publishVotes (nodeState n)
-    \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n)) (currentTerm (nodeState n)) \<rangle>\<leadsto>"
+    \<Longrightarrow> n' \<midarrow>\<langle> PublishResponse (firstUncommittedSlot (nodeState n))
+                              (currentTerm (nodeState n)) \<rangle>\<leadsto>"
   assumes currentClusterState_lastCommittedClusterStateBefore:
-    "\<And>n. currentClusterState (nodeState n) = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
+    "\<And>n. currentClusterState (nodeState n)
+              = lastCommittedClusterStateBefore (firstUncommittedSlot (nodeState n))"
 
 locale zenStep = zen +
   fixes messages' :: "RoutedMessage set"
