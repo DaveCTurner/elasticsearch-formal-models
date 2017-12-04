@@ -216,10 +216,10 @@ definition getLastAcceptedTermInSlot :: "TermOption Action"
       lastAcceptedData <- getLastAcceptedData;
       case lastAcceptedData of
           None \<Rightarrow> return NO_TERM
-        | Some lad \<Rightarrow> do {
+        | Some stv \<Rightarrow> do {
       firstUncommittedSlot <- getFirstUncommittedSlot;
-      return (if ladSlot lad = firstUncommittedSlot
-        then SomeTerm (ladTerm lad)
+      return (if stvSlot stv = firstUncommittedSlot
+        then SomeTerm (stvTerm stv)
         else NO_TERM)
     }}"
 
@@ -282,18 +282,18 @@ definition doVote :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> T
       })
     }"
 
-definition doPublishRequest :: "Node \<Rightarrow> LastAcceptedData \<Rightarrow> unit Action"
+definition doPublishRequest :: "Node \<Rightarrow> SlotTermValue \<Rightarrow> unit Action"
   where
     "doPublishRequest sourceNode newAcceptedState \<equiv> do {
 
       currentTerm <- getCurrentTerm;
-      when (ladTerm newAcceptedState \<noteq> currentTerm) (throw IllegalArgumentException);
+      when (stvTerm newAcceptedState \<noteq> currentTerm) (throw IllegalArgumentException);
 
       firstUncommittedSlot <- getFirstUncommittedSlot;
-      when (ladSlot newAcceptedState \<noteq> firstUncommittedSlot) (throw IllegalArgumentException);
+      when (stvSlot newAcceptedState \<noteq> firstUncommittedSlot) (throw IllegalArgumentException);
 
       setLastAcceptedData (Some newAcceptedState);
-      sendTo sourceNode (PublishResponse (ladSlot newAcceptedState) (ladTerm newAcceptedState))
+      sendTo sourceNode (PublishResponse (stvSlot newAcceptedState) (stvTerm newAcceptedState))
     }"
 
 record SlotTerm =
@@ -401,8 +401,8 @@ definition doReboot :: "unit Action"
   where
     "doReboot \<equiv> modifyNodeData (\<lambda>nd.
                   \<lparr> currentNode = currentNode nd
-                  , firstUncommittedSlot = firstUncommittedSlot nd
                   , currentTerm = currentTerm nd
+                  , firstUncommittedSlot = firstUncommittedSlot nd
                   , currentVotingNodes = currentVotingNodes nd
                   , currentClusterState = currentClusterState nd
                   , lastAcceptedData = lastAcceptedData nd
@@ -420,7 +420,7 @@ definition dispatchMessageInner :: "RoutedMessage \<Rightarrow> unit Action"
           StartJoin t \<Rightarrow> doStartJoin (sender m) t
           | Vote i t a \<Rightarrow> doVote (sender m) i t a
           | ClientValue x \<Rightarrow> doClientValue x
-          | PublishRequest i t x \<Rightarrow> doPublishRequest (sender m) \<lparr> ladSlot = i, ladTerm = t, ladValue = x \<rparr>
+          | PublishRequest i t x \<Rightarrow> doPublishRequest (sender m) \<lparr> stvSlot = i, stvTerm = t, stvValue = x \<rparr>
           | PublishResponse i t \<Rightarrow> doPublishResponse (sender m) \<lparr> stSlot = i, stTerm = t \<rparr>
           | ApplyCommit i t \<Rightarrow> doCommit \<lparr> stSlot = i, stTerm = t \<rparr>
           | CatchUpRequest \<Rightarrow> generateCatchup (sender m)

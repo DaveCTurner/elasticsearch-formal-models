@@ -112,35 +112,36 @@ subsection \<open>Node implementation\<close>
 
 text \<open>Each node holds the following local data.\<close>
 
-record LastAcceptedData =
-  ladSlot :: Slot
-  ladTerm :: Term
-  ladValue :: Value
+record SlotTermValue =
+  stvSlot :: Slot
+  stvTerm :: Term
+  stvValue :: Value
 
 record NodeData =
-  currentNode :: Node (* identity of this node *)
-  firstUncommittedSlot :: Slot (* all slots strictly below this one are committed *)
-  currentTerm :: Term (* greatest term for which a promise was sent, and term of votes being collected *)
-  currentVotingNodes :: "Node set" (* configuration of the currentEra - the set of voting nodes *)
-  currentClusterState :: ClusterState (* last-committed cluster state *)
-  (* acceptor data *)
-  lastAcceptedData :: "LastAcceptedData option"
-  (* election data *)
-  joinVotes :: "Node set" (* set of nodes that have sent a Vote for the current currentTerm *)
+  currentNode :: Node
+  currentTerm :: Term
+  (* committed state *)
+  firstUncommittedSlot :: Slot
+  currentVotingNodes :: "Node set"
+  currentClusterState :: ClusterState
+  (* accepted state *)
+  lastAcceptedData :: "SlotTermValue option"
+  (* election state *)
+  joinVotes :: "Node set"
   electionWon :: bool
-  electionValueForced :: bool (* if True, must propose lastAcceptedValue for this slot on winning an election; if False, can propose anything *)
-  (* learner data *)
-  publishPermitted :: bool (* if True, may publish a value for this slot/term pair; if False, must not: either there is definitely a PublishRequest in flight, or we've just rebooted. *)
+  electionValueForced :: bool
+  (* publish state *)
+  publishPermitted :: bool
   publishVotes :: "Node set"
 
 definition lastAcceptedSlot :: "NodeData \<Rightarrow> Slot"
-  where "lastAcceptedSlot nd \<equiv> ladSlot (THE lad. lastAcceptedData nd = Some lad)"
+  where "lastAcceptedSlot nd \<equiv> stvSlot (THE lad. lastAcceptedData nd = Some lad)"
 
 definition lastAcceptedValue :: "NodeData \<Rightarrow> Value"
-  where "lastAcceptedValue nd \<equiv> ladValue (THE lad. lastAcceptedData nd = Some lad)"
+  where "lastAcceptedValue nd \<equiv> stvValue (THE lad. lastAcceptedData nd = Some lad)"
 
 definition lastAcceptedTerm :: "NodeData \<Rightarrow> TermOption"
-  where "lastAcceptedTerm nd \<equiv> case lastAcceptedData nd of None \<Rightarrow> NO_TERM | Some lad \<Rightarrow> SomeTerm (ladTerm lad)"
+  where "lastAcceptedTerm nd \<equiv> case lastAcceptedData nd of None \<Rightarrow> NO_TERM | Some lad \<Rightarrow> SomeTerm (stvTerm lad)"
 
 definition isQuorum :: "NodeData \<Rightarrow> Node set \<Rightarrow> bool"
   where "isQuorum nd q \<equiv> q \<in> majorities (currentVotingNodes nd)"
@@ -229,7 +230,7 @@ definition handlePublishRequest :: "Slot \<Rightarrow> Term \<Rightarrow> Value 
     "handlePublishRequest i t x nd \<equiv>
           if i = firstUncommittedSlot nd
                 \<and> t = currentTerm nd
-          then ( nd \<lparr> lastAcceptedData := Some \<lparr> ladSlot = i, ladTerm = t, ladValue = x \<rparr> \<rparr>
+          then ( nd \<lparr> lastAcceptedData := Some \<lparr> stvSlot = i, stvTerm = t, stvValue = x \<rparr> \<rparr>
                , Some (PublishResponse i t))
           else (nd, None)"
 
@@ -302,8 +303,8 @@ definition handleReboot :: "NodeData \<Rightarrow> NodeData"
   where
     "handleReboot nd \<equiv>
       \<lparr> currentNode = currentNode nd
-      , firstUncommittedSlot = firstUncommittedSlot nd
       , currentTerm = currentTerm nd
+      , firstUncommittedSlot = firstUncommittedSlot nd
       , currentVotingNodes = currentVotingNodes nd
       , currentClusterState = currentClusterState nd
       , lastAcceptedData = lastAcceptedData nd
@@ -359,8 +360,8 @@ and the initial \texttt{ClusterState}, here shown as @{term "ClusterState 0"}.\<
 definition initialNodeState :: "Node \<Rightarrow> NodeData"
   where "initialNodeState n =
       \<lparr> currentNode = n
-      , firstUncommittedSlot = 0
       , currentTerm = 0
+      , firstUncommittedSlot = 0
       , currentVotingNodes = V\<^sub>0
       , currentClusterState = CS\<^sub>0
       , lastAcceptedData = None

@@ -1772,7 +1772,7 @@ proof (cases "i = firstUncommittedSlot nd \<and> t = currentTerm nd")
 next
   case precondition: True
 
-  hence result: "result = (nd\<lparr>lastAcceptedData := Some \<lparr> ladSlot = i, ladTerm = t, ladValue = x\<rparr> \<rparr>,
+  hence result: "result = (nd\<lparr>lastAcceptedData := Some \<lparr> stvSlot = i, stvTerm = t, stvValue = x\<rparr> \<rparr>,
       Some (PublishResponse i t))"
     by (auto simp add: result_def handlePublishRequest_def)
 
