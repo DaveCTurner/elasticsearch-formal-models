@@ -1,0 +1,74 @@
+PREP:
+1. slide deck in own Safari window, full screen on laptop, blank screen
+2. IntelliJ open on ConsensusState.java, LH half of screen, all tool windows shut, distraction free.
+3. Isabelle open full size
+3a. Preliminaries.thy, at top, with maxTerm_mem broken not to have nonempty precondition
+3b. Implementation.thy, at top
+3c. Monadicy.thy, at doVote
+3d. Zen.thy, at L310 (locale zen ...)
+3e. Open Preliminaries.thy.
+
+SCRIPT
+
+Ok, hi everyone, so I would like to talk a bit about formal methods, and I'll just share my screen.
+
+So before I start to talk about how we're using formal methods I thought I'd talk a bit about what formal methods actually are. They're a QA mechanism where we build a mathematical model of a system and then we investigate this model using some kind of tooling and various mathematical techniques. Two of the major formal methods areas we've been working in are
+
+model checking. Model checking is a technique where you model the system in a way that lets a model checker explore how it works and verify that the states that it goes through don't have any bad properties - things like "we never get stuck, and we never have a split-brain" Properties like that are quite good to check with model checkers.
+
+And machine-checked proof is the other technique that we've been using, and that's where instead of just exploring the system looking for bad states we build an argument that shows that the system can never get into a bad state
+
+You can think of model checking as being a little bit like testing: testing is a manually-guided exploration of the way the system behaves, and model checking is a more automatic version of the same thing with all sorts of clever tricks to make it way more efficient than testing.
+
+And proof is a lot more like a static type system: type systems give you a guarantee that the system has certain properties. They're typically not very strong properties, but they're still properties of the system. Like "you can't call a method on an object that doesn't have that method" if you're in Java. A machine-checked proof allows you to prove much stronger properties than this. The tradeoff there is that the typechecker in Java is fully automatic, and a machine-checked proof is very much not automatic.
+
+So why do we do it? Well it's a beefed-up version of the usual QA techniques that we use. Much much more thorough in terms of what it covers, but on the other hand, it needs much much more effort. So why put all that extra effort in? Well there are some areas where the standard QA techniques are just not enough, and the area that I'm particularly focusing on is called "Distributed consensus", and distributed consensus is the problem of getting all of the nodes in a cluster to agree on what the current cluster state is - the distribution of the shards across the nodes, the mappings and other metadata, that sort of thing. That's the problem that we're trying to work on here. And this is quite hard: in fact it was believed to be impossible for quite a long time in the 80s. One of the issues is that we have to think about things failing, and there's lots of different ways that things can fail: we can have nodes that crash, we can have nodes that just pause because of a garbage collection, we can have network partitions, and the network partition might not be a very clean one so some messages might get through and other ones might get dropped, and it's not necessarily symmetric or transitive, and fortunately there is a solution to this but the simplest possible solution still has about seven things you have to keep track of on each node, and about four different kinds of message that you have to pass between each node, and you have to keep track of all these messages flying back and forth and all the states the nodes are in and deal with all the failures, and the relationships between the messages on the wire and the fields on each node are quite complicated (and I'll show you just how complicated in a sec) and in short you're very very likely to miss some kind of corner case without tool support in the formal methods space.
+
+It's also interesting because there's lots of different design tradeoffs for how you do this: there's a basic algorithm that works and everything is based around this basic algorithm, but there's lots of different ways you can implement it with lots of different features, and the more features you support the more complicated the implementation gets. One of the advantages of the formal methods tooling has been that we've been able to explore the design space quite quickly and come up with improvements to our algorithm and investigate very quickly whether they work or not.
+
+So how do we do this? First up, all the source code for the models is in this github repository, and I've mentioned "tools", so the two tools are called TLA+, and TLA+ is mostly a model checker, and Yannick has done quite a lot of work in TLA+ on the replication algorithm as well but we've also been using TLA+ in looking at the cluster state consensus area, and the proof tool we've been using is called Isabelle. Isabelle is a proof assistant, and I thought I'd like to give you a little tour of the work we've been doing in Isabelle.
+
+So here is a tour.
+
+I'll switch to Isabelle. The user interface is just a text editor called jEdit -- it used to be Emacs but they fixed that -- and your interaction with Isabelle is mostly typing code in, and hopefully this looks a little bit like code. The important things to see on the screen here are that we're defining a Slot, which is like a sequence number, if you're familiar with sequence numbers it's the same thing here, and a term is like a primary term if you're familiar with them, and we're just saying they're both natural numbers, which is called 'nat'.
+
+And then we can define some other symbols, so here we're defining a thing called 'maxTerm' which takes a set of terms and gives you back the maximum one, and it's just defined to be the term in the set that's bigger than all other terms in the set.
+
+And this is where things start to look a bit more like maths and a bit less like programming, because you can say things like "for all" and you can assert that this is _THE_ t that satisfies some property without having to give an algorithm for how to find that t. It may look like trickery but it's not really trickery because if there isn't such a t or it's not unique then everything else breaks with this function, so you're required to prove, whenever you use it, that "THE t" is well-defined, but you don't have to give an algorithm at definition time which is kinda cool.
+
+So here's how you prove properties; this is where you spend most of your time in Isabelle. We state a theorem, which has some assumptions or preconditions: this one we're just assuming that we have a finite set of terms S, and then - just focus on this bit -we're saying that S contains its maximum.
+
+Now Isabelle is really really picky: you have to prove absolutely everything you're going to use later, even things that seem obvious, and thats kinda important because things that seem obvious turn out often to be false, normally because you've forgotten an assumption. And here this is the case - this obvious statement is false. And to show you how it's proving things, it works top down, so if you see here on the right this pink bar, the pink bits indicate the bits of proof that have not yet been checked.
+
+So if I scroll down you can see the text here is pink, but then the checker moves forwards so they stop being pink, and you get red bits saying "here's a bit that didn't check out". Might not be false, it might just need more help to find the way forward, but here it's false because we've forgotten that S might be empty. So if I put that back in and scroll to the bottom then you see it checking everything else and it checks out and there's no red bars on the right hand side any more so it's happy.
+
+This is looking like maths so far, so how do we do something that's a little bit more useful and attached to the real world? Here we're defining some records, and a record is a bit like a class in Java - at least the fields of a class, so here we're talking about the data that's kept on the node, and if I show you the class that we're modelling here hopefully this looks kinda similar: we've got a current Term and a current term, and a committed state, which is these three things, and an accepted state, and the election state is these three things in the model, and in the class it's a separate object which has a boolean saying whether we've won the election or not, whether the value in the election is forced, which is a kinda technical detail, and its superclass also has a set of nodes.
+
+And then let's have a look at how we write some code, which looks like this, and here's the corresponding code in Java: this code on the right hand side here is trying to model the code in Java on the left and hopefully it looks kinda close, right: first of all we check we're in the right term and if not we throw an exception, and then we check something about the slots and maybe throw an exception, and so on.
+
+So we're doing a by-eye comparison between the model code and the Java code; it's not that much code: if this were a very very big system then we'd look into more automated ways to keep the model and the Java in sync, but this lets us write the Java we want to write and then keep the model in sync with that by hand.
+
+And finally we want to prove some useful things about this system, and I mentioned earlier that there's a complicated set of relationships between the all the states on all the different nodes and the messages on the wire, and this is the block of text that basically describes what these relationships are, and it's kind of a bit of a scary wall of text so let's just look at a couple of the invariants. They're called "assumptions" because we assume they hold here and then use that to prove they hold later on, and this one here (lastAcceptedTerm_None) is saying that if our last accepted term is NO_TERM [[ show in Java ]] then we haven't sent any PublishResponse messages, and this one here (Vote_currentTerm) is saying that if we've sent a vote message in a term then our term is always no greater than our current term. As you can see there's quite a lot of these invariants, and the game is basically to show that these invariants always hold, and then to show that these invariants imply the properties that we want. We pretty much need all of these invariants to be here, and hopefully you can see now how difficult it'd be to be sure that we hadn't missed anything as we change the algorithm.
+
+And so if I scroll _right_ to the very bottom of this file, about 3000 ish lines down, we have this theorem here, which is the core of everything, which says that if two nodes are at the same slot, so the same sequence number, then they have the same cluster state. So, no split brains.
+
+I was hoping to actually do a live proof of this other theorem for you, this one here, but I think I'm going to run out of time so I'll stop here and leave you all in suspense about whether it's true or not.
+
+
+
+  assumes same_configuration: "currentVotingNodes (nodeState n⇩1) = currentVotingNodes (nodeState n⇩2)"
+
+  have 1: "joinVotes (nodeState n⇩1) ∈ majorities (currentVotingNodes (nodeState n⇩1))"
+    using electionWon_isQuorum won1 isQuorum_def by simp
+  have 2: "joinVotes (nodeState n⇩2) ∈ majorities (currentVotingNodes (nodeState n⇩2))"
+    using electionWon_isQuorum won2 isQuorum_def by simp
+
+  have 3: "joinVotes (nodeState n⇩1) ∩ joinVotes (nodeState n⇩2) ≠ {}"
+    using "1" "2" V_intersects currentVotingNodes_firstUncommittedSlot intersects_def same_configuration by auto
+
+  show "n⇩1 = n⇩2"
+    by (metis Int_emptyI 3 joinVotes promised_unique terms)
+qed
+
+
+
