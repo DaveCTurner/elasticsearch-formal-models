@@ -271,10 +271,10 @@ definition doVote :: "Node \<Rightarrow> Slot \<Rightarrow> Term \<Rightarrow> T
       let electionWon' = card (joinVotes \<inter> currentVotingNodes) * 2 > card currentVotingNodes;
       setElectionWon electionWon';
       when electionWon' (do {
-        electionValueForced <- getElectionValueForced;
         publishPermitted <- getPublishPermitted;
         when publishPermitted (do {
 
+          electionValueForced <- getElectionValueForced;
           when electionValueForced (do {
             setPublishPermitted False;
 

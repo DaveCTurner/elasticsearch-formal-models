@@ -27,9 +27,10 @@ definition maxTerm :: "Term set \<Rightarrow> Term"
 
 text \<open>It works correctly on finite and nonempty sets as follows:\<close>
 
-lemma
+theorem
+  fixes S :: "Term set"
   assumes finite: "finite S"
-  shows maxTerm_mem: "S \<noteq> {} \<Longrightarrow> maxTerm S \<in> S"
+  shows maxTerm_mem: "maxTerm S \<in> S"
     and maxTerm_max: "\<And> t'. t' \<in> S \<Longrightarrow> t' \<le> maxTerm S"
 proof -
   presume "S \<noteq> {}"
