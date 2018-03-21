@@ -18,7 +18,7 @@
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="replication_requests, lucene, pc, expected_doc, request_count"/>
+<stringAttribute key="modelBehaviorVars" value="replication_requests, maxUnsafeAutoIdTimestamp, lucene, pc, expected_doc, request_count"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
 <listAttribute key="modelCorrectnessInvariants">
@@ -42,6 +42,7 @@
 <listEntry value="Lucene_deleteDocuments;;Lucene_deleteDocuments;1;0"/>
 <listEntry value="Lucene_addDocuments;;Lucene_addDocuments;1;0"/>
 <listEntry value="Lucene_updateDocuments;;Lucene_updateDocuments;1;0"/>
+<listEntry value="DocAutoIdTimestamp;;1000;0;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions"/>

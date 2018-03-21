@@ -10,6 +10,8 @@ CONSTANTS OPEN, CLOSED
 
 CONSTANTS DocContent
 
+CONSTANTS DocAutoIdTimestamp
+
 (* We model the activity of a single document, since distinct documents
    (according to their IDs) are independent. Also each indexing operation
    occurs under a lock for that document ID, so there is not much concurrency
@@ -21,20 +23,25 @@ Request(request_count)
     (* ADD: An optimised append-only write can only occur as the first operation
     on the document ID in seqno order. Any subsequent attempts to ADD the
     document have the retry flag set and modelled as a RETRY_ADD. *)
-    ==    { [type |-> ADD,    seqno |-> 1,     content |-> content]
+    ==    { [type |-> ADD, seqno |-> 1, content |-> content, autoIdTimeStamp |-> DocAutoIdTimestamp]
           : content \in DocContent
+          }
+    (* RETRY_ADD: A retry of a write that does involve an internally-generated
+       document ID. *)
+    \cup  { [type |-> RETRY_ADD, seqno |-> seqno, content |-> content, autoIdTimeStamp |-> DocAutoIdTimestamp]
+          : seqno   \in 1..request_count
+          , content \in DocContent
           }
     (* UPDATE: A write that does not involve an internally-generated document ID.
        RETRY_ADD: A retry of a write that does involve an internally-generated
        document ID.
        Both can occur at any seqno. *)
-    \cup  { [type |-> type, seqno |-> seqno, content |-> content]
-          : type    \in {RETRY_ADD, UPDATE}
-          , seqno   \in 1..request_count
+    \cup  { [type |-> UPDATE, seqno |-> seqno, content |-> content]
+          : seqno   \in 1..request_count
           , content \in DocContent
           }
     (* DELETE *)
-    \cup  { [type |-> DELETE, seqno |-> seqno, content |-> NULL]
+    \cup  { [type |-> DELETE, seqno |-> seqno]
           : seqno \in 1..request_count
           }
 
@@ -43,6 +50,7 @@ RequestSet(request_count)
     == { rs \in SUBSET Request(request_count):
                 /\ Cardinality(rs)                   = request_count
                 /\ Cardinality({r.seqno : r \in rs}) = request_count
+                /\ Cardinality({r.content: r \in rs /\ FALSE}) <= 1
        }
 
 (* Apply a set of operations to a document in seqno order *)
@@ -83,6 +91,7 @@ variables
     request_count \in 1..4,
     replication_requests \in RequestSet(request_count),
     expected_doc = FinalDoc(replication_requests),
+    maxUnsafeAutoIdTimestamp \in {0, DocAutoIdTimestamp - 1, DocAutoIdTimestamp, DocAutoIdTimestamp + 1}
 
 process LuceneProcess = "ReplicaLucene"
 variables
@@ -121,9 +130,11 @@ end algorithm
 
 *)
 \* BEGIN TRANSLATION
-VARIABLES request_count, replication_requests, expected_doc, pc, lucene
+VARIABLES request_count, replication_requests, expected_doc, 
+          maxUnsafeAutoIdTimestamp, pc, lucene
 
-vars == << request_count, replication_requests, expected_doc, pc, lucene >>
+vars == << request_count, replication_requests, expected_doc, 
+           maxUnsafeAutoIdTimestamp, pc, lucene >>
 
 ProcSet == {"ReplicaLucene"} \cup {"Consumer"}
 
@@ -131,6 +142,7 @@ Init == (* Global variables *)
         /\ request_count \in 1..4
         /\ replication_requests \in RequestSet(request_count)
         /\ expected_doc = FinalDoc(replication_requests)
+        /\ maxUnsafeAutoIdTimestamp \in {0, DocAutoIdTimestamp - 1, DocAutoIdTimestamp, DocAutoIdTimestamp + 1}
         (* Process LuceneProcess *)
         /\ lucene = [ document |-> NULL
                     , buffer   |-> <<>>
@@ -150,7 +162,7 @@ LuceneLoop == /\ pc["ReplicaLucene"] = "LuceneLoop"
                     ELSE /\ pc' = [pc EXCEPT !["ReplicaLucene"] = "Done"]
                          /\ UNCHANGED lucene
               /\ UNCHANGED << request_count, replication_requests, 
-                              expected_doc >>
+                              expected_doc, maxUnsafeAutoIdTimestamp >>
 
 LuceneProcess == LuceneLoop
 
@@ -163,7 +175,8 @@ ConsumerLoop == /\ pc["Consumer"] = "ConsumerLoop"
                       ELSE /\ lucene' = [lucene EXCEPT !.state = CLOSED]
                            /\ pc' = [pc EXCEPT !["Consumer"] = "Done"]
                            /\ UNCHANGED replication_requests
-                /\ UNCHANGED << request_count, expected_doc >>
+                /\ UNCHANGED << request_count, expected_doc, 
+                                maxUnsafeAutoIdTimestamp >>
 
 ConsumerProcess == ConsumerLoop
 
@@ -186,5 +199,5 @@ Invariant == /\ Cardinality(replication_requests) <= 4
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Mar 21 14:29:52 GMT 2018 by davidturner
+\* Last modified Wed Mar 21 14:46:11 GMT 2018 by davidturner
 \* Created Wed Mar 21 12:14:28 GMT 2018 by davidturner
