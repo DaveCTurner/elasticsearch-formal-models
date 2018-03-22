@@ -41,7 +41,7 @@ Request(request_count)
           }
     (* DELETE *)
     \cup  { [type |-> DELETE, seqno |-> seqno]
-          : seqno \in {} \* 1..request_count
+          : seqno \in 1..request_count
           }
 
 (* The set of sets of requests, which have distinct seqnos *)
@@ -167,8 +167,9 @@ end process
 process ConsumerProcess = "Consumer"
 variables
     maxUnsafeAutoIdTimestamp \in {0, DocAutoIdTimestamp - 1, DocAutoIdTimestamp, DocAutoIdTimestamp + 1},
-    req,
-    plan, currentNotFoundOrDeleted, useLuceneUpdateDocument, indexIntoLucene
+    req, plan,
+    deleteFromLucene, currentlyDeleted,
+    currentNotFoundOrDeleted, useLuceneUpdateDocument, indexIntoLucene,
 begin
   ConsumerLoop:
   while replication_requests /= {} do
@@ -179,7 +180,78 @@ begin
     
     if req.type = DELETE
     then
-        skip;
+        (* planDeletionAsNonPrimary *)
+        
+        if req.seqno <= localCheckPoint
+        then
+            (* OP_STALE_OR_EQUAL *)
+            plan             := "processButSkipLucene";
+            deleteFromLucene := FALSE;
+            currentlyDeleted := FALSE;
+        else
+            if versionMap_isUnsafe
+            then
+                (* Perform a Lucene refresh *)
+                AwaitRefreshOnDelete: \* Label here to allow for other concurrent activity
+                await lucene.buffer = <<>>;
+            end if;
+        
+            compareDeleteOpToLuceneDocBasedOnSeqNo: \* Label needed because of AwaitRefreshOnDelete label
+    
+            if versionMap_docSeqNo /= NULL
+            then
+                (* Doc is in version map *)
+                if req.seqno > versionMap_docSeqNo
+                then
+                    (* OP_NEWER *)
+                    plan := "processNormally";
+                    deleteFromLucene := TRUE;
+                    currentlyDeleted := FALSE;
+                else
+                    (* OP_STALE_OR_EQUAL *)
+                    plan := "processButSkipLucene";
+                    deleteFromLucene := FALSE;
+                    currentlyDeleted := FALSE;
+                end if;
+            else
+                (* Doc is not in version map - check Lucene *)
+                if lucene.document = NULL
+                then
+                    (* LUCENE_DOC_NOT_FOUND *)
+                    plan := "processNormallyExceptNotFound";
+                    deleteFromLucene := TRUE;
+                    currentlyDeleted := TRUE;
+                else
+                    if req.seqno > lucene.document.seqno
+                    then
+                        (* OP_NEWER *)
+                        plan := "processNormally";                 
+                        deleteFromLucene := TRUE;
+                        currentlyDeleted := FALSE;
+                    else
+                        (* OP_STALE_OR_EQUAL *)
+                        plan := "processButSkipLucene";                  
+                        deleteFromLucene := FALSE;
+                        currentlyDeleted := FALSE;
+                    end if;
+                end if;
+            end if;
+        end if;
+        
+        ExecuteDeletePlan:  \* Label needed because of AwaitRefreshOnDelete label
+        if deleteFromLucene
+        then
+            if currentlyDeleted = FALSE
+            then
+                lucene := [lucene EXCEPT !.buffer = Append(@, 
+                    [ type    |-> Lucene_deleteDocuments
+                    ])];
+            end if;
+
+            versionMap_docSeqNo := req.seqno;
+        end if;
+    
+        completedSeqnos := completedSeqnos \cup {req.seqno};
     else
 
         (* planIndexingAsNonPrimary *)
@@ -211,6 +283,7 @@ begin
             
             if req.seqno <= localCheckPoint
             then
+                (* OP_STALE_OR_EQUAL *)        
                 plan                     := "processButSkipLucene";
                 currentNotFoundOrDeleted := FALSE;
                 useLuceneUpdateDocument  := FALSE;
@@ -219,11 +292,11 @@ begin
                 if versionMap_isUnsafe
                 then
                     (* Perform a Lucene refresh *)
-                    AwaitRefresh: \* Label here to allow for other concurrent activity
+                    AwaitRefreshOnIndex: \* Label here to allow for other concurrent activity
                     await lucene.buffer = <<>>;
                 end if;
             
-                compareOpToLuceneDocBasedOnSeqNo: \* Label needed because of AwaitRefresh label
+                compareIndexOpToLuceneDocBasedOnSeqNo: \* Label needed because of AwaitRefreshOnIndex label
                 
                 if versionMap_docSeqNo /= NULL
                 then
@@ -272,7 +345,7 @@ begin
         end if;
         
         (* planIndexingAsNonPrimary finished - now time to execute the plan *)
-        ExecutePlan: \* Label needed because of AwaitRefresh label
+        ExecuteIndexPlan: \* Label needed because of AwaitRefreshOnIndex label
         
         if indexIntoLucene
         then
@@ -303,13 +376,15 @@ CONSTANT defaultInitValue
 VARIABLES request_count, replication_requests, expected_doc, 
           versionMap_needsSafeAccess, versionMap_isUnsafe, 
           versionMap_docSeqNo, pc, lucene, localCheckPoint, completedSeqnos, 
-          maxUnsafeAutoIdTimestamp, req, plan, currentNotFoundOrDeleted, 
-          useLuceneUpdateDocument, indexIntoLucene
+          maxUnsafeAutoIdTimestamp, req, plan, deleteFromLucene, 
+          currentlyDeleted, currentNotFoundOrDeleted, useLuceneUpdateDocument, 
+          indexIntoLucene
 
 vars == << request_count, replication_requests, expected_doc, 
            versionMap_needsSafeAccess, versionMap_isUnsafe, 
            versionMap_docSeqNo, pc, lucene, localCheckPoint, completedSeqnos, 
-           maxUnsafeAutoIdTimestamp, req, plan, currentNotFoundOrDeleted, 
+           maxUnsafeAutoIdTimestamp, req, plan, deleteFromLucene, 
+           currentlyDeleted, currentNotFoundOrDeleted, 
            useLuceneUpdateDocument, indexIntoLucene >>
 
 ProcSet == {"SafeAccessEnabler"} \cup {"UnsafePutter"} \cup {"MaxUnsafeAutoIdTimestampIncreaser"} \cup {"ReplicaLucene"} \cup {"LocalCheckpointTracker"} \cup {"Consumer"}
@@ -332,6 +407,8 @@ Init == (* Global variables *)
         /\ maxUnsafeAutoIdTimestamp \in {0, DocAutoIdTimestamp - 1, DocAutoIdTimestamp, DocAutoIdTimestamp + 1}
         /\ req = defaultInitValue
         /\ plan = defaultInitValue
+        /\ deleteFromLucene = defaultInitValue
+        /\ currentlyDeleted = defaultInitValue
         /\ currentNotFoundOrDeleted = defaultInitValue
         /\ useLuceneUpdateDocument = defaultInitValue
         /\ indexIntoLucene = defaultInitValue
@@ -353,6 +430,7 @@ SafeAccessEnablerLoop == /\ pc["SafeAccessEnabler"] = "SafeAccessEnablerLoop"
                                          versionMap_docSeqNo, lucene, 
                                          localCheckPoint, completedSeqnos, 
                                          maxUnsafeAutoIdTimestamp, req, plan, 
+                                         deleteFromLucene, currentlyDeleted, 
                                          currentNotFoundOrDeleted, 
                                          useLuceneUpdateDocument, 
                                          indexIntoLucene >>
@@ -371,6 +449,7 @@ UnsafePutterLoop == /\ pc["UnsafePutter"] = "UnsafePutterLoop"
                                     versionMap_docSeqNo, lucene, 
                                     localCheckPoint, completedSeqnos, 
                                     maxUnsafeAutoIdTimestamp, req, plan, 
+                                    deleteFromLucene, currentlyDeleted, 
                                     currentNotFoundOrDeleted, 
                                     useLuceneUpdateDocument, indexIntoLucene >>
 
@@ -394,6 +473,8 @@ MaxUnsafeAutoIdTimestampIncreaserLoop == /\ pc["MaxUnsafeAutoIdTimestampIncrease
                                                          localCheckPoint, 
                                                          completedSeqnos, req, 
                                                          plan, 
+                                                         deleteFromLucene, 
+                                                         currentlyDeleted, 
                                                          currentNotFoundOrDeleted, 
                                                          useLuceneUpdateDocument, 
                                                          indexIntoLucene >>
@@ -418,6 +499,7 @@ LuceneLoop == /\ pc["ReplicaLucene"] = "LuceneLoop"
               /\ UNCHANGED << request_count, replication_requests, 
                               expected_doc, localCheckPoint, completedSeqnos, 
                               maxUnsafeAutoIdTimestamp, req, plan, 
+                              deleteFromLucene, currentlyDeleted, 
                               currentNotFoundOrDeleted, 
                               useLuceneUpdateDocument, indexIntoLucene >>
 
@@ -438,7 +520,9 @@ LocalCheckpointTrackerLoop == /\ pc["LocalCheckpointTracker"] = "LocalCheckpoint
                                               versionMap_docSeqNo, lucene, 
                                               completedSeqnos, 
                                               maxUnsafeAutoIdTimestamp, req, 
-                                              plan, currentNotFoundOrDeleted, 
+                                              plan, deleteFromLucene, 
+                                              currentlyDeleted, 
+                                              currentNotFoundOrDeleted, 
                                               useLuceneUpdateDocument, 
                                               indexIntoLucene >>
 
@@ -450,11 +534,19 @@ ConsumerLoop == /\ pc["Consumer"] = "ConsumerLoop"
                                 /\ req' = replication_request
                                 /\ replication_requests' = replication_requests \ {replication_request}
                            /\ IF req'.type = DELETE
-                                 THEN /\ TRUE
-                                      /\ pc' = [pc EXCEPT !["Consumer"] = "ConsumerLoop"]
+                                 THEN /\ IF req'.seqno <= localCheckPoint
+                                            THEN /\ plan' = "processButSkipLucene"
+                                                 /\ deleteFromLucene' = FALSE
+                                                 /\ currentlyDeleted' = FALSE
+                                                 /\ pc' = [pc EXCEPT !["Consumer"] = "ExecuteDeletePlan"]
+                                            ELSE /\ IF versionMap_isUnsafe
+                                                       THEN /\ pc' = [pc EXCEPT !["Consumer"] = "AwaitRefreshOnDelete"]
+                                                       ELSE /\ pc' = [pc EXCEPT !["Consumer"] = "compareDeleteOpToLuceneDocBasedOnSeqNo"]
+                                                 /\ UNCHANGED << plan, 
+                                                                 deleteFromLucene, 
+                                                                 currentlyDeleted >>
                                       /\ UNCHANGED << versionMap_needsSafeAccess, 
                                                       maxUnsafeAutoIdTimestamp, 
-                                                      plan, 
                                                       currentNotFoundOrDeleted, 
                                                       useLuceneUpdateDocument, 
                                                       indexIntoLucene >>
@@ -468,7 +560,7 @@ ConsumerLoop == /\ pc["Consumer"] = "ConsumerLoop"
                                                  /\ currentNotFoundOrDeleted' = TRUE
                                                  /\ useLuceneUpdateDocument' = FALSE
                                                  /\ indexIntoLucene' = TRUE
-                                                 /\ pc' = [pc EXCEPT !["Consumer"] = "ExecutePlan"]
+                                                 /\ pc' = [pc EXCEPT !["Consumer"] = "ExecuteIndexPlan"]
                                                  /\ UNCHANGED versionMap_needsSafeAccess
                                             ELSE /\ versionMap_needsSafeAccess' = TRUE
                                                  /\ IF req'.seqno <= localCheckPoint
@@ -476,18 +568,21 @@ ConsumerLoop == /\ pc["Consumer"] = "ConsumerLoop"
                                                             /\ currentNotFoundOrDeleted' = FALSE
                                                             /\ useLuceneUpdateDocument' = FALSE
                                                             /\ indexIntoLucene' = FALSE
-                                                            /\ pc' = [pc EXCEPT !["Consumer"] = "ExecutePlan"]
+                                                            /\ pc' = [pc EXCEPT !["Consumer"] = "ExecuteIndexPlan"]
                                                        ELSE /\ IF versionMap_isUnsafe
-                                                                  THEN /\ pc' = [pc EXCEPT !["Consumer"] = "AwaitRefresh"]
-                                                                  ELSE /\ pc' = [pc EXCEPT !["Consumer"] = "compareOpToLuceneDocBasedOnSeqNo"]
+                                                                  THEN /\ pc' = [pc EXCEPT !["Consumer"] = "AwaitRefreshOnIndex"]
+                                                                  ELSE /\ pc' = [pc EXCEPT !["Consumer"] = "compareIndexOpToLuceneDocBasedOnSeqNo"]
                                                             /\ UNCHANGED << plan, 
                                                                             currentNotFoundOrDeleted, 
                                                                             useLuceneUpdateDocument, 
                                                                             indexIntoLucene >>
+                                      /\ UNCHANGED << deleteFromLucene, 
+                                                      currentlyDeleted >>
                       ELSE /\ pc' = [pc EXCEPT !["Consumer"] = "Done"]
                            /\ UNCHANGED << replication_requests, 
                                            versionMap_needsSafeAccess, 
                                            maxUnsafeAutoIdTimestamp, req, plan, 
+                                           deleteFromLucene, currentlyDeleted, 
                                            currentNotFoundOrDeleted, 
                                            useLuceneUpdateDocument, 
                                            indexIntoLucene >>
@@ -495,79 +590,161 @@ ConsumerLoop == /\ pc["Consumer"] = "ConsumerLoop"
                                 versionMap_isUnsafe, versionMap_docSeqNo, 
                                 lucene, localCheckPoint, completedSeqnos >>
 
-ExecutePlan == /\ pc["Consumer"] = "ExecutePlan"
-               /\ IF indexIntoLucene
-                     THEN /\ lucene' =       [lucene EXCEPT !.buffer = Append(@,
-                                       [ type    |-> IF useLuceneUpdateDocument THEN Lucene_updateDocuments ELSE Lucene_addDocuments
-                                       , seqno   |-> req.seqno
-                                       , content |-> req.content
-                                       ])]
-                          /\ IF versionMap_needsSafeAccess
-                                THEN /\ versionMap_docSeqNo' = req.seqno
-                                     /\ UNCHANGED versionMap_isUnsafe
-                                ELSE /\ versionMap_isUnsafe' = TRUE
-                                     /\ UNCHANGED versionMap_docSeqNo
-                     ELSE /\ TRUE
-                          /\ UNCHANGED << versionMap_isUnsafe, 
-                                          versionMap_docSeqNo, lucene >>
-               /\ completedSeqnos' = (completedSeqnos \cup {req.seqno})
-               /\ pc' = [pc EXCEPT !["Consumer"] = "ConsumerLoop"]
-               /\ UNCHANGED << request_count, replication_requests, 
-                               expected_doc, versionMap_needsSafeAccess, 
-                               localCheckPoint, maxUnsafeAutoIdTimestamp, req, 
-                               plan, currentNotFoundOrDeleted, 
-                               useLuceneUpdateDocument, indexIntoLucene >>
+ExecuteDeletePlan == /\ pc["Consumer"] = "ExecuteDeletePlan"
+                     /\ IF deleteFromLucene
+                           THEN /\ IF currentlyDeleted = FALSE
+                                      THEN /\ lucene' =       [lucene EXCEPT !.buffer = Append(@,
+                                                        [ type    |-> Lucene_deleteDocuments
+                                                        ])]
+                                      ELSE /\ TRUE
+                                           /\ UNCHANGED lucene
+                                /\ versionMap_docSeqNo' = req.seqno
+                           ELSE /\ TRUE
+                                /\ UNCHANGED << versionMap_docSeqNo, lucene >>
+                     /\ completedSeqnos' = (completedSeqnos \cup {req.seqno})
+                     /\ pc' = [pc EXCEPT !["Consumer"] = "ConsumerLoop"]
+                     /\ UNCHANGED << request_count, replication_requests, 
+                                     expected_doc, versionMap_needsSafeAccess, 
+                                     versionMap_isUnsafe, localCheckPoint, 
+                                     maxUnsafeAutoIdTimestamp, req, plan, 
+                                     deleteFromLucene, currentlyDeleted, 
+                                     currentNotFoundOrDeleted, 
+                                     useLuceneUpdateDocument, indexIntoLucene >>
 
-compareOpToLuceneDocBasedOnSeqNo == /\ pc["Consumer"] = "compareOpToLuceneDocBasedOnSeqNo"
-                                    /\ IF versionMap_docSeqNo /= NULL
-                                          THEN /\ IF req.seqno > versionMap_docSeqNo
-                                                     THEN /\ plan' = "processNormally"
-                                                          /\ currentNotFoundOrDeleted' = FALSE
-                                                          /\ useLuceneUpdateDocument' = TRUE
-                                                          /\ indexIntoLucene' = TRUE
-                                                     ELSE /\ plan' = "processButSkipLucene"
-                                                          /\ currentNotFoundOrDeleted' = FALSE
-                                                          /\ useLuceneUpdateDocument' = FALSE
-                                                          /\ indexIntoLucene' = FALSE
-                                          ELSE /\ IF lucene.document = NULL
-                                                     THEN /\ plan' = "processNormallyExceptNotFound"
-                                                          /\ currentNotFoundOrDeleted' = TRUE
-                                                          /\ useLuceneUpdateDocument' = FALSE
-                                                          /\ indexIntoLucene' = TRUE
-                                                     ELSE /\ IF req.seqno > lucene.document.seqno
-                                                                THEN /\ plan' = "processNormally"
-                                                                     /\ currentNotFoundOrDeleted' = FALSE
-                                                                     /\ useLuceneUpdateDocument' = TRUE
-                                                                     /\ indexIntoLucene' = TRUE
-                                                                ELSE /\ plan' = "processButSkipLucene"
-                                                                     /\ currentNotFoundOrDeleted' = FALSE
-                                                                     /\ useLuceneUpdateDocument' = FALSE
-                                                                     /\ indexIntoLucene' = FALSE
-                                    /\ pc' = [pc EXCEPT !["Consumer"] = "ExecutePlan"]
-                                    /\ UNCHANGED << request_count, 
-                                                    replication_requests, 
-                                                    expected_doc, 
-                                                    versionMap_needsSafeAccess, 
-                                                    versionMap_isUnsafe, 
-                                                    versionMap_docSeqNo, 
-                                                    lucene, localCheckPoint, 
-                                                    completedSeqnos, 
-                                                    maxUnsafeAutoIdTimestamp, 
-                                                    req >>
+ExecuteIndexPlan == /\ pc["Consumer"] = "ExecuteIndexPlan"
+                    /\ IF indexIntoLucene
+                          THEN /\ lucene' =       [lucene EXCEPT !.buffer = Append(@,
+                                            [ type    |-> IF useLuceneUpdateDocument THEN Lucene_updateDocuments ELSE Lucene_addDocuments
+                                            , seqno   |-> req.seqno
+                                            , content |-> req.content
+                                            ])]
+                               /\ IF versionMap_needsSafeAccess
+                                     THEN /\ versionMap_docSeqNo' = req.seqno
+                                          /\ UNCHANGED versionMap_isUnsafe
+                                     ELSE /\ versionMap_isUnsafe' = TRUE
+                                          /\ UNCHANGED versionMap_docSeqNo
+                          ELSE /\ TRUE
+                               /\ UNCHANGED << versionMap_isUnsafe, 
+                                               versionMap_docSeqNo, lucene >>
+                    /\ completedSeqnos' = (completedSeqnos \cup {req.seqno})
+                    /\ pc' = [pc EXCEPT !["Consumer"] = "ConsumerLoop"]
+                    /\ UNCHANGED << request_count, replication_requests, 
+                                    expected_doc, versionMap_needsSafeAccess, 
+                                    localCheckPoint, maxUnsafeAutoIdTimestamp, 
+                                    req, plan, deleteFromLucene, 
+                                    currentlyDeleted, currentNotFoundOrDeleted, 
+                                    useLuceneUpdateDocument, indexIntoLucene >>
 
-AwaitRefresh == /\ pc["Consumer"] = "AwaitRefresh"
-                /\ lucene.buffer = <<>>
-                /\ pc' = [pc EXCEPT !["Consumer"] = "compareOpToLuceneDocBasedOnSeqNo"]
-                /\ UNCHANGED << request_count, replication_requests, 
-                                expected_doc, versionMap_needsSafeAccess, 
-                                versionMap_isUnsafe, versionMap_docSeqNo, 
-                                lucene, localCheckPoint, completedSeqnos, 
-                                maxUnsafeAutoIdTimestamp, req, plan, 
-                                currentNotFoundOrDeleted, 
-                                useLuceneUpdateDocument, indexIntoLucene >>
+compareDeleteOpToLuceneDocBasedOnSeqNo == /\ pc["Consumer"] = "compareDeleteOpToLuceneDocBasedOnSeqNo"
+                                          /\ IF versionMap_docSeqNo /= NULL
+                                                THEN /\ IF req.seqno > versionMap_docSeqNo
+                                                           THEN /\ plan' = "processNormally"
+                                                                /\ deleteFromLucene' = TRUE
+                                                                /\ currentlyDeleted' = FALSE
+                                                           ELSE /\ plan' = "processButSkipLucene"
+                                                                /\ deleteFromLucene' = FALSE
+                                                                /\ currentlyDeleted' = FALSE
+                                                ELSE /\ IF lucene.document = NULL
+                                                           THEN /\ plan' = "processNormallyExceptNotFound"
+                                                                /\ deleteFromLucene' = TRUE
+                                                                /\ currentlyDeleted' = TRUE
+                                                           ELSE /\ IF req.seqno > lucene.document.seqno
+                                                                      THEN /\ plan' = "processNormally"
+                                                                           /\ deleteFromLucene' = TRUE
+                                                                           /\ currentlyDeleted' = FALSE
+                                                                      ELSE /\ plan' = "processButSkipLucene"
+                                                                           /\ deleteFromLucene' = FALSE
+                                                                           /\ currentlyDeleted' = FALSE
+                                          /\ pc' = [pc EXCEPT !["Consumer"] = "ExecuteDeletePlan"]
+                                          /\ UNCHANGED << request_count, 
+                                                          replication_requests, 
+                                                          expected_doc, 
+                                                          versionMap_needsSafeAccess, 
+                                                          versionMap_isUnsafe, 
+                                                          versionMap_docSeqNo, 
+                                                          lucene, 
+                                                          localCheckPoint, 
+                                                          completedSeqnos, 
+                                                          maxUnsafeAutoIdTimestamp, 
+                                                          req, 
+                                                          currentNotFoundOrDeleted, 
+                                                          useLuceneUpdateDocument, 
+                                                          indexIntoLucene >>
 
-ConsumerProcess == ConsumerLoop \/ ExecutePlan
-                      \/ compareOpToLuceneDocBasedOnSeqNo \/ AwaitRefresh
+AwaitRefreshOnDelete == /\ pc["Consumer"] = "AwaitRefreshOnDelete"
+                        /\ lucene.buffer = <<>>
+                        /\ pc' = [pc EXCEPT !["Consumer"] = "compareDeleteOpToLuceneDocBasedOnSeqNo"]
+                        /\ UNCHANGED << request_count, replication_requests, 
+                                        expected_doc, 
+                                        versionMap_needsSafeAccess, 
+                                        versionMap_isUnsafe, 
+                                        versionMap_docSeqNo, lucene, 
+                                        localCheckPoint, completedSeqnos, 
+                                        maxUnsafeAutoIdTimestamp, req, plan, 
+                                        deleteFromLucene, currentlyDeleted, 
+                                        currentNotFoundOrDeleted, 
+                                        useLuceneUpdateDocument, 
+                                        indexIntoLucene >>
+
+compareIndexOpToLuceneDocBasedOnSeqNo == /\ pc["Consumer"] = "compareIndexOpToLuceneDocBasedOnSeqNo"
+                                         /\ IF versionMap_docSeqNo /= NULL
+                                               THEN /\ IF req.seqno > versionMap_docSeqNo
+                                                          THEN /\ plan' = "processNormally"
+                                                               /\ currentNotFoundOrDeleted' = FALSE
+                                                               /\ useLuceneUpdateDocument' = TRUE
+                                                               /\ indexIntoLucene' = TRUE
+                                                          ELSE /\ plan' = "processButSkipLucene"
+                                                               /\ currentNotFoundOrDeleted' = FALSE
+                                                               /\ useLuceneUpdateDocument' = FALSE
+                                                               /\ indexIntoLucene' = FALSE
+                                               ELSE /\ IF lucene.document = NULL
+                                                          THEN /\ plan' = "processNormallyExceptNotFound"
+                                                               /\ currentNotFoundOrDeleted' = TRUE
+                                                               /\ useLuceneUpdateDocument' = FALSE
+                                                               /\ indexIntoLucene' = TRUE
+                                                          ELSE /\ IF req.seqno > lucene.document.seqno
+                                                                     THEN /\ plan' = "processNormally"
+                                                                          /\ currentNotFoundOrDeleted' = FALSE
+                                                                          /\ useLuceneUpdateDocument' = TRUE
+                                                                          /\ indexIntoLucene' = TRUE
+                                                                     ELSE /\ plan' = "processButSkipLucene"
+                                                                          /\ currentNotFoundOrDeleted' = FALSE
+                                                                          /\ useLuceneUpdateDocument' = FALSE
+                                                                          /\ indexIntoLucene' = FALSE
+                                         /\ pc' = [pc EXCEPT !["Consumer"] = "ExecuteIndexPlan"]
+                                         /\ UNCHANGED << request_count, 
+                                                         replication_requests, 
+                                                         expected_doc, 
+                                                         versionMap_needsSafeAccess, 
+                                                         versionMap_isUnsafe, 
+                                                         versionMap_docSeqNo, 
+                                                         lucene, 
+                                                         localCheckPoint, 
+                                                         completedSeqnos, 
+                                                         maxUnsafeAutoIdTimestamp, 
+                                                         req, deleteFromLucene, 
+                                                         currentlyDeleted >>
+
+AwaitRefreshOnIndex == /\ pc["Consumer"] = "AwaitRefreshOnIndex"
+                       /\ lucene.buffer = <<>>
+                       /\ pc' = [pc EXCEPT !["Consumer"] = "compareIndexOpToLuceneDocBasedOnSeqNo"]
+                       /\ UNCHANGED << request_count, replication_requests, 
+                                       expected_doc, 
+                                       versionMap_needsSafeAccess, 
+                                       versionMap_isUnsafe, 
+                                       versionMap_docSeqNo, lucene, 
+                                       localCheckPoint, completedSeqnos, 
+                                       maxUnsafeAutoIdTimestamp, req, plan, 
+                                       deleteFromLucene, currentlyDeleted, 
+                                       currentNotFoundOrDeleted, 
+                                       useLuceneUpdateDocument, 
+                                       indexIntoLucene >>
+
+ConsumerProcess == ConsumerLoop \/ ExecuteDeletePlan \/ ExecuteIndexPlan
+                      \/ compareDeleteOpToLuceneDocBasedOnSeqNo
+                      \/ AwaitRefreshOnDelete
+                      \/ compareIndexOpToLuceneDocBasedOnSeqNo
+                      \/ AwaitRefreshOnIndex
 
 Next == SafeAccessEnablerProcess \/ UnsafePutterProcess
            \/ MaxUnsafeAutoIdTimestampIncreaserProcess \/ LuceneProcess
@@ -588,5 +765,5 @@ Invariant == /\ Cardinality(replication_requests) <= 4
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Mar 22 12:36:58 GMT 2018 by davidturner
+\* Last modified Thu Mar 22 13:10:35 GMT 2018 by davidturner
 \* Created Wed Mar 21 12:14:28 GMT 2018 by davidturner
