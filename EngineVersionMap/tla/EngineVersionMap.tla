@@ -584,11 +584,9 @@ Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 Terminated == \A self \in ProcSet: pc[self] = "Done"
 
 Invariant == /\ Cardinality(replication_requests) <= 4
-             /\ \/ expected_doc /= NULL
-                \/ expected_doc  = NULL
-             \* /\ Terminated => doc = expected_doc
+             /\ Terminated => lucene.document.content = expected_doc
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Mar 22 12:28:59 GMT 2018 by davidturner
+\* Last modified Thu Mar 22 12:36:58 GMT 2018 by davidturner
 \* Created Wed Mar 21 12:14:28 GMT 2018 by davidturner
