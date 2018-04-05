@@ -25,6 +25,9 @@ definition modified :: "('a \<Rightarrow> 'b) stfun \<Rightarrow> 'a \<Rightarro
 definition updated :: "('a \<Rightarrow> 'b) stfun \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> action"
   where "updated f a b = modified f a (\<lambda>_. b)"
 
+definition unspecified :: "('a \<Rightarrow> 'b) stfun \<Rightarrow> 'a \<Rightarrow> action"
+  where "unspecified f a st = (\<forall> a'. a' \<noteq> a \<longrightarrow> f (fst st) a' = f (snd st) a')"
+
 record DescendentsEntry =
   prevT :: nat
   prevI :: nat
@@ -158,8 +161,8 @@ locale ZenWithTerms =
                             \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laVersion  = lastAcceptedVersion_n \<rparr> \<rparr>))
           \<and> updated currentTerm                n t
-          \<and> (\<forall> n'. #n' \<noteq> #n \<longrightarrow> id<lastPublishedVersion$      ,#n'> = id<$lastPublishedVersion      ,#n'>) (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-          \<and> (\<forall> n'. #n' \<noteq> #n \<longrightarrow> id<lastPublishedConfiguration$,#n'> = id<$lastPublishedConfiguration,#n'>) (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+          \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+          \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
           \<and> updated startedJoinSinceLastReboot n True
           \<and> updated electionWon                n False
           \<and> updated joinVotes                  n {}
@@ -258,6 +261,7 @@ locale ZenWithTerms =
     \<and> #(version  m) = id<$lastPublishedVersion,#n>
     \<and> modified publishVotes n (insert (source m))
     \<and> (if IsQuorum<id<publishVotes$,#n>,id<$lastCommittedConfiguration,#n>>
+        \<and> IsQuorum<id<publishVotes$,#n>,id<$lastPublishedConfiguration,#n>>
         then (\<exists> commitRequests currentTerm_n lastPublishedVersion_n.
                   #lastPublishedVersion_n = id<$lastPublishedVersion,#n>
                 \<and> #commitRequests = #(\<Union> ns \<in> UNIV. {
@@ -288,8 +292,8 @@ locale ZenWithTerms =
     ( updated electionWon                n False
     \<and> updated startedJoinSinceLastReboot n False
     \<and> updated joinVotes                  n {}
-    \<and> (\<forall> n'. #n' \<noteq> #n \<longrightarrow> id<lastPublishedVersion$      ,#n'> = id<$lastPublishedVersion      ,#n'>) (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-    \<and> (\<forall> n'. #n' \<noteq> #n \<longrightarrow> id<lastPublishedConfiguration$,#n'> = id<$lastPublishedConfiguration,#n'>) (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+    \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+    \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
     \<and> updated publishVotes               n {}
     \<and> unchanged (messages, lastAcceptedVersion, currentTerm, lastCommittedConfiguration, descendant,
                  lastAcceptedTerm, lastAcceptedValue, lastAcceptedConfiguration, initialConfiguration,
@@ -451,7 +455,8 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
-    ; \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
+    ;   \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
+      \<or> \<not> IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages                   s
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
@@ -475,6 +480,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
+    ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
@@ -555,7 +561,7 @@ proof -
 
     with p show  P
       by (intro HandleStartJoin [of n tm joinRequest nm],
-          auto simp add: HandleStartJoin_def updated_def modified_def joinRequest_def)
+          auto simp add: HandleStartJoin_def updated_def modified_def joinRequest_def unspecified_def)
   next
     fix m
     assume p: "(s,t) \<Turnstile> #m \<in> $messages" "(s,t) \<Turnstile> HandleJoinRequest (dest m) m"
@@ -614,7 +620,8 @@ proof -
             , payload = PublishResponse \<lparr>prs_version  = version  m\<rparr> \<rparr> \<in> messages s" by simp
 
     show P
-    proof (cases "IsQuorum (publishVotes t (dest m)) (lastCommittedConfiguration s (dest m))")
+    proof (cases "IsQuorum (publishVotes t (dest m)) (lastCommittedConfiguration s (dest m))
+                \<and> IsQuorum (publishVotes t (dest m)) (lastPublishedConfiguration s (dest m))")
       case False
       with p is_message show P
         apply (intro HandlePublishResponse_NoQuorum [of "source m" "dest m"])
@@ -641,7 +648,7 @@ proof -
   next
     fix n assume p: "(s,t) \<Turnstile> RestartNode n"
     thus P
-      by (intro RestartNode [of n], auto simp add: RestartNode_def updated_def modified_def)
+      by (intro RestartNode [of n], auto simp add: RestartNode_def updated_def modified_def unspecified_def)
   qed
 qed
 
