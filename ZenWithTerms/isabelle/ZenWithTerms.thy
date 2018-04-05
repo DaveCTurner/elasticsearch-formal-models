@@ -157,12 +157,12 @@ locale ZenWithTerms =
                               #lastAcceptedTerm_n     = id<$lastAcceptedTerm,#n>
                             \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laVersion  = lastAcceptedVersion_n \<rparr> \<rparr>))
-          \<and> updated currentTerm     n t
-          \<and> updated lastPublishedVersion  n 0
-          \<and> updated startedJoinSinceLastReboot   n True
-          \<and> updated electionWon     n False
-          \<and> updated joinVotes       n {}
-          \<and> updated publishVotes    n {}
+          \<and> updated currentTerm                n t
+          \<and> updated lastPublishedVersion       n 0
+          \<and> updated startedJoinSinceLastReboot n True
+          \<and> updated electionWon                n False
+          \<and> updated joinVotes                  n {}
+          \<and> updated publishVotes               n {}
           \<and> messages$ = ($messages \<union> #{ joinRequest })
           \<and> unchanged (lastCommittedConfiguration, lastAcceptedConfiguration, lastAcceptedVersion,
                 lastAcceptedValue, lastAcceptedTerm, descendant, initialConfiguration, initialValue,
@@ -235,11 +235,11 @@ locale ZenWithTerms =
     ( #(case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False)
     \<and> #(term m) = id<$currentTerm,#n>
     \<and> ((#(term m) = id<$lastAcceptedTerm,#n>) \<longrightarrow> (id<$lastAcceptedVersion,#n> < #(version  m)))
-    \<and> updated lastAcceptedTerm          n (term     m)
-    \<and> updated lastAcceptedVersion       n (version  m)
-    \<and> updated lastAcceptedValue         n (value    m)
-    \<and> updated lastAcceptedConfiguration n (config   m)
-    \<and> updated lastCommittedConfiguration      n (currConf m)
+    \<and> updated lastAcceptedTerm           n (term     m)
+    \<and> updated lastAcceptedVersion        n (version  m)
+    \<and> updated lastAcceptedValue          n (value    m)
+    \<and> updated lastAcceptedConfiguration  n (config   m)
+    \<and> updated lastCommittedConfiguration n (currConf m)
     \<and> messages$ = (insert \<lparr> source = n, dest = source m, term = term m
                           , payload = PublishResponse \<lparr> prs_version  = version  m \<rparr> \<rparr>)<$messages>
     \<and> unchanged (startedJoinSinceLastReboot, currentTerm, descendant, electionWon, lastPublishedVersion, joinVotes,
@@ -280,11 +280,11 @@ locale ZenWithTerms =
     (* crash/restart node n (loses ephemeral state) *)
   fixes RestartNode :: "Node \<Rightarrow> action"
   defines "RestartNode n \<equiv> ACT
-    ( updated electionWon     n False
-    \<and> updated startedJoinSinceLastReboot   n False
-    \<and> updated joinVotes       n {}
-    \<and> updated lastPublishedVersion  n 0
-    \<and> updated publishVotes    n {}
+    ( updated electionWon                n False
+    \<and> updated startedJoinSinceLastReboot n False
+    \<and> updated joinVotes                  n {}
+    \<and> updated lastPublishedVersion       n 0
+    \<and> updated publishVotes               n {}
     \<and> unchanged (messages, lastAcceptedVersion, currentTerm, lastCommittedConfiguration, descendant,
                  lastAcceptedTerm, lastAcceptedValue, lastAcceptedConfiguration, initialConfiguration,
                  initialValue, leaderHistory, basedOn))"
@@ -312,7 +312,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     HandlePublishRequest HandlePublishResponse_NoQuorum HandlePublishResponse_Quorum HandleCommitRequest RestartNode]:
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
   assumes unchanged:
-    "\<lbrakk> messages                   t = messages                   s
+    "\<lbrakk> messages                  t = messages                   s
     ; descendant                 t = descendant                 s
     ; currentTerm                t = currentTerm                s
     ; lastCommittedConfiguration t = lastCommittedConfiguration s
@@ -441,11 +441,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ; \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
-    ; messages                   t    = messages s
-(*    ; messages                   t    = (if IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
-                                          then messages s \<union>
-                                            (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
-                                          else messages s)*)
+    ; messages                   t    = messages                   s
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
     ; lastCommittedConfiguration t    = lastCommittedConfiguration s
@@ -467,8 +463,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
-    ; messages                   t    = messages s \<union>
-                                            (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
+    ; messages                   t    = messages s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
     ; lastCommittedConfiguration t    = lastCommittedConfiguration s
