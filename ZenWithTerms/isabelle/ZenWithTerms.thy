@@ -739,16 +739,25 @@ definition LastAcceptedDataSource :: stpred where "LastAcceptedDataSource s \<eq
                                         \<and> lastAcceptedValue         s n = value    m
                                         \<and> lastAcceptedConfiguration s n = config   m)"
 
-definition AllConfigurations :: "Node set set stfun" where "AllConfigurations s \<equiv>
+definition PublishedConfigurations :: "Node set set stfun" where "PublishedConfigurations s \<equiv>
   insert (initialConfiguration s) (config ` { m \<in> messages s. isPublishRequest m })"
 
-definition AllConfigurationsValid :: stpred where "AllConfigurationsValid s \<equiv>
-  AllConfigurations s \<subseteq> ValidConfigs"
+definition PublishedConfigurationsValid :: stpred where "PublishedConfigurationsValid s \<equiv>
+  PublishedConfigurations s \<subseteq> ValidConfigs"
 
 definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfigurations s \<equiv>
   insert (initialConfiguration s)
     { c. (\<exists> mPub \<in> messages s. isPublishRequest mPub \<and> config mPub = c
            \<and> (\<exists> mCom \<in> messages s. isCommit mCom \<and> term mCom = term mPub \<and> version  mCom = version  mPub)) }"
+
+definition CommittedConfigurationsPublished :: stpred where "CommittedConfigurationsPublished s \<equiv>
+  CommittedConfigurations s \<subseteq> PublishedConfigurations s"
+
+definition PublishedConfigurationSource :: stpred where "PublishedConfigurationSource s \<equiv>
+  \<forall>n. electionWon s n \<longrightarrow> lastPublishedConfiguration s n \<in> PublishedConfigurations s"
+
+definition AcceptedConfigurationSource :: stpred where "AcceptedConfigurationSource s \<equiv>
+  \<forall>n. lastAcceptedConfiguration s n \<in> PublishedConfigurations s"
 
 definition CurrentConfigurationSource :: stpred where "CurrentConfigurationSource s \<equiv>
   \<forall>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
@@ -834,8 +843,9 @@ definition PublishRequestsContiguousWithinTermBelow :: "nat \<Rightarrow> stpred
     \<longrightarrow> term m1 = term m2 \<longrightarrow> term m1 < termBound \<longrightarrow> version  m1 < version  m2
     \<longrightarrow> (TermVersion  (term m2) (version  m2), TermVersion  (term m2) (version  m2 - 1)) \<in> basedOn s"
 
-lemma CommittedConfigurationsSubsetAll: "CommittedConfigurations s \<subseteq> AllConfigurations s"
-  by (auto simp add: CommittedConfigurations_def AllConfigurations_def)
+lemma CommittedConfigurations_subset_PublishedConfigurations:
+  "CommittedConfigurationsPublished s"
+  by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
 
 context
   fixes s t
@@ -1213,6 +1223,107 @@ proof -
     by (auto simp add: CommittedConfigurations_def)
 qed
 
+lemma AcceptedConfigurationSource_step:
+  assumes "s \<Turnstile> AcceptedConfigurationSource"
+  shows "(s,t) \<Turnstile> AcceptedConfigurationSource$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. lastAcceptedConfiguration s n \<in> PublishedConfigurations s"
+    unfolding AcceptedConfigurationSource_def
+    by metis
+
+  {
+    fix n
+    from Next hyp1 have "lastAcceptedConfiguration t n \<in> PublishedConfigurations s \<union> PublishedConfigurations t"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      from hyp1 have "lastAcceptedConfiguration t n \<in> PublishedConfigurations s"
+        by (auto simp add: PublishedConfigurations_def ClientRequest)
+      thus ?thesis by simp
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      show ?thesis
+      proof (cases "nf = n")
+        case True
+        have "lastAcceptedConfiguration t n = newConfig"
+          by (simp add: HandlePublishRequest True)
+        also from HandlePublishRequest have "newConfig \<in> config ` {m \<in> messages s. isPublishRequest m}"
+        proof (intro image_eqI)
+          show "newConfig = config \<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
+            by (simp add: config_def)
+        qed (simp add: isPublishRequest_def)
+        also have "... \<subseteq> PublishedConfigurations s"
+          by (auto simp add: PublishedConfigurations_def)
+        finally show ?thesis by simp
+      next
+        case False with HandlePublishRequest hyp1 show ?thesis by simp
+      qed
+    qed (auto simp add: PublishedConfigurations_def)
+    also from Next have "... \<subseteq> PublishedConfigurations t"
+      by (cases rule: square_Next_cases, auto simp add: PublishedConfigurations_def)
+    finally have "lastAcceptedConfiguration t n \<in> ..." .
+  }
+  thus ?thesis by (simp add: AcceptedConfigurationSource_def)
+qed
+
+lemma PublishedConfigurationSource_step:
+  assumes "s \<Turnstile> PublishedConfigurationSource"
+  assumes "s \<Turnstile> AcceptedConfigurationSource"
+  shows "(s,t) \<Turnstile> PublishedConfigurationSource$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. electionWon s n \<Longrightarrow> lastPublishedConfiguration s n \<in> PublishedConfigurations s"
+    and hyp2: "\<And>n. lastAcceptedConfiguration s n \<in> PublishedConfigurations s"
+    unfolding PublishedConfigurationSource_def AcceptedConfigurationSource_def
+    by metis+
+
+  {
+    fix n
+    assume prem: "electionWon t n"
+
+    from Next prem hyp1 have "lastPublishedConfiguration t n \<in> PublishedConfigurations s \<union> PublishedConfigurations t"
+    proof (cases rule: square_Next_cases)
+      case unchanged
+      with prem hyp1 show ?thesis by (auto simp add: PublishedConfigurations_def)
+    next
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      with prem hyp1 hyp2 show ?thesis by (cases "nf = n", auto)
+    next
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      with prem hyp1 hyp2 show ?thesis by auto
+    next
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      show ?thesis
+      proof (cases "nm = n")
+        case False
+        with prem hyp1 hyp2 ClientRequest show ?thesis by auto
+      next
+        case True
+        define prq where "\<And>nf. prq nf \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_version = newPublishVersion, prq_value = v, prq_config = vs, prq_commConf = lastCommittedConfiguration s nm\<rparr>\<rparr>"
+        have "vs \<in> config ` {m \<in> messages t. isPublishRequest m}"
+        proof (intro image_eqI)
+          show "vs = config (prq nm)"
+            by (auto simp add: config_def prq_def)
+          have "prq nm \<in> newPublishRequests" by (auto simp add: prq_def ClientRequest)
+          also have "... \<subseteq> {m \<in> messages t. isPublishRequest m}"
+            by (auto simp add: ClientRequest isPublishRequest_def)
+          finally show "prq nm \<in> {m \<in> messages t. isPublishRequest m}" .
+        qed
+        also have "... \<subseteq> PublishedConfigurations t"
+          unfolding PublishedConfigurations_def by auto
+        finally show ?thesis by (auto simp add: ClientRequest True)
+      qed
+    next
+      case (RestartNode nr)
+      with prem hyp1 show ?thesis by (cases "nr = n", auto simp add: PublishedConfigurations_def)
+    qed auto
+    also from Next have "... \<subseteq> PublishedConfigurations t"
+      by (cases rule: square_Next_cases, auto simp add: PublishedConfigurations_def)
+    finally have "lastPublishedConfiguration t n \<in> ..." .
+  }
+  thus ?thesis by (simp add: PublishedConfigurationSource_def)
+qed
+
 lemma CurrentConfigurationSource_step:
   assumes "s \<Turnstile> CurrentConfigurationSource"
   assumes "s \<Turnstile> LastAcceptedDataSource"
@@ -1228,10 +1339,6 @@ proof -
     and hyp4: "\<And>m. m \<in> messages s \<Longrightarrow> term m > 0"
     by (auto simp add: CurrentConfigurationSource_def CurrentConfigurationMsgSource_def LastAcceptedDataSource_def MessagePositiveTerm_def)
 
-  from Next
-  have CommittedConfigurations_subset: "CommittedConfigurations s \<subseteq> CommittedConfigurations t"
-    by (cases rule: square_Next_cases, auto simp add: CommittedConfigurations_def)
-
   {
     fix n
     from Next have "lastCommittedConfiguration t n \<in> insert (lastCommittedConfiguration s n) (CommittedConfigurations t)"
@@ -1245,7 +1352,7 @@ proof -
           by (simp add: HandlePublishRequest commConf_def)
         also from HandlePublishRequest have "... \<in> CommittedConfigurations s"
           by (intro hyp3, auto simp add: isPublishRequest_def)
-        also note CommittedConfigurations_subset
+        also note CommittedConfigurations_increasing
         finally show ?thesis by simp
       qed (simp add: HandlePublishRequest)
     next
@@ -1334,17 +1441,13 @@ proof -
   thus ?thesis by (auto simp add: CurrentConfigurationMsgSource_def)
 qed
 
-lemma CommittedConfigurations_subset_AllConfigurations:
-  "s \<Turnstile> CommittedConfigurations \<subseteq> AllConfigurations"
-  by (auto simp add: CommittedConfigurations_def AllConfigurations_def) 
-
-lemma AllConfigurationsValid_step:
-  assumes "s \<Turnstile> AllConfigurationsValid"
-  shows "(s,t) \<Turnstile> AllConfigurationsValid$"
+lemma PublishedConfigurationsValid_step:
+  assumes "s \<Turnstile> PublishedConfigurationsValid"
+  shows "(s,t) \<Turnstile> PublishedConfigurationsValid$"
 proof -
   from assms have hyp: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> config m \<in> ValidConfigs"
     and init: "initialConfiguration s \<in> ValidConfigs"
-    by (auto simp add: AllConfigurationsValid_def AllConfigurations_def)
+    by (auto simp add: PublishedConfigurationsValid_def PublishedConfigurations_def)
 
   from Next init have "initialConfiguration t \<in> ValidConfigs"
     by (cases rule: square_Next_cases, simp_all)
@@ -1366,7 +1469,7 @@ proof -
       qed
     qed (auto simp add: isPublishRequest_def)
   }
-  ultimately show ?thesis by (auto simp add: AllConfigurationsValid_def AllConfigurations_def)
+  ultimately show ?thesis by (auto simp add: PublishedConfigurationsValid_def PublishedConfigurations_def)
 qed
 
 lemma PublicationsInPastTerm_step:
@@ -1833,8 +1936,8 @@ lemma ElectionWonQuorumBelow_step:
   shows "(s,t) \<Turnstile> ElectionWonQuorumBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration      s n)"
-    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
+  have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
+    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration  s n)"
     and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
                      electionWon s (source m) \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s (source m)) (config m)"
     and hyp4: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
@@ -2709,18 +2812,18 @@ proof -
     by (auto simp add: more_temp_simps P_def)
 qed
 
-lemma AllConfigurationsValid_INV: "\<turnstile> Spec \<longrightarrow> \<box>AllConfigurationsValid"
+lemma PublishedConfigurationsValid_INV: "\<turnstile> Spec \<longrightarrow> \<box>PublishedConfigurationsValid"
 proof invariant
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init AllConfigurationsValid"
-    by (auto simp add: Spec_def Initial_def Init_def AllConfigurationsValid_def AllConfigurations_def)
+  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init PublishedConfigurationsValid"
+    by (auto simp add: Spec_def Initial_def Init_def PublishedConfigurationsValid_def PublishedConfigurations_def)
 
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable AllConfigurationsValid"
+  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable PublishedConfigurationsValid"
   proof (intro Stable actionI temp_impI)
     show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> \<box>[Next]_vars"
       by (auto simp add: Spec_def Valid_def more_temp_simps)
 
-    fix s t assume "(s,t) \<Turnstile> $AllConfigurationsValid \<and> [Next]_vars"
-    thus "(s,t) \<Turnstile> AllConfigurationsValid$" by (intro AllConfigurationsValid_step, auto)
+    fix s t assume "(s,t) \<Turnstile> $PublishedConfigurationsValid \<and> [Next]_vars"
+    thus "(s,t) \<Turnstile> PublishedConfigurationsValid$" by (intro PublishedConfigurationsValid_step, auto)
   qed
 qed
 
