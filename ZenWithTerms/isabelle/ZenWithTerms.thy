@@ -95,13 +95,13 @@ end
 locale ZenWithTerms =
   (* real variables *)
   fixes currentTerm                 :: "(Node \<Rightarrow> nat)      stfun"
-  fixes currentConfiguration        :: "(Node \<Rightarrow> Node set) stfun" (* committed configuration *)
+  fixes lastCommittedConfiguration  :: "(Node \<Rightarrow> Node set) stfun"
   fixes lastAcceptedTerm            :: "(Node \<Rightarrow> nat)      stfun"
   fixes lastAcceptedInstance        :: "(Node \<Rightarrow> nat)      stfun"
   fixes lastAcceptedValue           :: "(Node \<Rightarrow> Value)    stfun"
   fixes lastAcceptedConfiguration   :: "(Node \<Rightarrow> Node set) stfun"
   fixes joinVotes                   :: "(Node \<Rightarrow> Node set) stfun"
-  fixes allowElection               :: "(Node \<Rightarrow> bool)     stfun"
+  fixes startedJoinSinceLastReboot  :: "(Node \<Rightarrow> bool)     stfun"
   fixes electionWon                 :: "(Node \<Rightarrow> bool)     stfun"
   fixes publishInstance             :: "(Node \<Rightarrow> nat)      stfun"
   fixes publishVotes                :: "(Node \<Rightarrow> Node set) stfun"
@@ -114,9 +114,9 @@ locale ZenWithTerms =
   fixes leaderHistory               :: "(nat \<times> Node) set stfun"
   fixes basedOn                     :: "(TermInstance \<times> TermInstance) set stfun"
     (* TODO idea: track last-committed term + instance, to link the current state to the proposals *)
-  fixes vars defines "vars \<equiv> LIFT (messages, descendant, currentTerm, currentConfiguration,
+  fixes vars defines "vars \<equiv> LIFT (messages, descendant, currentTerm, lastCommittedConfiguration,
     lastAcceptedTerm, lastAcceptedInstance, lastAcceptedValue, lastAcceptedConfiguration, joinVotes,
-    allowElection, electionWon, publishInstance, publishVotes,
+    startedJoinSinceLastReboot, electionWon, publishInstance, publishVotes,
     initialConfiguration, initialValue, leaderHistory, basedOn)"
     (* IsQuorum predicate *)
   fixes IsQuorum :: "Node set \<Rightarrow> Node set \<Rightarrow> bool"
@@ -124,7 +124,7 @@ locale ZenWithTerms =
     (* ElectionWon predicate *)
   fixes ElectionWon :: "Node \<Rightarrow> Node set \<Rightarrow> stpred"
   defines "ElectionWon n votes \<equiv> PRED
-    ( IsQuorum<#votes,id<currentConfiguration,#n>>
+    ( IsQuorum<#votes,id<lastCommittedConfiguration,#n>>
     \<and> IsQuorum<#votes,id<lastAcceptedConfiguration,#n>>
     )"
     (* Initial state *)
@@ -133,14 +133,14 @@ locale ZenWithTerms =
       messages = #{}
     \<and> descendant = #{}
     \<and> (\<forall>n. id<currentTerm,#n> = #0)
-    \<and> (\<exists> vc. #vc \<in> #ValidConfigs \<and> (\<forall>n. id<currentConfiguration,#n> = #vc)) (* agreement on initial configuration *)
+    \<and> (\<exists> vc. #vc \<in> #ValidConfigs \<and> (\<forall>n. id<lastCommittedConfiguration,#n> = #vc)) (* agreement on initial configuration *)
     \<and> (\<forall>n. id<lastAcceptedTerm,#n> = #0)
     \<and> (\<forall>n. id<lastAcceptedTerm,#n> = #0)
     \<and> (\<forall>n. id<lastAcceptedInstance,#n> = #0)
     \<and> (\<exists> v. \<forall>n. id<lastAcceptedValue,#n> = #v) (* agreement on initial value *)
-    \<and> (\<forall>n. id<lastAcceptedConfiguration,#n> = id<currentConfiguration,#n>)
+    \<and> (\<forall>n. id<lastAcceptedConfiguration,#n> = id<lastCommittedConfiguration,#n>)
     \<and> (\<forall>n. id<joinVotes,#n> = #{})
-    \<and> (\<forall>n. id<allowElection,#n> = #False)
+    \<and> (\<forall>n. id<startedJoinSinceLastReboot,#n> = #False)
     \<and> (\<forall>n. id<electionWon,#n> = #False)
     \<and> (\<forall>n. id<publishInstance,#n> = #0)
     \<and> (\<forall>n. id<publishVotes,#n> = #{})
@@ -159,12 +159,12 @@ locale ZenWithTerms =
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laInstance = lastAcceptedInstance_n \<rparr> \<rparr>))
           \<and> updated currentTerm     n t
           \<and> updated publishInstance n 0
-          \<and> updated allowElection   n True
+          \<and> updated startedJoinSinceLastReboot   n True
           \<and> updated electionWon     n False
           \<and> updated joinVotes       n {}
           \<and> updated publishVotes    n {}
           \<and> messages$ = ($messages \<union> #{ joinRequest })
-          \<and> unchanged (currentConfiguration, lastAcceptedConfiguration, lastAcceptedInstance,
+          \<and> unchanged (lastCommittedConfiguration, lastAcceptedConfiguration, lastAcceptedInstance,
                 lastAcceptedValue, lastAcceptedTerm, descendant, initialConfiguration, initialValue,
                 leaderHistory, basedOn)))"
     (* HandleJoinRequest *)
@@ -173,7 +173,7 @@ locale ZenWithTerms =
   defines "HandleJoinRequest n m \<equiv> ACT
     ( #(case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False)
     \<and> #(term m) = id<$currentTerm,#n>
-    \<and> id<$allowElection,#n>
+    \<and> id<$startedJoinSinceLastReboot,#n>
     \<and> ( #(laTerm m) < id<$lastAcceptedTerm,#n>
       \<or> ( #(laTerm     m) = id<$lastAcceptedTerm,#n>
         \<and> #(laInstance m) \<le> id<$lastAcceptedInstance,#n>))
@@ -186,21 +186,21 @@ locale ZenWithTerms =
                   \<and> updated publishInstance n lai)
         else unchanged publishInstance)
     \<and> (if id<electionWon$,#n> then leaderHistory$ = (insert (term m, n))<$leaderHistory> else unchanged leaderHistory)
-    \<and> unchanged (currentConfiguration, currentTerm, publishVotes, messages, descendant,
+    \<and> unchanged (lastCommittedConfiguration, currentTerm, publishVotes, messages, descendant,
                  lastAcceptedInstance, lastAcceptedValue, lastAcceptedConfiguration,
-                 lastAcceptedTerm, allowElection, initialConfiguration, initialValue, basedOn))"
+                 lastAcceptedTerm, startedJoinSinceLastReboot, initialConfiguration, initialValue, basedOn))"
     (* ClientRequest *)
     (* client causes a cluster state change v with configuration vs *)
   fixes ClientRequest :: "Node \<Rightarrow> Value \<Rightarrow> Node set \<Rightarrow> action"
   defines "ClientRequest n v vs \<equiv> ACT
     ( id<$electionWon,#n>
     \<and> id<$publishInstance,#n> = id<$lastAcceptedInstance,#n> (* means we have the last published value / config (useful for CAS operations, where we need to read the previous value first) *)
-    \<and> (#vs \<noteq> id<$lastAcceptedConfiguration,#n> \<longrightarrow> id<$currentConfiguration,#n> = id<$lastAcceptedConfiguration,#n>) (* only allow reconfiguration if there is not already a reconfiguration in progress *)
+    \<and> (#vs \<noteq> id<$lastAcceptedConfiguration,#n> \<longrightarrow> id<$lastCommittedConfiguration,#n> = id<$lastAcceptedConfiguration,#n>) (* only allow reconfiguration if there is not already a reconfiguration in progress *)
     \<and> (IsQuorum<id<$joinVotes,#n>,#vs>) (* only allow reconfiguration if we have a quorum of (join) votes for the new config *)
     \<and> (\<exists> newPublishInstance publishRequests newEntry matchingElems newTransitiveElems
-          currentTerm_n currentConfiguration_n lastAcceptedTerm_n lastAcceptedInstance_n.
+          currentTerm_n lastCommittedConfiguration_n lastAcceptedTerm_n lastAcceptedInstance_n.
             #currentTerm_n          = id<$currentTerm,#n>
-          \<and> #currentConfiguration_n = id<$currentConfiguration,#n>
+          \<and> #lastCommittedConfiguration_n = id<$lastCommittedConfiguration,#n>
           \<and> #lastAcceptedTerm_n     = id<$lastAcceptedTerm,#n>
           \<and> #lastAcceptedInstance_n = id<$lastAcceptedInstance,#n>
 
@@ -210,7 +210,7 @@ locale ZenWithTerms =
                 , payload = PublishRequest \<lparr> prq_instance = newPublishInstance
                                            , prq_value = v
                                            , prq_config = vs
-                                           , prq_currConf = currentConfiguration_n \<rparr>\<rparr>})
+                                           , prq_currConf = lastCommittedConfiguration_n \<rparr>\<rparr>})
           \<and> #newEntry = #\<lparr> prevT = lastAcceptedTerm_n
                          , prevI = lastAcceptedInstance_n
                          , nextT = currentTerm_n
@@ -224,7 +224,7 @@ locale ZenWithTerms =
           \<and> messages$ = ($messages \<union> #publishRequests)
           \<and> basedOn$ = (insert ( TermInstance currentTerm_n newPublishInstance
                                 , TermInstance lastAcceptedTerm_n lastAcceptedInstance_n ))<$basedOn>
-          \<and> unchanged (allowElection, currentConfiguration, currentTerm, electionWon,
+          \<and> unchanged (startedJoinSinceLastReboot, lastCommittedConfiguration, currentTerm, electionWon,
                       lastAcceptedInstance, lastAcceptedValue, lastAcceptedTerm,
                       lastAcceptedConfiguration, joinVotes, initialConfiguration, initialValue,
                       leaderHistory)))"
@@ -239,10 +239,10 @@ locale ZenWithTerms =
     \<and> updated lastAcceptedInstance      n (instance m)
     \<and> updated lastAcceptedValue         n (value    m)
     \<and> updated lastAcceptedConfiguration n (config   m)
-    \<and> updated currentConfiguration      n (currConf m)
+    \<and> updated lastCommittedConfiguration      n (currConf m)
     \<and> messages$ = (insert \<lparr> source = n, dest = source m, term = term m
                           , payload = PublishResponse \<lparr> prs_instance = instance m \<rparr> \<rparr>)<$messages>
-    \<and> unchanged (allowElection, currentTerm, descendant, electionWon, publishInstance, joinVotes,
+    \<and> unchanged (startedJoinSinceLastReboot, currentTerm, descendant, electionWon, publishInstance, joinVotes,
                   publishVotes, initialConfiguration, initialValue, leaderHistory, basedOn))"
     (* HandlePublishResponse *)
     (* node n commits a change *)
@@ -252,7 +252,7 @@ locale ZenWithTerms =
     \<and> #(term     m) = id<$currentTerm,#n>
     \<and> #(instance m) = id<$publishInstance,#n>
     \<and> modified publishVotes n (insert (source m))
-    \<and> (if IsQuorum<id<publishVotes$,#n>,id<$currentConfiguration,#n>>
+    \<and> (if IsQuorum<id<publishVotes$,#n>,id<$lastCommittedConfiguration,#n>>
         then (\<exists> commitRequests currentTerm_n publishInstance_n.
                   #publishInstance_n = id<$publishInstance,#n>
                 \<and> #commitRequests = #(\<Union> ns \<in> UNIV. {
@@ -260,7 +260,7 @@ locale ZenWithTerms =
                         , payload = Commit \<lparr> c_instance = instance m \<rparr> \<rparr>})
                 \<and> messages$ = ($messages \<union> #commitRequests))
         else unchanged messages)
-    \<and> unchanged (allowElection, currentConfiguration, currentTerm, electionWon, descendant,
+    \<and> unchanged (startedJoinSinceLastReboot, lastCommittedConfiguration, currentTerm, electionWon, descendant,
                    lastAcceptedInstance, lastAcceptedValue, lastAcceptedTerm, lastAcceptedConfiguration,
                    publishInstance, joinVotes, initialConfiguration, initialValue, leaderHistory, basedOn))"
     (* HandleCommitRequest *)
@@ -272,8 +272,8 @@ locale ZenWithTerms =
     \<and> #(term     m) = id<$lastAcceptedTerm,#n>
     \<and> #(instance m) = id<$lastAcceptedInstance,#n>
     \<and> (\<exists> lastAcceptedConfiguration_n. #lastAcceptedConfiguration_n = id<$lastAcceptedConfiguration,#n>
-          \<and> updated currentConfiguration n lastAcceptedConfiguration_n)
-    \<and> unchanged (currentTerm, joinVotes, messages, lastAcceptedTerm, lastAcceptedValue, allowElection,
+          \<and> updated lastCommittedConfiguration n lastAcceptedConfiguration_n)
+    \<and> unchanged (currentTerm, joinVotes, messages, lastAcceptedTerm, lastAcceptedValue, startedJoinSinceLastReboot,
                  descendant, electionWon, lastAcceptedConfiguration, lastAcceptedInstance,
                  publishInstance, publishVotes, initialConfiguration, initialValue, leaderHistory, basedOn))"
     (* RestartNode *)
@@ -281,11 +281,11 @@ locale ZenWithTerms =
   fixes RestartNode :: "Node \<Rightarrow> action"
   defines "RestartNode n \<equiv> ACT
     ( updated electionWon     n False
-    \<and> updated allowElection   n False
+    \<and> updated startedJoinSinceLastReboot   n False
     \<and> updated joinVotes       n {}
     \<and> updated publishInstance n 0
     \<and> updated publishVotes    n {}
-    \<and> unchanged (messages, lastAcceptedInstance, currentTerm, currentConfiguration, descendant,
+    \<and> unchanged (messages, lastAcceptedInstance, currentTerm, lastCommittedConfiguration, descendant,
                  lastAcceptedTerm, lastAcceptedValue, lastAcceptedConfiguration, initialConfiguration,
                  initialValue, leaderHistory, basedOn))"
     (* Next *)
@@ -315,13 +315,13 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     "\<lbrakk> messages                   t = messages                   s
     ; descendant                 t = descendant                 s
     ; currentTerm                t = currentTerm                s
-    ; currentConfiguration       t = currentConfiguration       s
+    ; lastCommittedConfiguration t = lastCommittedConfiguration s
     ; lastAcceptedTerm           t = lastAcceptedTerm           s
     ; lastAcceptedInstance       t = lastAcceptedInstance       s
     ; lastAcceptedValue          t = lastAcceptedValue          s
     ; lastAcceptedConfiguration  t = lastAcceptedConfiguration  s
     ; joinVotes                  t = joinVotes                  s
-    ; allowElection              t = allowElection              s
+    ; startedJoinSinceLastReboot t = startedJoinSinceLastReboot s
     ; electionWon                t = electionWon                s
     ; publishInstance            t = publishInstance            s
     ; publishVotes               t = publishVotes               s
@@ -334,41 +334,41 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> currentTerm s nf < tm
     ; newJoinRequest = \<lparr> source = nf, dest = nm, term = tm
         , payload = Join \<lparr> jp_laTerm = lastAcceptedTerm s nf, jp_laInstance = lastAcceptedInstance s nf \<rparr> \<rparr>
-    ; messages                   t    = insert newJoinRequest (messages s)
-    ; descendant                 t    = descendant                 s
-    ; \<And>n'. currentTerm          t n' = (if n' = nf then tm else currentTerm s n')
-    ; currentConfiguration       t    = currentConfiguration       s
-    ; lastAcceptedTerm           t    = lastAcceptedTerm           s
-    ; lastAcceptedInstance       t    = lastAcceptedInstance       s
-    ; lastAcceptedValue          t    = lastAcceptedValue          s
-    ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
-    ; \<And>n'. joinVotes            t n' = (if n' = nf then {}    else joinVotes       s n')
-    ; \<And>n'. allowElection        t n' = (if n' = nf then True  else allowElection   s n')
-    ; \<And>n'. electionWon          t n' = (if n' = nf then False else electionWon     s n')
-    ; \<And>n'. publishInstance      t n' = (if n' = nf then 0     else publishInstance s n')
-    ; \<And>n'. publishVotes         t n' = (if n' = nf then {}    else publishVotes    s n')
+    ; messages                         t    = insert newJoinRequest (messages s)
+    ; descendant                       t    = descendant                 s
+    ; \<And>n'. currentTerm                t n' = (if n' = nf then tm else currentTerm s n')
+    ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
+    ; lastAcceptedTerm                 t    = lastAcceptedTerm           s
+    ; lastAcceptedInstance             t    = lastAcceptedInstance       s
+    ; lastAcceptedValue                t    = lastAcceptedValue          s
+    ; lastAcceptedConfiguration        t    = lastAcceptedConfiguration  s
+    ; \<And>n'. joinVotes                  t n' = (if n' = nf then {}    else joinVotes       s n')
+    ; \<And>n'. startedJoinSinceLastReboot t n' = (if n' = nf then True  else startedJoinSinceLastReboot   s n')
+    ; \<And>n'. electionWon                t n' = (if n' = nf then False else electionWon     s n')
+    ; \<And>n'. publishInstance            t n' = (if n' = nf then 0     else publishInstance s n')
+    ; \<And>n'. publishVotes               t n' = (if n' = nf then {}    else publishVotes    s n')
     ; \<And>n'. currentTerm s n' \<le> currentTerm t n'
-    ; initialConfiguration       t    = initialConfiguration       s
-    ; initialValue               t    = initialValue               s
-    ; leaderHistory              t    = leaderHistory              s
-    ; basedOn                    t    = basedOn                    s
+    ; initialConfiguration             t    = initialConfiguration       s
+    ; initialValue                     t    = initialValue               s
+    ; leaderHistory                    t    = leaderHistory              s
+    ; basedOn                          t    = basedOn                    s
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleJoinRequest: "\<And>nf nm laTerm_m laInstance_m.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laInstance = laInstance_m \<rparr> \<rparr> \<in> messages s
-    ; allowElection s nm
+    ; startedJoinSinceLastReboot s nm
     ; laTerm_m < lastAcceptedTerm s nm \<or> (laTerm_m = lastAcceptedTerm s nm \<and> laInstance_m \<le> lastAcceptedInstance s nm)
     ; messages                   t    = messages                   s 
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
-    ; currentConfiguration       t    = currentConfiguration       s
+    ; lastCommittedConfiguration t    = lastCommittedConfiguration s
     ; lastAcceptedTerm           t    = lastAcceptedTerm           s
     ; lastAcceptedInstance       t    = lastAcceptedInstance       s
     ; lastAcceptedValue          t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
     ; \<And>n'. joinVotes            t n' = (if n' = nm then insert nf (joinVotes s nm) else joinVotes s n')
-    ; allowElection              t    = allowElection              s
-    ; \<And>n'. electionWon          t n' = (if n' = nm then IsQuorum (joinVotes t nm) (currentConfiguration s nm) \<and> IsQuorum (joinVotes t nm) (lastAcceptedConfiguration s nm) else electionWon s n')
+    ; startedJoinSinceLastReboot t    = startedJoinSinceLastReboot s
+    ; \<And>n'. electionWon          t n' = (if n' = nm then IsQuorum (joinVotes t nm) (lastCommittedConfiguration s nm) \<and> IsQuorum (joinVotes t nm) (lastAcceptedConfiguration s nm) else electionWon s n')
     ; \<And>n'. publishInstance      t n' = (if n' = nm then if \<not>(electionWon s nm) \<and> electionWon t nm then lastAcceptedInstance s nm else publishInstance s n' else publishInstance s n')
     ; publishVotes               t    = publishVotes               s
     ; initialConfiguration       t    = initialConfiguration       s
@@ -380,7 +380,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> electionWon s nm
     ; vs \<in> ValidConfigs
     ; publishInstance s nm = lastAcceptedInstance s nm
-    ; vs \<noteq> lastAcceptedConfiguration s nm \<Longrightarrow> currentConfiguration s nm = lastAcceptedConfiguration s nm
+    ; vs \<noteq> lastAcceptedConfiguration s nm \<Longrightarrow> lastCommittedConfiguration s nm = lastAcceptedConfiguration s nm
     ; IsQuorum (joinVotes s nm) vs
     ; newPublishInstance = publishInstance s nm + 1
     ; newPublishRequests = (\<Union> nf \<in> UNIV. {
@@ -388,7 +388,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
                 , payload = PublishRequest \<lparr> prq_instance = newPublishInstance
                                            , prq_value    = v
                                            , prq_config   = vs
-                                           , prq_currConf = currentConfiguration s nm \<rparr>\<rparr>})
+                                           , prq_currConf = lastCommittedConfiguration s nm \<rparr>\<rparr>})
     ; newEntry = \<lparr> prevT = lastAcceptedTerm     s nm
                  , prevI = lastAcceptedInstance s nm
                  , nextT = currentTerm          s nm
@@ -398,13 +398,13 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; messages                   t    = (messages s) \<union> newPublishRequests
     ; descendant                 t    = (descendant s) \<union> insert newEntry newTransitiveElems
     ; currentTerm                t    = currentTerm                s
-    ; currentConfiguration       t    = currentConfiguration       s
+    ; lastCommittedConfiguration t    = lastCommittedConfiguration s
     ; lastAcceptedTerm           t    = lastAcceptedTerm           s
     ; lastAcceptedInstance       t    = lastAcceptedInstance       s
     ; lastAcceptedValue          t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
     ; joinVotes                  t    = joinVotes                  s
-    ; allowElection              t    = allowElection              s
+    ; startedJoinSinceLastReboot t    = startedJoinSinceLastReboot s
     ; electionWon                t    = electionWon                s
     ; \<And>n'. publishInstance      t n' = (if n' = nm then newPublishInstance else publishInstance s n')
     ; \<And>n'. publishVotes         t n' = (if n' = nm then {} else publishVotes s n')
@@ -422,13 +422,13 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_instance = newInstance \<rparr> \<rparr> (messages s)
     ; descendant                       t    = descendant                 s
     ; currentTerm                      t    = currentTerm                s
-    ; \<And>n'. currentConfiguration       t n' = (if n' = nf then currConfig       else currentConfiguration       s n')
+    ; \<And>n'. lastCommittedConfiguration t n' = (if n' = nf then currConfig       else lastCommittedConfiguration s n')
     ; \<And>n'. lastAcceptedTerm           t n' = (if n' = nf then currentTerm s nf else lastAcceptedTerm           s n')
     ; \<And>n'. lastAcceptedInstance       t n' = (if n' = nf then newInstance      else lastAcceptedInstance       s n')
     ; \<And>n'. lastAcceptedValue          t n' = (if n' = nf then newValue         else lastAcceptedValue          s n')
     ; \<And>n'. lastAcceptedConfiguration  t n' = (if n' = nf then newConfig        else lastAcceptedConfiguration  s n')
     ; joinVotes                        t    = joinVotes                  s
-    ; allowElection                    t    = allowElection              s
+    ; startedJoinSinceLastReboot       t    = startedJoinSinceLastReboot s
     ; electionWon                      t    = electionWon                s
     ; publishInstance                  t    = publishInstance            s
     ; publishVotes                     t    = publishVotes               s
@@ -440,21 +440,21 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_instance = publishInstance s nm \<rparr> \<rparr> \<in> messages s
-    ; \<not> IsQuorum (publishVotes t nm) (currentConfiguration s nm)
+    ; \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; messages                   t    = messages s
-(*    ; messages                   t    = (if IsQuorum (publishVotes t nm) (currentConfiguration s nm)
+(*    ; messages                   t    = (if IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
                                           then messages s \<union>
                                             (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_instance = publishInstance s nm \<rparr> \<rparr>})
                                           else messages s)*)
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
-    ; currentConfiguration       t    = currentConfiguration       s
+    ; lastCommittedConfiguration t    = lastCommittedConfiguration s
     ; lastAcceptedTerm           t    = lastAcceptedTerm           s
     ; lastAcceptedInstance       t    = lastAcceptedInstance       s
     ; lastAcceptedValue          t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
     ; joinVotes                  t    = joinVotes                  s
-    ; allowElection              t    = allowElection              s
+    ; startedJoinSinceLastReboot t    = startedJoinSinceLastReboot s
     ; electionWon                t    = electionWon                s
     ; publishInstance            t    = publishInstance            s
     ; \<And>n'. publishVotes         t n' = (if n' = nm then insert nf (publishVotes s nm) else publishVotes s n')
@@ -466,18 +466,18 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_Quorum: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_instance = publishInstance s nm \<rparr> \<rparr> \<in> messages s
-    ; IsQuorum (publishVotes t nm) (currentConfiguration s nm)
+    ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; messages                   t    = messages s \<union>
                                             (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_instance = publishInstance s nm \<rparr> \<rparr>})
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
-    ; currentConfiguration       t    = currentConfiguration       s
+    ; lastCommittedConfiguration t    = lastCommittedConfiguration s
     ; lastAcceptedTerm           t    = lastAcceptedTerm           s
     ; lastAcceptedInstance       t    = lastAcceptedInstance       s
     ; lastAcceptedValue          t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
     ; joinVotes                  t    = joinVotes                  s
-    ; allowElection              t    = allowElection              s
+    ; startedJoinSinceLastReboot t    = startedJoinSinceLastReboot s
     ; electionWon                t    = electionWon                s
     ; publishInstance            t    = publishInstance            s
     ; \<And>n'. publishVotes         t n' = (if n' = nm then insert nf (publishVotes s nm) else publishVotes s n')
@@ -490,42 +490,42 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
       , payload = Commit \<lparr> c_instance = lastAcceptedInstance s nf \<rparr> \<rparr> \<in> messages s
     ; lastAcceptedTerm s nf = currentTerm s nf
-    ; messages                   t    = messages                   s
-    ; descendant                 t    = descendant                 s
-    ; currentTerm                t    = currentTerm                s
-    ; \<And>n'. currentConfiguration t n' = (if n' = nf then lastAcceptedConfiguration s nf else currentConfiguration s n')
-    ; lastAcceptedTerm           t    = lastAcceptedTerm           s
-    ; lastAcceptedInstance       t    = lastAcceptedInstance       s
-    ; lastAcceptedValue          t    = lastAcceptedValue          s
-    ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
-    ; joinVotes                  t    = joinVotes                  s
-    ; allowElection              t    = allowElection              s
-    ; electionWon                t    = electionWon                s
-    ; publishInstance            t    = publishInstance            s
-    ; publishVotes               t    = publishVotes               s
-    ; initialConfiguration       t    = initialConfiguration       s
-    ; initialValue               t    = initialValue               s
-    ; leaderHistory              t    = leaderHistory              s
-    ; basedOn                    t    = basedOn                    s
+    ; messages                   t          = messages                   s
+    ; descendant                 t          = descendant                 s
+    ; currentTerm                t          = currentTerm                s
+    ; \<And>n'. lastCommittedConfiguration t n' = (if n' = nf then lastAcceptedConfiguration s nf else lastCommittedConfiguration s n')
+    ; lastAcceptedTerm           t          = lastAcceptedTerm           s
+    ; lastAcceptedInstance       t          = lastAcceptedInstance       s
+    ; lastAcceptedValue          t          = lastAcceptedValue          s
+    ; lastAcceptedConfiguration  t          = lastAcceptedConfiguration  s
+    ; joinVotes                  t          = joinVotes                  s
+    ; startedJoinSinceLastReboot t          = startedJoinSinceLastReboot s
+    ; electionWon                t          = electionWon                s
+    ; publishInstance            t          = publishInstance            s
+    ; publishVotes               t          = publishVotes               s
+    ; initialConfiguration       t          = initialConfiguration       s
+    ; initialValue               t          = initialValue               s
+    ; leaderHistory              t          = leaderHistory              s
+    ; basedOn                    t          = basedOn                    s
     \<rbrakk> \<Longrightarrow> P" 
   assumes RestartNode: "\<And>nr.
-    \<lbrakk> messages                   t    = messages                   s
-    ; descendant                 t    = descendant                 s
-    ; currentTerm                t    = currentTerm                s
-    ; currentConfiguration       t    = currentConfiguration       s
-    ; lastAcceptedTerm           t    = lastAcceptedTerm           s
-    ; lastAcceptedInstance       t    = lastAcceptedInstance       s
-    ; lastAcceptedValue          t    = lastAcceptedValue          s
-    ; lastAcceptedConfiguration  t    = lastAcceptedConfiguration  s
-    ; \<And>n'. joinVotes            t n' = (if n' = nr then {}    else joinVotes       s n')
-    ; \<And>n'. allowElection        t n' = (if n' = nr then False else allowElection   s n')
-    ; \<And>n'. electionWon          t n' = (if n' = nr then False else electionWon     s n')
-    ; \<And>n'. publishInstance      t n' = (if n' = nr then 0     else publishInstance s n')
-    ; \<And>n'. publishVotes         t n' = (if n' = nr then {}    else publishVotes    s n')
-    ; initialConfiguration       t    = initialConfiguration       s
-    ; initialValue               t    = initialValue               s
-    ; leaderHistory              t    = leaderHistory              s
-    ; basedOn                    t    = basedOn                    s
+    \<lbrakk> messages                         t    = messages                   s
+    ; descendant                       t    = descendant                 s
+    ; currentTerm                      t    = currentTerm                s
+    ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
+    ; lastAcceptedTerm                 t    = lastAcceptedTerm           s
+    ; lastAcceptedInstance             t    = lastAcceptedInstance       s
+    ; lastAcceptedValue                t    = lastAcceptedValue          s
+    ; lastAcceptedConfiguration        t    = lastAcceptedConfiguration  s
+    ; \<And>n'. joinVotes                  t n' = (if n' = nr then {}    else joinVotes                  s n')
+    ; \<And>n'. startedJoinSinceLastReboot t n' = (if n' = nr then False else startedJoinSinceLastReboot s n')
+    ; \<And>n'. electionWon                t n' = (if n' = nr then False else electionWon                s n')
+    ; \<And>n'. publishInstance            t n' = (if n' = nr then 0     else publishInstance            s n')
+    ; \<And>n'. publishVotes               t n' = (if n' = nr then {}    else publishVotes               s n')
+    ; initialConfiguration             t    = initialConfiguration       s
+    ; initialValue                     t    = initialValue               s
+    ; leaderHistory                    t    = leaderHistory              s
+    ; basedOn                          t    = basedOn                    s
     \<rbrakk> \<Longrightarrow> P" 
   shows "P"
 proof -
@@ -604,7 +604,7 @@ proof -
             , payload = PublishResponse \<lparr>prs_instance = instance m\<rparr> \<rparr> \<in> messages s" by simp
 
     show P
-    proof (cases "IsQuorum (publishVotes t (dest m)) (currentConfiguration s (dest m))")
+    proof (cases "IsQuorum (publishVotes t (dest m)) (lastCommittedConfiguration s (dest m))")
       case False
       with p is_message show P
         apply (intro HandlePublishResponse_NoQuorum [of "source m" "dest m"])
@@ -664,10 +664,10 @@ definition isCommit :: "Message \<Rightarrow> bool"
   where "isCommit m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
 
 definition termInstance :: "Node \<Rightarrow> TermInstance stfun"
-  where "termInstance n s \<equiv> if allowElection s n
+  where "termInstance n s \<equiv> if startedJoinSinceLastReboot s n
                               then TermInstance (currentTerm s n) (publishInstance s n)
                               else TermInstance (Suc (currentTerm s n)) 0"
-(* if allowElection is true then the node must increase its term before doing anything interesting,
+(* if startedJoinSinceLastReboot is true then the node must increase its term before doing anything interesting,
 so it is effectively at (term+1, 0) *)
 
 definition msgTermInstance :: "Message \<Rightarrow> TermInstance"
@@ -691,8 +691,8 @@ definition JoinVotesFaithful :: stpred where "JoinVotesFaithful s \<equiv>
   \<forall> nm nf. nf \<in> joinVotes s nm
       \<longrightarrow> (\<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s)"
 
-definition JoinVotesImpliesAllowElection :: stpred where "JoinVotesImpliesAllowElection s \<equiv>
-  \<forall> n. joinVotes s n \<noteq> {} \<longrightarrow> allowElection s n"
+definition JoinVotesImpliesStartedJoin :: stpred where "JoinVotesImpliesStartedJoin s \<equiv>
+  \<forall> n. joinVotes s n \<noteq> {} \<longrightarrow> startedJoinSinceLastReboot s n"
 
 definition TheJoinProperty :: stpred where "TheJoinProperty s \<equiv>
   \<forall> nm nf. nf \<in> joinVotes s nm
@@ -734,7 +734,7 @@ definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfi
            \<and> (\<exists> mCom \<in> messages s. isCommit mCom \<and> term mCom = term mPub \<and> instance mCom = instance mPub)) }"
 
 definition CurrentConfigurationSource :: stpred where "CurrentConfigurationSource s \<equiv>
-  \<forall>n. currentConfiguration s n \<in> CommittedConfigurations s"
+  \<forall>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
 
 definition CurrentConfigurationMsgSource :: stpred where "CurrentConfigurationMsgSource s \<equiv>
   \<forall>m \<in> messages s. isPublishRequest m \<longrightarrow> currConf m \<in> CommittedConfigurations s"
@@ -771,7 +771,7 @@ definition BasedOnBasedOn :: stpred where "BasedOnBasedOn s \<equiv>
 
 definition ElectionWonQuorumBelow :: "nat \<Rightarrow> stpred" where "ElectionWonQuorumBelow termBound s \<equiv>
   \<forall> n. currentTerm s n < termBound \<longrightarrow> electionWon s n
-    \<longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration s n)
+    \<longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)
       \<and> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
 
 definition OneMasterPerTermBelow :: "nat \<Rightarrow> stpred" where "OneMasterPerTermBelow termBound s \<equiv>
@@ -780,7 +780,7 @@ definition OneMasterPerTermBelow :: "nat \<Rightarrow> stpred" where "OneMasterP
 
 definition PublishRequestImpliesElectionWonBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesElectionWonBelow termBound s \<equiv>
   \<forall> m \<in> messages s. term m < termBound \<longrightarrow> isPublishRequest m \<longrightarrow> currentTerm s (source m) = term m
-    \<longrightarrow> allowElection s (source m) \<longrightarrow> electionWon s (source m)"
+    \<longrightarrow> startedJoinSinceLastReboot s (source m) \<longrightarrow> electionWon s (source m)"
 
 definition PublishRequestImpliesQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesQuorumBelow termBound s \<equiv>
   \<forall> m \<in> messages s. term m < termBound \<longrightarrow> isPublishRequest m \<longrightarrow> currentTerm s (source m) = term m \<longrightarrow> electionWon s (source m)
@@ -795,7 +795,7 @@ definition PublishInstanceNonzeroOnlyIfElectionWonBelow :: "nat \<Rightarrow> st
   \<forall> n. currentTerm s n < termBound \<longrightarrow> 0 < publishInstance s n \<longrightarrow> electionWon s n"
 
 definition EndOfTermIsPermanentBelow :: "nat \<Rightarrow> stpred" where "EndOfTermIsPermanentBelow termBound s \<equiv>
-  \<forall> n. (currentTerm s n, n) \<in> leaderHistory s \<longrightarrow> currentTerm s n < termBound \<longrightarrow> allowElection s n \<longrightarrow> electionWon s n"
+  \<forall> n. (currentTerm s n, n) \<in> leaderHistory s \<longrightarrow> currentTerm s n < termBound \<longrightarrow> startedJoinSinceLastReboot s n \<longrightarrow> electionWon s n"
 
 definition PublishRequestInstanceAtMostSenderBelow :: "nat \<Rightarrow> stpred" where "PublishRequestInstanceAtMostSenderBelow termBound s \<equiv>
   \<forall> m \<in> messages s. isPublishRequest m \<longrightarrow> term m < termBound \<longrightarrow> msgTermInstance m \<le> termInstance (source m) s"
@@ -846,8 +846,8 @@ proof -
       ultimately show ?thesis by (metis finite_subset)
     next
       case (ClientRequest nm v vs newPublishInstance newPublishRequests newEntry matchingElems newTransitiveElems)
-      from hyp have "finite (insert \<lparr>source = nm, dest = n, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_instance = newPublishInstance, prq_value = v, prq_config = vs, prq_currConf = currentConfiguration s nm\<rparr> \<rparr> (messagesTo s n))" by simp
-      moreover have "\<And>n. messagesTo t n \<subseteq> insert \<lparr>source = nm, dest = n, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_instance = newPublishInstance, prq_value = v, prq_config = vs, prq_currConf = currentConfiguration s nm\<rparr> \<rparr> (messagesTo s n)"
+      from hyp have "finite (insert \<lparr>source = nm, dest = n, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_instance = newPublishInstance, prq_value = v, prq_config = vs, prq_currConf = lastCommittedConfiguration s nm\<rparr> \<rparr> (messagesTo s n))" by simp
+      moreover have "\<And>n. messagesTo t n \<subseteq> insert \<lparr>source = nm, dest = n, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_instance = newPublishInstance, prq_value = v, prq_config = vs, prq_currConf = lastCommittedConfiguration s nm\<rparr> \<rparr> (messagesTo s n)"
         unfolding messagesTo_def ClientRequest by auto
       ultimately show "finite (messagesTo t n)" by (metis finite_subset)
     next
@@ -990,18 +990,18 @@ proof -
   thus ?thesis by (auto simp add: JoinVotesFaithful_def)
 qed
 
-lemma JoinVotesImpliesAllowElection_step:
- assumes "s \<Turnstile> JoinVotesImpliesAllowElection"
-  shows "(s,t) \<Turnstile> JoinVotesImpliesAllowElection$"
+lemma JoinVotesImpliesStartedJoin_step:
+ assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
+  shows "(s,t) \<Turnstile> JoinVotesImpliesStartedJoin$"
 proof -
-  from assms have hyp: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> allowElection s n"
-    by (auto simp add: JoinVotesImpliesAllowElection_def)
+  from assms have hyp: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
+    by (auto simp add: JoinVotesImpliesStartedJoin_def)
 
   {
     fix n
     assume prem: "joinVotes t n \<noteq> {}"
 
-    from Next hyp prem have "allowElection t n"
+    from Next hyp prem have "startedJoinSinceLastReboot t n"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
       with hyp prem show ?thesis by (cases "nf = n", auto)
@@ -1013,7 +1013,7 @@ proof -
       with hyp prem show ?thesis by (cases "nr = n", auto)
     qed auto
   }
-  thus ?thesis by (auto simp add: JoinVotesImpliesAllowElection_def)
+  thus ?thesis by (auto simp add: JoinVotesImpliesStartedJoin_def)
 qed
 
 lemma MessagePositiveTerm_step:
@@ -1207,7 +1207,7 @@ lemma CurrentConfigurationSource_step:
   shows "(s,t) \<Turnstile> CurrentConfigurationSource$"
 proof -
   from assms
-  have  hyp1: "\<And>n. currentConfiguration s n \<in> CommittedConfigurations s"
+  have  hyp1: "\<And>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
     and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedInstance s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
       else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedInstance s n = instance m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> currConf m \<in> CommittedConfigurations s"
@@ -1220,13 +1220,13 @@ proof -
 
   {
     fix n
-    from Next have "currentConfiguration t n \<in> insert (currentConfiguration s n) (CommittedConfigurations t)"
+    from Next have "lastCommittedConfiguration t n \<in> insert (lastCommittedConfiguration s n) (CommittedConfigurations t)"
     proof (cases rule: square_Next_cases)
       case (HandlePublishRequest nf nm newInstance newValue newConfig currConfig)
       show ?thesis
       proof (cases "nf = n")
         case True
-        hence "currentConfiguration t n = currConf \<lparr>source = nm, dest = nf,
+        hence "lastCommittedConfiguration t n = currConf \<lparr>source = nm, dest = nf,
               term = currentTerm s nf, payload = PublishRequest \<lparr>prq_instance = newInstance, prq_value = newValue, prq_config = newConfig, prq_currConf = currConfig\<rparr>\<rparr>"
           by (simp add: HandlePublishRequest currConf_def)
         also from HandlePublishRequest have "... \<in> CommittedConfigurations s"
@@ -1266,9 +1266,9 @@ proof -
     qed simp_all
     also have "... \<subseteq> CommittedConfigurations t"
     proof (intro iffD2 [OF insert_subset] conjI subset_refl)
-      from hyp1 [of n] CommittedConfigurations_increasing show "currentConfiguration s n \<in> CommittedConfigurations t" by auto
+      from hyp1 [of n] CommittedConfigurations_increasing show "lastCommittedConfiguration s n \<in> CommittedConfigurations t" by auto
     qed
-    finally have "currentConfiguration t n \<in> CommittedConfigurations t".
+    finally have "lastCommittedConfiguration t n \<in> CommittedConfigurations t".
   }
   with hyp1 show ?thesis by (auto simp add: CurrentConfigurationSource_def)
 qed
@@ -1279,7 +1279,7 @@ lemma CurrentConfigurationMsgSource_step:
   shows "(s,t) \<Turnstile> CurrentConfigurationMsgSource$"
 proof -
   from assms
-  have  hyp1: "\<And>n. currentConfiguration s n \<in> CommittedConfigurations s"
+  have  hyp1: "\<And>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> currConf m \<in> CommittedConfigurations s"
     by (auto simp add: CurrentConfigurationSource_def CurrentConfigurationMsgSource_def)
 
@@ -1300,7 +1300,7 @@ proof -
         with hyp2 prem show "currConf m \<in> CommittedConfigurations s" by simp
       next
         assume "m \<in> newPublishRequests"
-        hence "currConf m = currentConfiguration s nm"
+        hence "currConf m = lastCommittedConfiguration s nm"
           by (auto simp add: ClientRequest currConf_def)
         also note hyp1
         finally show ?thesis .
@@ -1629,15 +1629,15 @@ lemma PublishRequestImpliesElectionWonBelow_step:
   shows "(s,t) \<Turnstile> PublishRequestImpliesElectionWonBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m; allowElection s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
+  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m; startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
-    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration s n)"
+    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
     and hyp4: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
     by (auto simp add: PublishRequestImpliesElectionWonBelow_def PublicationsInPastTerm_def ElectionWonQuorumBelow_def)
 
   {
     fix m
-    assume prem: "m \<in> messages t" "term m < termBound" "isPublishRequest m" "currentTerm t (source m) = term m" "allowElection t (source m)"
+    assume prem: "m \<in> messages t" "term m < termBound" "isPublishRequest m" "currentTerm t (source m) = term m" "startedJoinSinceLastReboot t (source m)"
     from Next have "electionWon t (source m)"
     proof (cases rule: square_Next_cases)
       case unchanged
@@ -1680,10 +1680,10 @@ proof -
         qed
         from prem have "electionWon s (source m)"
           by (intro hyp1, auto simp add: HandleJoinRequest)
-        with prem have "IsQuorum (joinVotes s (source m)) (currentConfiguration s (source m)) \<and> IsQuorum (joinVotes s (source m)) (lastAcceptedConfiguration s (source m))"
+        with prem have "IsQuorum (joinVotes s (source m)) (lastCommittedConfiguration s (source m)) \<and> IsQuorum (joinVotes s (source m)) (lastAcceptedConfiguration s (source m))"
           by (intro conjI hyp3 hyp4, simp_all add: HandleJoinRequest)
         with joinVotes_increase
-        have "IsQuorum (joinVotes t (source m)) (currentConfiguration s (source m)) \<and> IsQuorum (joinVotes t (source m)) (lastAcceptedConfiguration s (source m))"
+        have "IsQuorum (joinVotes t (source m)) (lastCommittedConfiguration s (source m)) \<and> IsQuorum (joinVotes t (source m)) (lastAcceptedConfiguration s (source m))"
           unfolding IsQuorum_def using less_le_trans mult_le_mono1 by blast
         thus ?thesis by (simp add: HandleJoinRequest True)
       qed
@@ -1725,9 +1725,9 @@ proof -
                      electionWon s (source m) \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s (source m)) (config m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
                      electionWon s (source m) \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s (source m)) (currConf m)"
-    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration      s n)"
+    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration      s n)"
     and hyp4: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
-    and hyp5: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m; allowElection s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
+    and hyp5: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m; startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
     by (auto simp add: ElectionWonQuorumBelow_def PublishRequestImpliesQuorumBelow_def PublishRequestImpliesElectionWonBelow_def)
 
   {
@@ -1775,7 +1775,7 @@ proof -
       next
         assume m_new: "m \<in> newPublishRequests"
         hence config_m: "config m = vs"
-          and currConf_m: "currConf m = currentConfiguration s (source m)"
+          and currConf_m: "currConf m = lastCommittedConfiguration s (source m)"
           and source_m: "source m = nm" 
           by (auto simp add: ClientRequest config_def currConf_def)
 
@@ -1819,7 +1819,7 @@ lemma ElectionWonQuorumBelow_step:
   shows "(s,t) \<Turnstile> ElectionWonQuorumBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration      s n)"
+  have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration      s n)"
     and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
     and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
                      electionWon s (source m) \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s (source m)) (config m)"
@@ -1833,7 +1833,7 @@ proof -
     fix n
     assume prem: "currentTerm t n < termBound" "electionWon t n"
     from Next
-    have "IsQuorum (joinVotes t n) (currentConfiguration t n) \<and> IsQuorum (joinVotes t n) (lastAcceptedConfiguration t n)"
+    have "IsQuorum (joinVotes t n) (lastCommittedConfiguration t n) \<and> IsQuorum (joinVotes t n) (lastAcceptedConfiguration t n)"
     proof (cases rule: square_Next_cases)
       case unchanged
       with hyp1 hyp2 prem show ?thesis by simp
@@ -1870,7 +1870,7 @@ proof -
         case nf_eq_n: True
 
         have config_eqs: "joinVotes t = joinVotes s"
-          "currentConfiguration t n = currConf publishRequest"
+          "lastCommittedConfiguration t n = currConf publishRequest"
           "lastAcceptedConfiguration t n = config publishRequest"
           by (simp_all add: HandlePublishRequest nf_eq_n currConf_def config_def publishRequest_def)
 
@@ -1985,7 +1985,7 @@ lemma PublishInstanceNonzeroOnlyIfElectionWonBelow_step:
 proof -
   from assms
   have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; 0 < publishInstance s n \<rbrakk> \<Longrightarrow> electionWon s n"
-    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration s n)"
+    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
     and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
     by (auto simp add: PublishInstanceNonzeroOnlyIfElectionWonBelow_def ElectionWonQuorumBelow_def)
 
@@ -2012,7 +2012,7 @@ proof -
           case True
           with prem have "electionWon s n" by (intro hyp1, auto simp add: HandleJoinRequest)
           with prem hyp2 hyp3 
-          have  1: "IsQuorum (joinVotes t n) (currentConfiguration t n)" 
+          have  1: "IsQuorum (joinVotes t n) (lastCommittedConfiguration t n)" 
             and 2: "IsQuorum (joinVotes t n) (lastAcceptedConfiguration t n)" 
             by (auto simp add: HandleJoinRequest nm_eq_n IsQuorum_insert)
           thus ?thesis by (simp add: HandleJoinRequest nm_eq_n)
@@ -2030,15 +2030,15 @@ lemma EndOfTermIsPermanentBelow_step:
   shows "(s,t) \<Turnstile> EndOfTermIsPermanentBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>n. \<lbrakk> (currentTerm s n, n) \<in> leaderHistory s; currentTerm s n < termBound; allowElection s n \<rbrakk> \<Longrightarrow> electionWon s n"
+  have  hyp1: "\<And>n. \<lbrakk> (currentTerm s n, n) \<in> leaderHistory s; currentTerm s n < termBound; startedJoinSinceLastReboot s n \<rbrakk> \<Longrightarrow> electionWon s n"
     and hyp2: "\<And>n tm. (tm, n) \<in> leaderHistory s \<Longrightarrow> tm \<le> currentTerm s n"
-    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (currentConfiguration s n)"
+    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
     and hyp4: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
     by (auto simp add: EndOfTermIsPermanentBelow_def LeaderHistoryBounded_def ElectionWonQuorumBelow_def)
 
   {
     fix n
-    assume prem: "currentTerm t n < termBound" "(currentTerm t n, n) \<in> leaderHistory t" "allowElection t n"
+    assume prem: "currentTerm t n < termBound" "(currentTerm t n, n) \<in> leaderHistory t" "startedJoinSinceLastReboot t n"
     from Next hyp1 prem have "electionWon t n"
     proof (cases rule: square_Next_cases)
       case unchanged
@@ -2073,7 +2073,7 @@ proof -
           case False with HandleJoinRequest nm_eq_n have leaderHistory_eq: "leaderHistory t = leaderHistory s" by auto
           from prem have "electionWon s n" by (intro hyp1, simp_all add: leaderHistory_eq HandleJoinRequest)
           with prem hyp3 [of n] hyp4 [of n]
-          have "IsQuorum (joinVotes t n) (currentConfiguration t n)"
+          have "IsQuorum (joinVotes t n) (lastCommittedConfiguration t n)"
             "IsQuorum (joinVotes t n) (lastAcceptedConfiguration t n)"
             by (auto simp add: HandleJoinRequest IsQuorum_insert)
           thus ?thesis unfolding HandleJoinRequest by (simp add: nm_eq_n)
@@ -2129,14 +2129,14 @@ qed (auto simp add: termInstance_def less_eq_TermInstance_def)
 
 lemma PublishRequestInstanceBelowSenderBelow_step:
   assumes "s \<Turnstile> PublishRequestInstanceAtMostSenderBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesAllowElection"
+  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
   assumes "s \<Turnstile> PublishInstanceNonzeroOnlyIfElectionWonBelow termBound"
   shows "(s,t) \<Turnstile> PublishRequestInstanceAtMostSenderBelow termBound$"
 proof -
   from assms
   have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk> \<Longrightarrow> msgTermInstance m \<le> termInstance (source m) s"
-    and hyp2: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> allowElection s n"
-    by (auto simp add: PublishRequestInstanceAtMostSenderBelow_def JoinVotesImpliesAllowElection_def)
+    and hyp2: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
+    by (auto simp add: PublishRequestInstanceAtMostSenderBelow_def JoinVotesImpliesStartedJoin_def)
 
   {
     fix m
@@ -2179,7 +2179,7 @@ proof -
             by (auto simp add: msgTermInstance_def ClientRequest instance_def)
 
           from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
-          hence "allowElection s nm" by (intro hyp2, auto simp add: IsQuorum_def)
+          hence "startedJoinSinceLastReboot s nm" by (intro hyp2, auto simp add: IsQuorum_def)
           with ClientRequest have 2: "termInstance (source m) t = TermInstance (currentTerm s nm) (Suc (lastAcceptedInstance s nm))"
             by (auto simp add: termInstance_def source_eq)
 
@@ -2217,7 +2217,7 @@ lemma PublishRequestsUniquePerTermInstanceBelow_step:
   assumes "s \<Turnstile> OneMasterPerTermBelow termBound"
   assumes "s \<Turnstile> PublishRequestFromHistoricalLeader"
   assumes "s \<Turnstile> LeaderHistoryFaithful"
-  assumes "s \<Turnstile> JoinVotesImpliesAllowElection"
+  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
   shows "(s,t) \<Turnstile> PublishRequestsUniquePerTermInstanceBelow termBound$"
 proof -
   from assms
@@ -2229,9 +2229,9 @@ proof -
     and hyp3: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory s; (tm, n2) \<in> leaderHistory s \<rbrakk> \<Longrightarrow> n1 = n2"
     and hyp4: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
     and hyp5: "\<And>n. electionWon s n \<Longrightarrow> (currentTerm s n, n) \<in> leaderHistory s"
-    and hyp6: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> allowElection s n"
+    and hyp6: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
     by (auto simp add: PublishRequestInstanceAtMostSenderBelow_def OneMasterPerTermBelow_def
-        PublishRequestFromHistoricalLeader_def LeaderHistoryFaithful_def JoinVotesImpliesAllowElection_def)
+        PublishRequestFromHistoricalLeader_def LeaderHistoryFaithful_def JoinVotesImpliesStartedJoin_def)
 
   {
     fix m1 m2
@@ -2245,7 +2245,7 @@ proof -
       case (ClientRequest nm v vs newPublishInstance newPublishRequests newEntry matchingElems newTransitiveElems)
 
       from ClientRequest
-      have allowElection_nm: "allowElection s nm"
+      have startedJoinSinceLastReboot_nm: "startedJoinSinceLastReboot s nm"
         by (intro hyp6, auto simp add: IsQuorum_def)
 
       have newMsg_leaderHistory: "\<And>m. m \<in> newPublishRequests \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
@@ -2284,8 +2284,8 @@ proof -
         with prem have "msgTermInstance m1 \<le> termInstance (source m1) s" by (intro hyp2)
         also have "... = termInstance (source m2) s" by (simp add: source_eq)
         also from old_new have "... = termInstance nm s" by (auto simp add: ClientRequest)
-        also from ClientRequest allowElection_nm have "... < termInstance nm t" by (auto simp add: termInstance_def)
-        also from ClientRequest old_new allowElection_nm have "... = msgTermInstance m2" by (auto simp add: msgTermInstance_def termInstance_def instance_def)
+        also from ClientRequest startedJoinSinceLastReboot_nm have "... < termInstance nm t" by (auto simp add: termInstance_def)
+        also from ClientRequest old_new startedJoinSinceLastReboot_nm have "... = msgTermInstance m2" by (auto simp add: msgTermInstance_def termInstance_def instance_def)
         also from prem have "... = msgTermInstance m1" by (simp add: msgTermInstance_def)
         finally show ?thesis by simp
       next
@@ -2293,8 +2293,8 @@ proof -
         with prem have "msgTermInstance m2 \<le> termInstance (source m2) s" by (intro hyp2, auto)
         also have "... = termInstance (source m1) s" by (simp add: source_eq)
         also from new_old have "... = termInstance nm s" by (auto simp add: ClientRequest)
-        also from ClientRequest allowElection_nm have "... < termInstance nm t" by (auto simp add: termInstance_def)
-        also from ClientRequest new_old allowElection_nm have "... = msgTermInstance m1" by (auto simp add: msgTermInstance_def termInstance_def instance_def)
+        also from ClientRequest startedJoinSinceLastReboot_nm have "... < termInstance nm t" by (auto simp add: termInstance_def)
+        also from ClientRequest new_old startedJoinSinceLastReboot_nm have "... = msgTermInstance m1" by (auto simp add: msgTermInstance_def termInstance_def instance_def)
         also from prem have "... = msgTermInstance m2" by (simp add: msgTermInstance_def)
         finally show ?thesis by simp
       qed
@@ -2308,7 +2308,7 @@ lemma BasedOnUniqueBelow_step:
   assumes "s \<Turnstile> PublishRequestInstanceAtMostSenderBelow termBound"
   assumes "s \<Turnstile> BasedOnPublishRequest"
   assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesAllowElection"
+  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
   shows "(s,t) \<Turnstile> BasedOnUniqueBelow termBound$"
 proof -
   from assms
@@ -2320,9 +2320,9 @@ proof -
       \<Longrightarrow> \<exists> m \<in> messages s. isPublishRequest m \<and> term m = tCurr \<and> instance m = iCurr"
     and hyp4: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
       \<Longrightarrow> n = source m"
-    and hyp5: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> allowElection s n"
+    and hyp5: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
     by (auto simp add: BasedOnUniqueBelow_def PublishRequestInstanceAtMostSenderBelow_def
-        BasedOnPublishRequest_def PublishRequestSentByMasterBelow_def JoinVotesImpliesAllowElection_def)
+        BasedOnPublishRequest_def PublishRequestSentByMasterBelow_def JoinVotesImpliesStartedJoin_def)
 
   {
     fix tiPrev1 tiPrev2 tCurr iCurr
@@ -2335,7 +2335,7 @@ proof -
       case (ClientRequest nm v vs newPublishInstance newPublishRequests newEntry matchingElems newTransitiveElems)
 
       from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
-      hence allowElection: "allowElection s nm" by (intro hyp5, auto simp add: IsQuorum_def)
+      hence startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp5, auto simp add: IsQuorum_def)
 
       from prem consider
         (old_old) "(TermInstance tCurr iCurr, tiPrev1) \<in> basedOn s" "(TermInstance tCurr iCurr, tiPrev2) \<in> basedOn s"
@@ -2358,14 +2358,14 @@ proof -
         from m prem old_new have nm_eq: "nm = source m" by (intro hyp4, auto simp add: ClientRequest)
         from m prem have "msgTermInstance m \<le> termInstance nm s" unfolding nm_eq by (intro hyp2, auto)
         thus ?thesis
-          by (simp add: msgTermInstance_def m old_new termInstance_def allowElection ClientRequest less_eq_TermInstance_def)
+          by (simp add: msgTermInstance_def m old_new termInstance_def startedJoinSinceLastReboot ClientRequest less_eq_TermInstance_def)
       next
         case new_old
         with hyp3 obtain m where m: "m \<in> messages s" "isPublishRequest m" "term m = tCurr" "instance m = iCurr" by metis
         from m prem new_old have nm_eq: "nm = source m" by (intro hyp4, auto simp add: ClientRequest)
         from m prem have "msgTermInstance m \<le> termInstance nm s" unfolding nm_eq by (intro hyp2, auto)
         thus ?thesis
-          by (simp add: msgTermInstance_def m new_old termInstance_def allowElection ClientRequest less_eq_TermInstance_def)
+          by (simp add: msgTermInstance_def m new_old termInstance_def startedJoinSinceLastReboot ClientRequest less_eq_TermInstance_def)
       qed
     qed auto
   }
@@ -2382,7 +2382,7 @@ proof -
                      term m = currentTerm s (source m); term m < termBound; electionWon s (source m) \<rbrakk>
       \<Longrightarrow> lastAcceptedTerm s (source m) = currentTerm s (source m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
-                     allowElection s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
+                     startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
     unfolding LeaderMustAcceptItsPublishRequestsBelow_def PublishRequestImpliesElectionWonBelow_def
     by metis+
 
@@ -2411,7 +2411,7 @@ proof -
             from prem show "m \<in> messages s" "isPublishRequest m"
               "currentTerm s (source m) = term m" "term m < termBound"
               unfolding HandleJoinRequest by simp_all
-            from HandleJoinRequest show "allowElection s (source m)" by (simp add: nm_eq)
+            from HandleJoinRequest show "startedJoinSinceLastReboot s (source m)" by (simp add: nm_eq)
           qed
           with prem show "lastAcceptedInstance s (source m) = publishInstance s (source m)"
             by (auto simp add: HandleJoinRequest)
@@ -2452,7 +2452,7 @@ qed
 lemma PublishRequestsContiguousWithinTermBelow_step:
   assumes "s \<Turnstile> PublishRequestsContiguousWithinTermBelow termBound"
   assumes "s \<Turnstile> PublishRequestInstanceAtMostSenderBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesAllowElection"
+  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
   assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
   assumes "s \<Turnstile> LastAcceptedTermInPast"
   assumes "s \<Turnstile> LeaderMustAcceptItsPublishRequestsBelow termBound"
@@ -2462,7 +2462,7 @@ proof -
   have  hyp1: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isPublishRequest m1; isPublishRequest m2; term m1 = term m2; term m1 < termBound; instance m1 < instance m2 \<rbrakk>
       \<Longrightarrow> (TermInstance (term m2) (instance m2), TermInstance (term m2) (instance m2 - 1)) \<in> basedOn s"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk> \<Longrightarrow> msgTermInstance m \<le> termInstance (source m) s"
-    and hyp3: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> allowElection s n"
+    and hyp3: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp4: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
       \<Longrightarrow> n = source m"
     and hyp5: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
@@ -2470,7 +2470,7 @@ proof -
                      term m = currentTerm s (source m); term m < termBound; electionWon s (source m) \<rbrakk>
       \<Longrightarrow> lastAcceptedTerm s (source m) = currentTerm s (source m)"
     unfolding PublishRequestsContiguousWithinTermBelow_def PublishRequestInstanceAtMostSenderBelow_def
-        JoinVotesImpliesAllowElection_def PublishRequestSentByMasterBelow_def LastAcceptedTermInPast_def
+        JoinVotesImpliesStartedJoin_def PublishRequestSentByMasterBelow_def LastAcceptedTermInPast_def
         LeaderMustAcceptItsPublishRequestsBelow_def
     by metis+
 
@@ -2483,7 +2483,7 @@ proof -
       case (ClientRequest nm v vs newPublishInstance newPublishRequests newEntry matchingElems newTransitiveElems)
 
       from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
-      hence allowElection: "allowElection s nm" by (intro hyp3, auto simp add: IsQuorum_def)
+      hence startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp3, auto simp add: IsQuorum_def)
 
       from prem consider
         (old_old) "m1 \<in> messages s" "m2 \<in> messages s"
@@ -2502,7 +2502,7 @@ proof -
         from new_old prem have nm_eq: "nm = source m2" by (intro hyp4, auto simp add: ClientRequest)
         from new_old prem have "msgTermInstance m2 \<le> termInstance nm s" unfolding nm_eq by (intro hyp2, auto)
         with new_old prem show ?thesis
-          by (auto simp add: msgTermInstance_def termInstance_def allowElection less_eq_TermInstance_def ClientRequest instance_def)
+          by (auto simp add: msgTermInstance_def termInstance_def startedJoinSinceLastReboot less_eq_TermInstance_def ClientRequest instance_def)
       next
         case old_new
         from old_new prem have nm_eq: "nm = source m1" "nm = source m2" by (intro hyp4, auto simp add: ClientRequest)
