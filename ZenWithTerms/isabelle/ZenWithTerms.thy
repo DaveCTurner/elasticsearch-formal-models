@@ -103,6 +103,7 @@ locale ZenWithTerms =
   fixes joinVotes                   :: "(Node \<Rightarrow> Node set) stfun"
   fixes startedJoinSinceLastReboot  :: "(Node \<Rightarrow> bool)     stfun"
   fixes electionWon                 :: "(Node \<Rightarrow> bool)     stfun"
+  fixes lastPublishedConfiguration  :: "(Node \<Rightarrow> Node set) stfun"
   fixes lastPublishedVersion        :: "(Node \<Rightarrow> nat)      stfun"
   fixes publishVotes                :: "(Node \<Rightarrow> Node set) stfun"
     (* message history *)
@@ -114,10 +115,10 @@ locale ZenWithTerms =
   fixes leaderHistory               :: "(nat \<times> Node) set stfun"
   fixes basedOn                     :: "(TermVersion  \<times> TermVersion) set stfun"
     (* TODO idea: track last-committed term + version, to link the current state to the proposals *)
-  fixes vars defines "vars \<equiv> LIFT (messages, descendant, currentTerm, lastCommittedConfiguration,
-    lastAcceptedTerm, lastAcceptedVersion, lastAcceptedValue, lastAcceptedConfiguration, joinVotes,
-    startedJoinSinceLastReboot, electionWon, lastPublishedVersion, publishVotes,
-    initialConfiguration, initialValue, leaderHistory, basedOn)"
+  fixes vars defines "vars \<equiv> LIFT (currentTerm, lastCommittedConfiguration, lastAcceptedTerm,
+      lastAcceptedVersion, lastAcceptedValue, lastAcceptedConfiguration, joinVotes, startedJoinSinceLastReboot,
+      electionWon, lastPublishedConfiguration, lastPublishedVersion, publishVotes, messages, descendant,
+      initialConfiguration, initialValue, leaderHistory, basedOn)"
     (* IsQuorum predicate *)
   fixes IsQuorum :: "Node set \<Rightarrow> Node set \<Rightarrow> bool"
   defines "IsQuorum votes qconfig \<equiv> card (votes \<inter> qconfig) * 2 > card qconfig"
@@ -130,22 +131,21 @@ locale ZenWithTerms =
     (* Initial state *)
   fixes Initial :: stpred
   defines "Initial \<equiv> PRED
-      messages = #{}
-    \<and> descendant = #{}
-    \<and> (\<forall>n. id<currentTerm,#n> = #0)
-    \<and> (\<exists> vc. #vc \<in> #ValidConfigs \<and> (\<forall>n. id<lastCommittedConfiguration,#n> = #vc)) (* agreement on initial configuration *)
-    \<and> (\<forall>n. id<lastAcceptedTerm,#n> = #0)
+      (\<forall>n. id<currentTerm,#n> = #0)
+    \<and> (\<forall>n. id<lastCommittedConfiguration,#n> = initialConfiguration) (* agreement on initial configuration *)
     \<and> (\<forall>n. id<lastAcceptedTerm,#n> = #0)
     \<and> (\<forall>n. id<lastAcceptedVersion,#n> = #0)
-    \<and> (\<exists> v. \<forall>n. id<lastAcceptedValue,#n> = #v) (* agreement on initial value *)
-    \<and> (\<forall>n. id<lastAcceptedConfiguration,#n> = id<lastCommittedConfiguration,#n>)
+    \<and> (\<forall>n. id<lastAcceptedValue,#n> = initialValue)
+    \<and> (\<forall>n. id<lastAcceptedConfiguration,#n> = initialConfiguration)
     \<and> (\<forall>n. id<joinVotes,#n> = #{})
     \<and> (\<forall>n. id<startedJoinSinceLastReboot,#n> = #False)
     \<and> (\<forall>n. id<electionWon,#n> = #False)
+    \<and> (\<forall>n. id<lastPublishedConfiguration,#n> = initialConfiguration)
     \<and> (\<forall>n. id<lastPublishedVersion,#n> = #0)
     \<and> (\<forall>n. id<publishVotes,#n> = #{})
-    \<and> (\<forall>n. id<lastAcceptedConfiguration,#n> = initialConfiguration)
-    \<and> (\<forall>n. id<lastAcceptedValue,#n> = initialValue)
+    \<and> messages = #{}
+    \<and> descendant = #{}
+    \<and> initialConfiguration \<in> #ValidConfigs
     \<and> leaderHistory = #{}
     \<and> basedOn = #{}"
     (* HandleStartJoin *)
@@ -159,14 +159,17 @@ locale ZenWithTerms =
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laVersion  = lastAcceptedVersion_n \<rparr> \<rparr>))
           \<and> updated currentTerm                n t
           \<and> updated lastPublishedVersion       n 0
+          \<and> (\<exists> lastAcceptedConfiguration_n. #lastAcceptedConfiguration_n = id<$lastAcceptedConfiguration,#n>
+          \<and> updated lastPublishedConfiguration n lastAcceptedConfiguration_n)
           \<and> updated startedJoinSinceLastReboot n True
           \<and> updated electionWon                n False
           \<and> updated joinVotes                  n {}
           \<and> updated publishVotes               n {}
           \<and> messages$ = ($messages \<union> #{ joinRequest })
-          \<and> unchanged (lastCommittedConfiguration, lastAcceptedConfiguration, lastAcceptedVersion,
-                lastAcceptedValue, lastAcceptedTerm, descendant, initialConfiguration, initialValue,
-                leaderHistory, basedOn)))"
+          \<and> unchanged (lastCommittedConfiguration, lastAcceptedTerm, lastAcceptedVersion, lastAcceptedValue,
+                       lastAcceptedConfiguration, descendant, initialConfiguration,
+                       initialValue, leaderHistory, basedOn)))"
+
     (* HandleJoinRequest *)
     (* node n handles a join request and checks if it has received enough joins (= votes) for its term to be elected as master *)
   fixes HandleJoinRequest :: "Node \<Rightarrow> Message \<Rightarrow> action"
