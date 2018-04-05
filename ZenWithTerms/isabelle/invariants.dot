@@ -1,0 +1,80 @@
+digraph G {
+    rankdir="LR"
+    node[shape="box"]
+    FiniteMessagesTo
+    JoinRequestsAtMostCurrentTerm
+    JoinRequestsUniquePerTerm
+    JoinVotesFaithful
+    JoinVotesImpliesAllowElection
+    MessagePositiveTerm
+    TermIncreasedByJoin
+    LastAcceptedTermInPast
+    LastAcceptedDataSource
+    AllConfigurationsValid
+    CurrentConfigurationSource
+    CurrentConfigurationMsgSource
+    PublicationsInPastTerm
+    LeaderHistoryFaithful
+    LeaderHistoryBounded
+    PublishRequestFromHistoricalLeader
+    BasedOnIncreasing
+    PublishRequestBasedOn
+    BasedOnPublishRequest
+    BasedOnBasedOn
+    OneMasterPerTermBelow 
+    PublishRequestSentByMasterBelow 
+    ElectionWonQuorumBelow 
+    PublishRequestImpliesElectionWonBelow 
+    PublishRequestImpliesQuorumBelow 
+    PublishInstanceNonzeroOnlyIfElectionWonBelow 
+    EndOfTermIsPermanentBelow 
+    PublishRequestInstanceAtMostSenderBelow 
+    PublishRequestsUniquePerTermInstanceBelow 
+    BasedOnUniqueBelow
+    LeaderMustAcceptItsPublishRequestsBelow
+    PublishRequestsContiguousWithinTermBelow
+
+    JoinRequestsAtMostCurrentTerm -> JoinRequestsUniquePerTerm
+    JoinVotesFaithful -> MessagePositiveTerm
+    MessagePositiveTerm -> LastAcceptedDataSource
+    LastAcceptedTermInPast -> LastAcceptedDataSource
+    MessagePositiveTerm -> CurrentConfigurationSource
+    LastAcceptedDataSource -> CurrentConfigurationSource
+    CurrentConfigurationMsgSource -> CurrentConfigurationSource
+    CurrentConfigurationSource -> CurrentConfigurationMsgSource
+    LeaderHistoryFaithful -> PublishRequestFromHistoricalLeader
+    LastAcceptedTermInPast -> BasedOnIncreasing
+    LastAcceptedDataSource -> BasedOnBasedOn
+    PublishRequestBasedOn -> BasedOnBasedOn
+    "?" -> OneMasterPerTermBelow
+    OneMasterPerTermBelow -> PublishRequestSentByMasterBelow [label="@t"]
+    PublishRequestFromHistoricalLeader -> PublishRequestSentByMasterBelow
+    LeaderHistoryFaithful -> PublishRequestSentByMasterBelow
+    PublishRequestSentByMasterBelow -> ElectionWonQuorumBelow
+    PublishRequestImpliesQuorumBelow -> ElectionWonQuorumBelow
+    PublicationsInPastTerm -> PublishRequestImpliesElectionWonBelow
+    ElectionWonQuorumBelow -> PublishRequestImpliesElectionWonBelow
+    ElectionWonQuorumBelow -> PublishRequestImpliesQuorumBelow
+    PublishRequestImpliesElectionWonBelow -> PublishRequestImpliesQuorumBelow
+    ElectionWonQuorumBelow -> PublishInstanceNonzeroOnlyIfElectionWonBelow
+    ElectionWonQuorumBelow -> EndOfTermIsPermanentBelow
+    LeaderHistoryBounded -> EndOfTermIsPermanentBelow
+    PublishInstanceNonzeroOnlyIfElectionWonBelow -> PublishRequestInstanceAtMostSenderBelow 
+    JoinVotesImpliesAllowElection -> PublishRequestInstanceAtMostSenderBelow 
+    PublishRequestInstanceAtMostSenderBelow -> PublishRequestsUniquePerTermInstanceBelow 
+    OneMasterPerTermBelow -> PublishRequestsUniquePerTermInstanceBelow 
+    PublishRequestFromHistoricalLeader -> PublishRequestsUniquePerTermInstanceBelow 
+    LeaderHistoryFaithful -> PublishRequestsUniquePerTermInstanceBelow 
+    JoinVotesImpliesAllowElection -> PublishRequestsUniquePerTermInstanceBelow 
+    PublishRequestInstanceAtMostSenderBelow -> BasedOnUniqueBelow
+    PublishRequestSentByMasterBelow -> BasedOnUniqueBelow
+    BasedOnPublishRequest -> BasedOnUniqueBelow
+    JoinVotesImpliesAllowElection -> BasedOnUniqueBelow
+    PublishRequestImpliesElectionWonBelow -> LeaderMustAcceptItsPublishRequestsBelow
+    LeaderMustAcceptItsPublishRequestsBelow -> PublishRequestsContiguousWithinTermBelow
+    PublishRequestInstanceAtMostSenderBelow -> PublishRequestsContiguousWithinTermBelow
+    PublishRequestSentByMasterBelow -> PublishRequestsContiguousWithinTermBelow
+    LastAcceptedTermInPast -> PublishRequestsContiguousWithinTermBelow
+    JoinVotesImpliesAllowElection -> PublishRequestsContiguousWithinTermBelow
+
+}

@@ -1,0 +1,144 @@
+
+definition FiniteMessagesTo :: stpred
+  where "FiniteMessagesTo s ≡ ∀n. finite (messagesTo s n)"
+
+definition JoinRequestsAtMostCurrentTerm :: stpred where "JoinRequestsAtMostCurrentTerm s ≡ 
+  ∀ m. isJoin m ⟶ m ∈ messages s ⟶ term m ≤ currentTerm s (source m)"
+
+definition JoinRequestsUniquePerTerm :: stpred where "JoinRequestsUniquePerTerm s ≡ 
+  ∀ m1 m2. m1 ∈ messages s ⟶ m2 ∈ messages s 
+      ⟶ isJoin m1 ⟶ isJoin m2 ⟶ source m1 = source m2 ⟶ term m1 = term m2
+      ⟶ m1 = m2"
+
+definition JoinVotesFaithful :: stpred where "JoinVotesFaithful s ≡ 
+  ∀ nm nf. nf ∈ joinVotes s nm
+      ⟶ (∃ joinPayload. ⦇ source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload ⦈ ∈ messages s)"
+
+definition JoinVotesImpliesAllowElection :: stpred where "JoinVotesImpliesAllowElection s ≡
+  ∀ n. joinVotes s n ≠ {} ⟶ allowElection s n"
+
+definition TheJoinProperty :: stpred where "TheJoinProperty s ≡
+  ∀ nm nf. nf ∈ joinVotes s nm
+    ⟶ source (TheJoin nf nm s) = nf
+      ∧ dest (TheJoin nf nm s) = nm
+      ∧ term (TheJoin nf nm s) = currentTerm s nm
+      ∧ isJoin (TheJoin nf nm s)
+      ∧ TheJoin nf nm s ∈ messages s"
+
+definition MessagePositiveTerm :: stpred where "MessagePositiveTerm s ≡
+  ∀m ∈ messages s. term m > 0"
+
+definition TermIncreasedByJoin :: stpred where "TermIncreasedByJoin s ≡
+  ∀n. currentTerm s n > 0 ⟶ (∃ m ∈ messages s. isJoin m ∧ currentTerm s n = term m)"
+
+definition LastAcceptedTermInPast :: stpred where "LastAcceptedTermInPast s ≡
+  ∀n. lastAcceptedTerm s n ≤ currentTerm s n"
+
+definition LastAcceptedDataSource :: stpred where "LastAcceptedDataSource s ≡
+  ∀n. if lastAcceptedTerm s n = 0
+        then lastAcceptedInstance      s n = 0
+           ∧ lastAcceptedValue         s n = initialValue s
+           ∧ lastAcceptedConfiguration s n = initialConfiguration s
+        else (∃ m ∈ messages s. isPublishRequest m
+                                        ∧ lastAcceptedTerm          s n = term     m
+                                        ∧ lastAcceptedInstance      s n = instance m
+                                        ∧ lastAcceptedValue         s n = value    m
+                                        ∧ lastAcceptedConfiguration s n = config   m)"
+
+definition AllConfigurations :: "Node set set stfun" where "AllConfigurations s ≡
+  insert (initialConfiguration s) (config ` { m ∈ messages s. isPublishRequest m })"
+
+definition AllConfigurationsValid :: stpred where "AllConfigurationsValid s ≡
+  AllConfigurations s ⊆ ValidConfigs"
+
+definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfigurations s ≡
+  insert (initialConfiguration s)
+    { c. (∃ mPub ∈ messages s. isPublishRequest mPub ∧ config mPub = c
+           ∧ (∃ mCom ∈ messages s. isCommit mCom ∧ term mCom = term mPub ∧ instance mCom = instance mPub)) }"
+
+definition CurrentConfigurationSource :: stpred where "CurrentConfigurationSource s ≡
+  ∀n. currentConfiguration s n ∈ CommittedConfigurations s"
+
+definition CurrentConfigurationMsgSource :: stpred where "CurrentConfigurationMsgSource s ≡
+  ∀m ∈ messages s. isPublishRequest m ⟶ currConf m ∈ CommittedConfigurations s"
+
+definition PublicationsInPastTerm :: stpred where "PublicationsInPastTerm s ≡
+  ∀m ∈ messages s. isPublishRequest m ⟶ term m ≤ currentTerm s (source m)"
+
+definition PublishRequestInstancePositive :: stpred where "PublishRequestInstancePositive s ≡
+  ∀ m ∈ messages s. isPublishRequest m ⟶ 0 < instance m"
+
+definition LeaderHistoryFaithful :: stpred where "LeaderHistoryFaithful s ≡
+  ∀n. electionWon s n ⟶ (currentTerm s n, n) ∈ leaderHistory s"
+
+definition LeaderHistoryBounded :: stpred where "LeaderHistoryBounded s ≡
+  ∀n tm. (tm, n) ∈ leaderHistory s ⟶ tm ≤ currentTerm s n"
+
+definition PublishRequestFromHistoricalLeader :: stpred where "PublishRequestFromHistoricalLeader s ≡
+  ∀m ∈ messages s. isPublishRequest m ⟶ (term m, source m) ∈ leaderHistory s"
+
+definition BasedOnIncreasing :: stpred where "BasedOnIncreasing s ≡
+  ∀ tPrev iPrev tCurr iCurr. (TermInstance tCurr iCurr, TermInstance tPrev iPrev) ∈ basedOn s
+    ⟶ iCurr = Suc iPrev ∧ tPrev ≤ tCurr"
+
+definition PublishRequestBasedOn :: stpred where "PublishRequestBasedOn s ≡
+  ∀ m ∈ messages s. isPublishRequest m ⟶ (∃ tiPrev. (TermInstance (term m) (instance m), tiPrev) ∈ basedOn s)"
+
+definition BasedOnPublishRequest :: stpred where "BasedOnPublishRequest s ≡
+  ∀ tiPrev tCurr iCurr. (TermInstance tCurr iCurr, tiPrev) ∈ basedOn s
+    ⟶ (∃ m ∈ messages s. isPublishRequest m ∧ term m = tCurr ∧ instance m = iCurr)"
+
+definition BasedOnBasedOn :: stpred where "BasedOnBasedOn s ≡
+  ∀ tiCurr tPrev iPrev. (tiCurr, TermInstance tPrev iPrev) ∈ basedOn s ⟶ 0 < iPrev
+    ⟶ (∃ tiPrevPrev. (TermInstance tPrev iPrev, tiPrevPrev) ∈ basedOn s)"
+
+definition ElectionWonQuorumBelow :: "nat ⇒ stpred" where "ElectionWonQuorumBelow termBound s ≡
+  ∀ n. currentTerm s n < termBound ⟶ electionWon s n
+    ⟶ IsQuorum (joinVotes s n) (currentConfiguration s n)
+      ∧ IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
+
+definition OneMasterPerTermBelow :: "nat ⇒ stpred" where "OneMasterPerTermBelow termBound s ≡
+  ∀ n1 n2 tm. tm < termBound ⟶ (tm, n1) ∈ leaderHistory s ⟶ (tm, n2) ∈ leaderHistory s
+    ⟶ n1 = n2"
+
+definition PublishRequestImpliesElectionWonBelow :: "nat ⇒ stpred" where "PublishRequestImpliesElectionWonBelow termBound s ≡
+  ∀ m ∈ messages s. term m < termBound ⟶ isPublishRequest m ⟶ currentTerm s (source m) = term m
+    ⟶ allowElection s (source m) ⟶ electionWon s (source m)"
+
+definition PublishRequestImpliesQuorumBelow :: "nat ⇒ stpred" where "PublishRequestImpliesQuorumBelow termBound s ≡
+  ∀ m ∈ messages s. term m < termBound ⟶ isPublishRequest m ⟶ currentTerm s (source m) = term m ⟶ electionWon s (source m)
+               ⟶ IsQuorum (joinVotes s (source m)) (config m)
+                 ∧ IsQuorum (joinVotes s (source m)) (currConf m)"
+
+definition PublishRequestSentByMasterBelow :: "nat ⇒ stpred" where "PublishRequestSentByMasterBelow termBound s ≡
+  ∀ m n. m ∈ messages s ⟶ term m = currentTerm s n ⟶ term m < termBound ⟶ isPublishRequest m ⟶ electionWon s n
+    ⟶ n = source m"
+
+definition PublishInstanceNonzeroOnlyIfElectionWonBelow :: "nat ⇒ stpred" where "PublishInstanceNonzeroOnlyIfElectionWonBelow termBound s ≡
+  ∀ n. currentTerm s n < termBound ⟶ 0 < publishInstance s n ⟶ electionWon s n"
+
+definition EndOfTermIsPermanentBelow :: "nat ⇒ stpred" where "EndOfTermIsPermanentBelow termBound s ≡
+  ∀ n. (currentTerm s n, n) ∈ leaderHistory s ⟶ currentTerm s n < termBound ⟶ allowElection s n ⟶ electionWon s n"
+
+definition PublishRequestInstanceAtMostSenderBelow :: "nat ⇒ stpred" where "PublishRequestInstanceAtMostSenderBelow termBound s ≡
+  ∀ m ∈ messages s. isPublishRequest m ⟶ term m < termBound ⟶ msgTermInstance m ≤ termInstance (source m) s"
+
+definition PublishRequestsUniquePerTermInstanceBelow :: "nat ⇒ stpred" where "PublishRequestsUniquePerTermInstanceBelow termBound s ≡
+  ∀ m1 m2. m1 ∈ messages s ⟶ m2 ∈ messages s ⟶ isPublishRequest m1 ⟶ isPublishRequest m2
+    ⟶ term m1 < termBound ⟶ term m1 = term m2 ⟶ instance m1 = instance m2
+    ⟶ payload m1 = payload m2"
+
+definition BasedOnUniqueBelow :: "nat ⇒ stpred" where "BasedOnUniqueBelow termBound s ≡
+  ∀ tiPrev1 tiPrev2 tCurr iCurr. tCurr < termBound
+      ⟶ (TermInstance tCurr iCurr, tiPrev1) ∈ basedOn s ⟶ (TermInstance tCurr iCurr, tiPrev2) ∈ basedOn s
+      ⟶ tiPrev1 = tiPrev2"
+
+definition LeaderMustAcceptItsPublishRequestsBelow :: "nat ⇒ stpred" where "LeaderMustAcceptItsPublishRequestsBelow termBound s ≡
+  ∀ m ∈ messages s. isPublishRequest m ⟶ lastAcceptedInstance s (source m) = publishInstance s (source m)
+                      ⟶ term m = currentTerm s (source m) ⟶ term m < termBound ⟶ electionWon s (source m)
+       ⟶ lastAcceptedTerm s (source m) = currentTerm s (source m)"
+
+definition PublishRequestsContiguousWithinTermBelow :: "nat ⇒ stpred" where "PublishRequestsContiguousWithinTermBelow termBound s ≡
+  ∀ m1 m2. m1 ∈ messages s ⟶ m2 ∈ messages s ⟶ isPublishRequest m1 ⟶ isPublishRequest m2
+    ⟶ term m1 = term m2 ⟶ term m1 < termBound ⟶ instance m1 < instance m2
+    ⟶ (TermInstance (term m2) (instance m2), TermInstance (term m2) (instance m2 - 1)) ∈ basedOn s"
