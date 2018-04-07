@@ -176,5 +176,12 @@ definition LeaderCannotPublishWithoutAcceptingPreviousRequestNEWBelow :: "nat �
 definition LeaderCannotPublishWithoutAcceptingPreviousRequestBelow :: "nat ⇒ stpred" where "LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound s ≡
   ∀ n. electionWon s n ⟶ currentTerm s n < termBound ⟶ lastPublishedVersion s n ∈ {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
 
+definition LastPublishedVersionImpliesLastPublishedConfigurationBelow :: "nat ⇒ stpred" where "LastPublishedVersionImpliesLastPublishedConfigurationBelow termBound s ≡
+  ∀ m ∈ messages s. isPublishRequest m ⟶ term m < termBound
+    ⟶ term m = currentTerm s (source m)
+    ⟶ electionWon s (source m)
+    ⟶ version m = lastPublishedVersion s (source m)
+    ⟶ config m = lastPublishedConfiguration s (source m)"
+
 definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat ⇒ stpred" where "LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound s ≡
   ∀n. electionWon s n ⟶ currentTerm s n < termBound ⟶ lastAcceptedConfiguration s n ∈ { lastCommittedConfiguration s n, lastPublishedConfiguration s n }"
