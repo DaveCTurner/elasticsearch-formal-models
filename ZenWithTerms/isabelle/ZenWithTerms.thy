@@ -2985,6 +2985,8 @@ lemma LastAcceptedConfigurationEitherCommittedOrPublishedBelow_step:
   assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
   assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
   assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  assumes "s \<Turnstile> NewLeaderCanOnlySendOneMessageBelow termBound"
+  assumes "s \<Turnstile> LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound"
   shows "(s,t) \<Turnstile> LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound$"
 proof -
   from assms
@@ -2995,8 +2997,16 @@ proof -
     and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk>
     \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     and hyp4: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp5: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound;
+                     term m = currentTerm s (source m);
+                     electionWon s (source m);
+                     currentTerm s (source m) \<noteq> lastAcceptedTerm s (source m) \<rbrakk>
+      \<Longrightarrow> version m = lastPublishedVersion s (source m)"
+     and hyp6: "\<And>n. \<lbrakk> electionWon s n; currentTerm s n < termBound \<rbrakk>
+    \<Longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
     unfolding LastAcceptedConfigurationEitherCommittedOrPublishedBelow_def PublishRequestSentByMasterBelow_def
       PublishRequestVersionAtMostSenderBelow_def ElectionWonImpliesStartedJoin_def
+      NewLeaderCanOnlySendOneMessageBelow_def LeaderCannotPublishWithoutAcceptingPreviousRequestBelow_def
     by metis+
 
   {
@@ -3018,7 +3028,7 @@ proof -
         case False with hyp1 prem HandlePublishRequest show ?thesis by simp
       next
         case nf_eq_n: True
-        define msg where "msg \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s n
+        define msg where "msg \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s nf
           , payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
         from HandlePublishRequest prem
         have n_source: "n = source msg" by (intro hyp2, simp_all add: msg_def nf_eq_n isPublishRequest_def)
@@ -3031,12 +3041,37 @@ proof -
         have "msgTermVersion msg \<le> termVersion (source msg) s"
           by (intro hyp3, simp_all add: msg_def nf_eq_n isPublishRequest_def)
         hence "newVersion \<le> lastPublishedVersion s n"
-          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nm_eq_n less_eq_TermVersion_def)
+          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nm_eq_n nf_eq_n less_eq_TermVersion_def)
+
+        have "lastPublishedVersion s n = newVersion" 
+        proof (cases "currentTerm s nf = lastAcceptedTerm s nf")
+          case False
+          have "version msg = lastPublishedVersion s (source msg)"
+          proof (intro hyp5)
+            from HandlePublishRequest show "msg \<in> messages s" by (auto simp add: msg_def)
+            show "isPublishRequest msg" by (simp add: msg_def isPublishRequest_def)
+            from prem show "term msg < termBound" "electionWon s (source msg)" "term msg = currentTerm s (source msg)"
+              by (auto simp add: msg_def HandlePublishRequest nf_eq_n nm_eq_n)
+            from False show "currentTerm s (source msg) \<noteq> lastAcceptedTerm s (source msg)"
+              by (simp add: msg_def nm_eq_n nf_eq_n)
+          qed
+          thus "lastPublishedVersion s n = newVersion" by (simp add: msg_def version_def nm_eq_n)
+        next
+          case True
+          with HandlePublishRequest have "lastAcceptedVersion s nf < newVersion" by simp
+          with `newVersion \<le> lastPublishedVersion s n`
+          have "lastAcceptedVersion s n \<noteq> lastPublishedVersion s n" by (simp add: nf_eq_n)
+
+          moreover from prem have "lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
+            by (intro hyp6, auto simp add: HandlePublishRequest)
+          ultimately have "lastPublishedVersion s n = Suc (lastAcceptedVersion s n)" by auto
+          with `newVersion \<le> lastPublishedVersion s n` `lastAcceptedVersion s nf < newVersion`
+          show "lastPublishedVersion s n = newVersion" by (auto simp add: nf_eq_n)
+        qed
 
         have "newConfig = lastPublishedConfiguration s n" sorry
+            (* leader, accepting its own publication - msg is that publication (same term & version) so also has the right config *)
         thus ?thesis by (simp add: HandlePublishRequest nf_eq_n)
-
-        (* leader is accepting its own publish request, so newConfig == lastPublishedConfiguration *)
       qed
     next
       case (RestartNode nr)
