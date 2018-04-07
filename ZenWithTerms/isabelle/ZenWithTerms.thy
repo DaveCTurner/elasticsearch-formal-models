@@ -160,18 +160,17 @@ locale ZenWithTerms =
                               #lastAcceptedTerm_n     = id<$lastAcceptedTerm,#n>
                             \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laVersion  = lastAcceptedVersion_n \<rparr> \<rparr>))
-          \<and> updated currentTerm                n t
+          \<and> updated     currentTerm                n t
           \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
           \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-          \<and> updated startedJoinSinceLastReboot n True
-          \<and> updated electionWon                n False
-          \<and> updated joinVotes                  n {}
-          \<and> updated publishVotes               n {}
+          \<and> updated     startedJoinSinceLastReboot n True
+          \<and> updated     electionWon                n False
+          \<and> updated     joinVotes                  n {}
+          \<and> updated     publishVotes               n {}
           \<and> messages$ = ($messages \<union> #{ joinRequest })
           \<and> unchanged (lastCommittedConfiguration, lastAcceptedTerm, lastAcceptedVersion, lastAcceptedValue,
                        lastAcceptedConfiguration, descendant, initialConfiguration,
                        initialValue, leaderHistory, basedOn)))"
-
     (* HandleJoinRequest *)
     (* node n handles a join request and checks if it has received enough joins (= votes) for its term to be elected as master *)
   fixes HandleJoinRequest :: "Node \<Rightarrow> Message \<Rightarrow> action"
@@ -181,7 +180,7 @@ locale ZenWithTerms =
     \<and> id<$startedJoinSinceLastReboot,#n>
     \<and> ( #(laTerm m) < id<$lastAcceptedTerm,#n>
       \<or> ( #(laTerm     m) = id<$lastAcceptedTerm,#n>
-        \<and> #(laVersion  m) \<le> id<$lastAcceptedVersion,#n>))
+        \<and> #(laVersion  m) \<le> id<$lastAcceptedVersion,#n>)) (* TODO is this needed? *)
     \<and> modified joinVotes   n (insert (source m))
     \<and> (\<exists> joinVotes_n electionNowWon. #joinVotes_n = id<joinVotes$,#n>
                                    \<and> #electionNowWon = $(ElectionWon n joinVotes_n)
@@ -190,7 +189,7 @@ locale ZenWithTerms =
         then (\<exists> lav. #lav = id<$lastAcceptedVersion,#n>
                   \<and> updated lastPublishedVersion n lav)
            \<and> (\<exists> lac. #lac = id<$lastAcceptedConfiguration,#n>
-                  \<and> updated lastPublishedConfiguration n lac) (* NB deviation from TLA+ model - lastPublishedConfiguration := lastAcceptedConfiguration occurred during HandleStartJoin *)
+                  \<and> updated lastPublishedConfiguration n lac) (* NB deviation from TLA+ model in which lastPublishedConfiguration := lastAcceptedConfiguration occurs during HandleStartJoin *)
         else unchanged (lastPublishedVersion, lastPublishedConfiguration))
     \<and> (if id<electionWon$,#n> then leaderHistory$ = (insert (term m, n))<$leaderHistory> else unchanged leaderHistory)
     \<and> unchanged (lastCommittedConfiguration, currentTerm, publishVotes, messages, descendant,
@@ -249,7 +248,7 @@ locale ZenWithTerms =
     \<and> updated lastAcceptedConfiguration  n (config   m)
     \<and> updated lastCommittedConfiguration n (commConf m)
     \<and> messages$ = (insert \<lparr> source = n, dest = source m, term = term m
-                          , payload = PublishResponse \<lparr> prs_version  = version  m \<rparr> \<rparr>)<$messages>
+                          , payload = PublishResponse \<lparr> prs_version  = version m \<rparr> \<rparr>)<$messages>
     \<and> unchanged (startedJoinSinceLastReboot, currentTerm, descendant, electionWon, lastPublishedVersion, lastPublishedConfiguration, joinVotes,
                   publishVotes, initialConfiguration, initialValue, leaderHistory, basedOn))"
     (* HandlePublishResponse *)
@@ -289,12 +288,12 @@ locale ZenWithTerms =
     (* crash/restart node n (loses ephemeral state) *)
   fixes RestartNode :: "Node \<Rightarrow> action"
   defines "RestartNode n \<equiv> ACT
-    ( updated electionWon                n False
-    \<and> updated startedJoinSinceLastReboot n False
-    \<and> updated joinVotes                  n {}
+    ( updated     electionWon                n False
+    \<and> updated     startedJoinSinceLastReboot n False
+    \<and> updated     joinVotes                  n {}
     \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
     \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-    \<and> updated publishVotes               n {}
+    \<and> updated     publishVotes               n {}
     \<and> unchanged (messages, lastAcceptedVersion, currentTerm, lastCommittedConfiguration, descendant,
                  lastAcceptedTerm, lastAcceptedValue, lastAcceptedConfiguration, initialConfiguration,
                  initialValue, leaderHistory, basedOn))"
@@ -316,7 +315,6 @@ locale ZenWithTerms =
 
 context ZenWithTerms
 begin
-
 
 lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin HandleJoinRequest ClientRequest
     HandlePublishRequest HandlePublishResponse_NoQuorum HandlePublishResponse_Quorum HandleCommitRequest RestartNode]:
@@ -344,7 +342,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandleStartJoin: "\<And>nf nm tm newJoinRequest.
     \<lbrakk> currentTerm s nf < tm
     ; newJoinRequest = \<lparr> source = nf, dest = nm, term = tm
-        , payload = Join \<lparr> jp_laTerm = lastAcceptedTerm s nf, jp_laVersion  = lastAcceptedVersion  s nf \<rparr> \<rparr>
+        , payload = Join \<lparr> jp_laTerm = lastAcceptedTerm s nf, jp_laVersion = lastAcceptedVersion s nf \<rparr> \<rparr>
     ; messages                         t    = insert newJoinRequest (messages s)
     ; descendant                       t    = descendant                 s
     ; \<And>n'. currentTerm                t n' = (if n' = nf then tm else currentTerm s n')
@@ -353,10 +351,14 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; lastAcceptedVersion              t    = lastAcceptedVersion        s
     ; lastAcceptedValue                t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration        t    = lastAcceptedConfiguration  s
-    ; \<And>n'. joinVotes                  t n' = (if n' = nf then {}    else joinVotes       s n')
-    ; \<And>n'. startedJoinSinceLastReboot t n' = (if n' = nf then True  else startedJoinSinceLastReboot   s n')
-    ; \<And>n'. electionWon                t n' = (if n' = nf then False else electionWon     s n')
-    ; \<And>n'. publishVotes               t n' = (if n' = nf then {}    else publishVotes    s n')
+    ; \<And>n'. joinVotes                  t n' = (if n' = nf then {}    else joinVotes                  s n')
+    ; joinVotes t nf = {}
+    ; \<And>n'. startedJoinSinceLastReboot t n' = (if n' = nf then True  else startedJoinSinceLastReboot s n')
+    ; startedJoinSinceLastReboot t nf
+    ; \<And>n'. electionWon                t n' = (if n' = nf then False else electionWon                s n')
+    ; \<not> electionWon t nf
+    ; \<And>n'. publishVotes               t n' = (if n' = nf then {}    else publishVotes               s n')
+    ; publishVotes t nf = {}
     ; \<And>n'. n' \<noteq> nf \<Longrightarrow> lastPublishedVersion       t n' = lastPublishedVersion       s n'
     ; \<And>n'. n' \<noteq> nf \<Longrightarrow> lastPublishedConfiguration t n' = lastPublishedConfiguration s n'
     ; \<And>n'. currentTerm s n' \<le> currentTerm t n'
@@ -389,22 +391,22 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; leaderHistory                    t    = (if electionWon t nm then insert (currentTerm s nm, nm) (leaderHistory s) else (leaderHistory s))
     ; basedOn                          t    = basedOn                    s
     \<rbrakk> \<Longrightarrow> P"
-  assumes ClientRequest: "\<And>nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems.
+  assumes ClientRequest: "\<And>nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems.
     \<lbrakk> electionWon s nm
     ; vs \<in> ValidConfigs
-    ; lastPublishedVersion  s nm = lastAcceptedVersion  s nm
+    ; lastPublishedVersion s nm = lastAcceptedVersion s nm
     ; vs \<noteq> lastAcceptedConfiguration s nm \<Longrightarrow> lastCommittedConfiguration s nm = lastAcceptedConfiguration s nm
     ; IsQuorum (joinVotes s nm) vs
-    ; newPublishVersion  = lastPublishedVersion  s nm + 1
+    ; newPublishVersion  = lastPublishedVersion s nm + 1
     ; newPublishRequests = (\<Union> nf \<in> UNIV. {
                 \<lparr> source = nm, dest = nf, term = currentTerm s nm
                 , payload = PublishRequest \<lparr> prq_version  = newPublishVersion
                                            , prq_value    = v
                                            , prq_config   = vs
                                            , prq_commConf = lastCommittedConfiguration s nm \<rparr>\<rparr>})
-    ; newEntry = \<lparr> prevT = lastAcceptedTerm     s nm
-                 , prevI = lastAcceptedVersion  s nm
-                 , nextT = currentTerm          s nm
+    ; newEntry = \<lparr> prevT = lastAcceptedTerm    s nm
+                 , prevI = lastAcceptedVersion s nm
+                 , nextT = currentTerm         s nm
                  , nextI = newPublishVersion  \<rparr>
     ; matchingElems = { e \<in> descendant s. nextT e = prevT newEntry \<and> nextI e = prevI newEntry}
     ; newTransitiveElems = (\<Union> e \<in> matchingElems. {\<lparr> prevT = prevT e, prevI = prevI e, nextT = nextT newEntry, nextI = nextI newEntry \<rparr>})
@@ -425,15 +427,15 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; initialConfiguration             t    = initialConfiguration       s
     ; initialValue                     t    = initialValue               s
     ; leaderHistory                    t    = leaderHistory              s
-    ; basedOn                          t    = insert ( TermVersion  (currentTerm s nm)      newPublishVersion
-                                                     , TermVersion  (lastAcceptedTerm s nm) (lastAcceptedVersion  s nm))
+    ; basedOn                          t    = insert ( TermVersion  (currentTerm      s nm)  newPublishVersion
+                                                     , TermVersion  (lastAcceptedTerm s nm) (lastAcceptedVersion s nm))
                                                      (basedOn s)
     \<rbrakk> \<Longrightarrow> P"
-  assumes HandlePublishRequest: "\<And>nf nm newVersion  newValue newConfig commConfig.
+  assumes HandlePublishRequest: "\<And>nf nm newVersion newValue newConfig commConfig.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = PublishRequest \<lparr> prq_version  = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> messages s
+      , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> messages s
     ; currentTerm s nf = lastAcceptedTerm s nf \<Longrightarrow> lastAcceptedVersion  s nf < newVersion
-    ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version  = newVersion  \<rparr> \<rparr> (messages s)
+    ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version = newVersion  \<rparr> \<rparr> (messages s)
     ; descendant                       t    = descendant                 s
     ; currentTerm                      t    = currentTerm                s
     ; \<And>n'. lastCommittedConfiguration t n' = (if n' = nf then commConfig       else lastCommittedConfiguration s n')
@@ -454,7 +456,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ;   \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
       \<or> \<not> IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages                   s
@@ -478,7 +480,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishResponse_Quorum: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version  = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
@@ -502,7 +504,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleCommitRequest: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = Commit \<lparr> c_version  = lastAcceptedVersion  s nf \<rparr> \<rparr> \<in> messages s
+      , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> messages s
     ; lastAcceptedTerm s nf = currentTerm s nf
     ; messages                   t          = messages                   s
     ; descendant                 t          = descendant                 s
@@ -533,9 +535,13 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; lastAcceptedValue                t    = lastAcceptedValue          s
     ; lastAcceptedConfiguration        t    = lastAcceptedConfiguration  s
     ; \<And>n'. joinVotes                  t n' = (if n' = nr then {}    else joinVotes                  s n')
+    ; joinVotes t nr = {}
     ; \<And>n'. startedJoinSinceLastReboot t n' = (if n' = nr then False else startedJoinSinceLastReboot s n')
+    ; startedJoinSinceLastReboot t nr = False
     ; \<And>n'. electionWon                t n' = (if n' = nr then False else electionWon                s n')
+    ; \<not> electionWon t nr
     ; \<And>n'. publishVotes               t n' = (if n' = nr then {}    else publishVotes               s n')
+    ; publishVotes t nr = {}
     ; \<And>n'. n' \<noteq> nr \<Longrightarrow> lastPublishedVersion       t n' = lastPublishedVersion       s n'
     ; \<And>n'. n' \<noteq> nr \<Longrightarrow> lastPublishedConfiguration t n' = lastPublishedConfiguration s n'
     ; initialConfiguration             t    = initialConfiguration       s
@@ -711,6 +717,9 @@ definition JoinVotesFaithful :: stpred where "JoinVotesFaithful s \<equiv>
 definition JoinVotesImpliesStartedJoin :: stpred where "JoinVotesImpliesStartedJoin s \<equiv>
   \<forall> n. joinVotes s n \<noteq> {} \<longrightarrow> startedJoinSinceLastReboot s n"
 
+definition ElectionWonImpliesStartedJoin :: stpred where "ElectionWonImpliesStartedJoin s \<equiv>
+  \<forall> n. electionWon s n \<longrightarrow> startedJoinSinceLastReboot s n"
+
 definition TheJoinProperty :: stpred where "TheJoinProperty s \<equiv>
   \<forall> nm nf. nf \<in> joinVotes s nm
     \<longrightarrow> source (TheJoin nf nm s) = nf
@@ -834,14 +843,35 @@ definition BasedOnUniqueBelow :: "nat \<Rightarrow> stpred" where "BasedOnUnique
       \<longrightarrow> tiPrev1 = tiPrev2"
 
 definition LeaderMustAcceptItsPublishRequestsBelow :: "nat \<Rightarrow> stpred" where "LeaderMustAcceptItsPublishRequestsBelow termBound s \<equiv>
-  \<forall> m \<in> messages s. isPublishRequest m \<longrightarrow> lastAcceptedVersion  s (source m) = lastPublishedVersion  s (source m)
+  \<forall> m \<in> messages s. isPublishRequest m \<longrightarrow> lastAcceptedVersion s (source m) = lastPublishedVersion s (source m)
                       \<longrightarrow> term m = currentTerm s (source m) \<longrightarrow> term m < termBound \<longrightarrow> electionWon s (source m)
        \<longrightarrow> lastAcceptedTerm s (source m) = currentTerm s (source m)"
 
 definition PublishRequestsContiguousWithinTermBelow :: "nat \<Rightarrow> stpred" where "PublishRequestsContiguousWithinTermBelow termBound s \<equiv>
   \<forall> m1 m2. m1 \<in> messages s \<longrightarrow> m2 \<in> messages s \<longrightarrow> isPublishRequest m1 \<longrightarrow> isPublishRequest m2
-    \<longrightarrow> term m1 = term m2 \<longrightarrow> term m1 < termBound \<longrightarrow> version  m1 < version  m2
-    \<longrightarrow> (TermVersion  (term m2) (version  m2), TermVersion  (term m2) (version  m2 - 1)) \<in> basedOn s"
+    \<longrightarrow> term m1 = term m2 \<longrightarrow> term m1 < termBound \<longrightarrow> version m1 < version m2
+    \<longrightarrow> (TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn s"
+
+definition NewLeaderHasExpectedLastPublishedVersion :: stpred where "NewLeaderHasExpectedLastPublishedVersion s \<equiv>
+  \<forall> n. electionWon s n \<longrightarrow> lastAcceptedTerm s n \<noteq> currentTerm s n
+        \<longrightarrow> lastPublishedVersion s n \<in> { lastAcceptedVersion s n, Suc (lastAcceptedVersion s n) }"
+
+definition NewLeaderSentNoMessagesYetBelow :: "nat \<Rightarrow> stpred" where "NewLeaderSentNoMessagesYetBelow termBound s \<equiv>
+  \<forall> n m. electionWon s n \<longrightarrow> lastAcceptedTerm s n \<noteq> currentTerm s n \<longrightarrow> lastAcceptedVersion s n = lastPublishedVersion s n \<longrightarrow> currentTerm s n < termBound
+    \<longrightarrow> m \<in> messages s \<longrightarrow> isPublishRequest m \<longrightarrow> term m \<noteq> currentTerm s n"
+
+definition NewLeaderCanOnlySendOneMessageBelow :: "nat \<Rightarrow> stpred" where "NewLeaderCanOnlySendOneMessageBelow termBound s \<equiv>
+  \<forall> m \<in> messages s. isPublishRequest m \<longrightarrow> term m < termBound
+    \<longrightarrow> term m = currentTerm s (source m)
+    \<longrightarrow> electionWon s (source m)
+    \<longrightarrow> currentTerm s (source m) \<noteq> lastAcceptedTerm s (source m)
+    \<longrightarrow> version m = lastPublishedVersion s (source m)"
+
+definition LeaderCannotPublishWithoutAcceptingPreviousRequestBelow :: "nat \<Rightarrow> stpred" where "LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound s \<equiv>
+  \<forall> n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
+
+definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat \<Rightarrow> stpred" where "LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound s \<equiv>
+  \<forall>n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastAcceptedConfiguration s n \<in> { lastCommittedConfiguration s n, lastPublishedConfiguration s n }"
 
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
@@ -1038,6 +1068,26 @@ proof -
     qed auto
   }
   thus ?thesis by (auto simp add: JoinVotesImpliesStartedJoin_def)
+qed
+
+lemma ElectionWonImpliesStartedJoin_step:
+ assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  shows "(s,t) \<Turnstile> ElectionWonImpliesStartedJoin$"
+proof -
+  from assms have hyp: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    by (auto simp add: ElectionWonImpliesStartedJoin_def)
+
+  {
+    fix n
+    assume prem: "electionWon t n"
+
+    from Next hyp prem have "startedJoinSinceLastReboot t n"
+    proof (cases rule: square_Next_cases)
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      with hyp prem show ?thesis by (cases "nm = n", auto)
+    qed auto
+  }
+  thus ?thesis by (auto simp add: ElectionWonImpliesStartedJoin_def)
 qed
 
 lemma MessagePositiveTerm_step:
@@ -2217,13 +2267,13 @@ qed
 lemma PublishRequestVersionAtMostSenderBelow_step:
   assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
   assumes "s \<Turnstile> ElectionWonQuorumBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
   shows "(s,t) \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound$"
 proof -
   from assms
   have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion  m \<le> termVersion  (source m) s"
-    and hyp2: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
-    by (auto simp add: PublishRequestVersionAtMostSenderBelow_def JoinVotesImpliesStartedJoin_def)
+    and hyp2: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    by (auto simp add: PublishRequestVersionAtMostSenderBelow_def ElectionWonImpliesStartedJoin_def)
 
   {
     fix m
@@ -2243,15 +2293,6 @@ proof -
 
       from Next hyp1 prem have "msgTermVersion  m \<le> termVersion  (source m) t \<or> msgTermVersion  m \<le> termVersion  (source m) s"
       proof (cases rule: square_Next_cases)
-        case unchanged
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def)
-      next
-        case (HandleStartJoin nf nm tm newJoinRequest)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
-        case (HandleJoinRequest nf nm laTerm_m laVersion_m)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
         case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
         from prem have "m \<in> messages s \<or> m \<in> newPublishRequests" by (auto simp add: ClientRequest)
         thus ?thesis
@@ -2265,29 +2306,14 @@ proof -
           from m_new have 1: "msgTermVersion  m = TermVersion  (currentTerm s nm) (Suc (lastAcceptedVersion  s nm))"
             by (auto simp add: msgTermVersion_def ClientRequest version_def)
 
-          from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
+          from ClientRequest have "electionWon s nm" by simp
           hence "startedJoinSinceLastReboot s nm" by (intro hyp2, auto simp add: IsQuorum_def)
           with ClientRequest have 2: "termVersion  (source m) t = TermVersion  (currentTerm s nm) (Suc (lastAcceptedVersion  s nm))"
             by (auto simp add: termVersion_def source_eq)
 
           show ?thesis by (simp add: 1 2)
         qed
-      next
-        case (HandlePublishRequest nf nm newVersion  newValue newConfig commConfig)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
-        case (HandlePublishResponse_NoQuorum nf nm)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
-        case (HandlePublishResponse_Quorum nf nm)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
-        case (HandleCommitRequest nf nm)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      next
-        case (RestartNode nr)
-        with hyp1 prem show ?thesis by (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
-      qed
+      qed (auto simp add: msgTermVersion_def termVersion_def isPublishRequest_def)
       thus "msgTermVersion  m \<le> termVersion  (source m) t"
       proof (elim disjE)
         assume "msgTermVersion  m \<le> termVersion  (source m) s" also note termVersion_source_nondecreasing
@@ -2304,7 +2330,7 @@ lemma PublishRequestsUniquePerTermVersionBelow_step:
   assumes "s \<Turnstile> OneMasterPerTermBelow termBound"
   assumes "s \<Turnstile> PublishRequestFromHistoricalLeader"
   assumes "s \<Turnstile> LeaderHistoryFaithful"
-  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
   shows "(s,t) \<Turnstile> PublishRequestsUniquePerTermVersionBelow termBound$"
 proof -
   from assms
@@ -2316,9 +2342,9 @@ proof -
     and hyp3: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory s; (tm, n2) \<in> leaderHistory s \<rbrakk> \<Longrightarrow> n1 = n2"
     and hyp4: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
     and hyp5: "\<And>n. electionWon s n \<Longrightarrow> (currentTerm s n, n) \<in> leaderHistory s"
-    and hyp6: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp6: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     by (auto simp add: PublishRequestVersionAtMostSenderBelow_def OneMasterPerTermBelow_def
-        PublishRequestFromHistoricalLeader_def LeaderHistoryFaithful_def JoinVotesImpliesStartedJoin_def)
+        PublishRequestFromHistoricalLeader_def LeaderHistoryFaithful_def ElectionWonImpliesStartedJoin_def)
 
   {
     fix m1 m2
@@ -2333,7 +2359,7 @@ proof -
 
       from ClientRequest
       have startedJoinSinceLastReboot_nm: "startedJoinSinceLastReboot s nm"
-        by (intro hyp6, auto simp add: IsQuorum_def)
+        by (intro hyp6)
 
       have newMsg_leaderHistory: "\<And>m. m \<in> newPublishRequests \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
       proof -
@@ -2395,7 +2421,7 @@ lemma BasedOnUniqueBelow_step:
   assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
   assumes "s \<Turnstile> BasedOnPublishRequest"
   assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
   shows "(s,t) \<Turnstile> BasedOnUniqueBelow termBound$"
 proof -
   from assms
@@ -2407,9 +2433,9 @@ proof -
       \<Longrightarrow> \<exists> m \<in> messages s. isPublishRequest m \<and> term m = tCurr \<and> version  m = iCurr"
     and hyp4: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
       \<Longrightarrow> n = source m"
-    and hyp5: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp5: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     by (auto simp add: BasedOnUniqueBelow_def PublishRequestVersionAtMostSenderBelow_def
-        BasedOnPublishRequest_def PublishRequestSentByMasterBelow_def JoinVotesImpliesStartedJoin_def)
+        BasedOnPublishRequest_def PublishRequestSentByMasterBelow_def ElectionWonImpliesStartedJoin_def)
 
   {
     fix tiPrev1 tiPrev2 tCurr iCurr
@@ -2421,8 +2447,8 @@ proof -
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
 
-      from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
-      hence startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp5, auto simp add: IsQuorum_def)
+      from ClientRequest
+      have startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp5)
 
       from prem consider
         (old_old) "(TermVersion  tCurr iCurr, tiPrev1) \<in> basedOn s" "(TermVersion  tCurr iCurr, tiPrev2) \<in> basedOn s"
@@ -2465,7 +2491,7 @@ lemma LeaderMustAcceptItsPublishRequestsBelow_step:
   shows "(s,t) \<Turnstile> LeaderMustAcceptItsPublishRequestsBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; lastAcceptedVersion  s (source m) = lastPublishedVersion  s (source m);
+  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; lastAcceptedVersion s (source m) = lastPublishedVersion s (source m);
                      term m = currentTerm s (source m); term m < termBound; electionWon s (source m) \<rbrakk>
       \<Longrightarrow> lastAcceptedTerm s (source m) = currentTerm s (source m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
@@ -2475,7 +2501,7 @@ proof -
 
   {
     fix m
-    assume prem: "m \<in> messages t" "isPublishRequest m" "lastAcceptedVersion  t (source m) = lastPublishedVersion  t (source m)"
+    assume prem: "m \<in> messages t" "isPublishRequest m" "lastAcceptedVersion t (source m) = lastPublishedVersion t (source m)"
       "term m = currentTerm t (source m)" "term m < termBound" "electionWon t (source m)"
 
     from Next prem hyp1 have "lastAcceptedTerm t (source m) = currentTerm t (source m)"
@@ -2505,7 +2531,7 @@ proof -
         qed
       qed
     next
-      case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
       show ?thesis
       proof (cases "source m = nm")
         case False with ClientRequest hyp1 prem show ?thesis by auto
@@ -2539,38 +2565,37 @@ qed
 lemma PublishRequestsContiguousWithinTermBelow_step:
   assumes "s \<Turnstile> PublishRequestsContiguousWithinTermBelow termBound"
   assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
-  assumes "s \<Turnstile> JoinVotesImpliesStartedJoin"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
   assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
   assumes "s \<Turnstile> LastAcceptedTermInPast"
   assumes "s \<Turnstile> LeaderMustAcceptItsPublishRequestsBelow termBound"
   shows "(s,t) \<Turnstile> PublishRequestsContiguousWithinTermBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isPublishRequest m1; isPublishRequest m2; term m1 = term m2; term m1 < termBound; version  m1 < version  m2 \<rbrakk>
-      \<Longrightarrow> (TermVersion  (term m2) (version  m2), TermVersion  (term m2) (version  m2 - 1)) \<in> basedOn s"
+  have  hyp1: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isPublishRequest m1; isPublishRequest m2; term m1 = term m2; term m1 < termBound; version m1 < version m2 \<rbrakk>
+      \<Longrightarrow> (TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn s"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion  m \<le> termVersion  (source m) s"
-    and hyp3: "\<And>n. joinVotes s n \<noteq> {} \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp3: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp4: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
       \<Longrightarrow> n = source m"
     and hyp5: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
-    and hyp6: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; lastAcceptedVersion  s (source m) = lastPublishedVersion  s (source m);
+    and hyp6: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; lastAcceptedVersion s (source m) = lastPublishedVersion s (source m);
                      term m = currentTerm s (source m); term m < termBound; electionWon s (source m) \<rbrakk>
       \<Longrightarrow> lastAcceptedTerm s (source m) = currentTerm s (source m)"
     unfolding PublishRequestsContiguousWithinTermBelow_def PublishRequestVersionAtMostSenderBelow_def
-        JoinVotesImpliesStartedJoin_def PublishRequestSentByMasterBelow_def LastAcceptedTermInPast_def
+        ElectionWonImpliesStartedJoin_def PublishRequestSentByMasterBelow_def LastAcceptedTermInPast_def
         LeaderMustAcceptItsPublishRequestsBelow_def
     by metis+
 
   {
     fix m1 m2
-    assume prem: "m1 \<in> messages t" "m2 \<in> messages t" "isPublishRequest m1" "isPublishRequest m2" "term m1 = term m2" "term m1 < termBound" "version  m1 < version  m2"
+    assume prem: "m1 \<in> messages t" "m2 \<in> messages t" "isPublishRequest m1" "isPublishRequest m2" "term m1 = term m2" "term m1 < termBound" "version m1 < version m2"
 
-    from Next prem hyp1 have "(TermVersion  (term m2) (version  m2), TermVersion  (term m2) (version  m2 - 1)) \<in> basedOn t"
+    from Next prem hyp1 have "(TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn t"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
 
-      from ClientRequest have "IsQuorum (joinVotes s nm) vs" by simp
-      hence startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp3, auto simp add: IsQuorum_def)
+      from ClientRequest have startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" by (intro hyp3)
 
       from prem consider
         (old_old) "m1 \<in> messages s" "m2 \<in> messages s"
@@ -2580,7 +2605,7 @@ proof -
         unfolding ClientRequest by auto
       thus ?thesis
       proof cases
-        case old_old with prem hyp1 have "(TermVersion  (term m2) (version  m2), TermVersion  (term m2) (version  m2 - 1)) \<in> basedOn s" by simp
+        case old_old with prem hyp1 have "(TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn s" by simp
         with ClientRequest show ?thesis by auto
       next
         case new_new with prem show ?thesis by (auto simp add: ClientRequest version_def)
@@ -2603,10 +2628,10 @@ proof -
           from prem have "term m1 = term m2" by simp
           also from ClientRequest old_new have "term m2 = currentTerm s nm" by auto
           finally show "term m1 = currentTerm s (source m1)" by (simp add: nm_eq)
-          from ClientRequest show "lastAcceptedVersion  s (source m1) = lastPublishedVersion  s (source m1)" by (simp add: nm_eq)
+          from ClientRequest show "lastAcceptedVersion s (source m1) = lastPublishedVersion s (source m1)" by (simp add: nm_eq)
         qed
 
-        moreover from old_new prem have "(TermVersion  (term m2) (version  m2), TermVersion  (lastAcceptedTerm s nm) (version  m2 - 1)) \<in> basedOn t"
+        moreover from old_new prem have "(TermVersion (term m2) (version m2), TermVersion (lastAcceptedTerm s nm) (version m2 - 1)) \<in> basedOn t"
           by (auto simp add: ClientRequest isPublishRequest_def version_def)
 
         moreover from old_new have "term m2 = currentTerm s nm" by (auto simp add: ClientRequest)
@@ -2616,6 +2641,409 @@ proof -
     qed (auto simp add: isPublishRequest_def)
   }
   thus ?thesis unfolding PublishRequestsContiguousWithinTermBelow_def by auto
+qed
+
+lemma NewLeaderHasExpectedLastPublishedVersion_step:
+  assumes "s \<Turnstile> NewLeaderHasExpectedLastPublishedVersion"
+  shows "(s,t) \<Turnstile> NewLeaderHasExpectedLastPublishedVersion$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. \<lbrakk> electionWon s n; lastAcceptedTerm s n \<noteq> currentTerm s n \<rbrakk>
+        \<Longrightarrow> lastPublishedVersion s n \<in> { lastAcceptedVersion s n, Suc (lastAcceptedVersion s n) }"
+    unfolding NewLeaderHasExpectedLastPublishedVersion_def
+    by metis+
+
+  {
+    fix n
+    assume prem: "electionWon t n" "lastAcceptedTerm t n \<noteq> currentTerm t n"
+    from Next hyp1 prem have "lastPublishedVersion t n \<in> { lastAcceptedVersion t n, Suc (lastAcceptedVersion t n) }"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      with hyp1 prem show ?thesis by (cases "nf = n", auto)
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "nr = n", auto)
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      with hyp1 prem show ?thesis by (cases "nf = n", auto)
+    qed auto
+  }
+  thus ?thesis by (auto simp add: NewLeaderHasExpectedLastPublishedVersion_def)
+qed
+
+lemma NewLeaderSentNoMessagesYetBelow_step:
+  assumes "s \<Turnstile> NewLeaderSentNoMessagesYetBelow termBound"
+  assumes "s \<Turnstile> PublishRequestImpliesElectionWonBelow termBound"
+  assumes "t \<Turnstile> OneMasterPerTermBelow termBound" (* DANGER - need to show this for the after state first *)
+  assumes "s \<Turnstile> PublishRequestFromHistoricalLeader"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  assumes "s \<Turnstile> LeaderHistoryFaithful"
+  shows "(s,t) \<Turnstile> NewLeaderSentNoMessagesYetBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>n m. \<lbrakk> electionWon s n; lastAcceptedTerm s n \<noteq> currentTerm s n;
+                       lastAcceptedVersion s n = lastPublishedVersion s n;
+                       currentTerm s n < termBound;
+                       m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> term m \<noteq> currentTerm s n"
+    and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
+                     startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
+    and hyp3: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory t; (tm, n2) \<in> leaderHistory t \<rbrakk> \<Longrightarrow> n1 = n2"
+    and hyp4: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
+    and hyp5: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp6: "\<And>n. electionWon s n \<Longrightarrow> (currentTerm s n, n) \<in> leaderHistory s"
+    unfolding NewLeaderSentNoMessagesYetBelow_def PublishRequestImpliesElectionWonBelow_def OneMasterPerTermBelow_def
+      PublishRequestFromHistoricalLeader_def ElectionWonImpliesStartedJoin_def LeaderHistoryFaithful_def
+    by metis+
+
+  {
+    fix n m
+    assume prem: "electionWon t n" "lastAcceptedTerm t n \<noteq> currentTerm t n"
+      "lastAcceptedVersion t n = lastPublishedVersion t n"
+      "currentTerm t n < termBound"
+      "m \<in> messages t" "isPublishRequest m"
+    from Next hyp1 prem
+    have "term m \<noteq> currentTerm t n"
+    proof (cases rule: square_Next_cases)
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      show ?thesis
+      proof (cases "nm = n")
+        case False
+        with prem have "term m \<noteq> currentTerm s n" by (intro hyp1, auto simp add: HandleJoinRequest)
+        thus ?thesis by (simp add: HandleJoinRequest)
+      next
+        case nm_eq_n: True
+
+        have "term m \<noteq> currentTerm s n"
+        proof (cases "electionWon s n")
+          case True
+          with prem show ?thesis
+            by (intro hyp1, simp_all add: HandleJoinRequest nm_eq_n)
+        next
+          case False
+          show "term m \<noteq> currentTerm s n"
+          proof (intro notI)
+            assume term_eq: "term m = currentTerm s n"
+            have n_eq_source: "n = source m"
+            proof (intro hyp3)
+              from prem show "currentTerm t n < termBound" by simp
+              from prem show "(currentTerm t n, n) \<in> leaderHistory t" by (auto simp add: HandleJoinRequest nm_eq_n)
+              from prem have "(term m, source m) \<in> leaderHistory s"
+                by (intro hyp4, auto simp add: HandleJoinRequest)
+              with term_eq show "(currentTerm t n, source m) \<in> leaderHistory t" by (auto simp add: HandleJoinRequest)
+            qed
+            have "electionWon s (source m)"
+            proof (intro hyp2)
+              from prem show "m \<in> messages s" "isPublishRequest m" by (auto simp add: HandleJoinRequest)
+              from prem show "term m < termBound" by (simp add: term_eq HandleJoinRequest)
+              from prem n_eq_source show "currentTerm s (source m) = term m" by (simp add: term_eq HandleJoinRequest)
+              from HandleJoinRequest show "startedJoinSinceLastReboot s (source m)"
+                by (simp add: nm_eq_n n_eq_source)
+            qed
+            with False show False by (simp add: n_eq_source)
+          qed
+        qed
+        thus ?thesis by (simp add: HandleJoinRequest)
+      qed
+    next
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+
+      with prem consider
+        (1) "nm = n" (* contradicts lastAcceptedVersion t n = lastPublishedVersion t n *)
+        | (2) "nm \<noteq> n" "m \<in> messages s" (* reduces to previous case *)
+        | (3) "nm \<noteq> n" "m \<in> newPublishRequests" (* ? *) 
+        by auto
+      hence "term m \<noteq> currentTerm s n"
+      proof cases
+        case 1
+        with ClientRequest have "lastAcceptedVersion t n \<noteq> lastPublishedVersion t n" by auto
+        with prem show ?thesis by simp
+      next
+        case 2
+        show ?thesis using prem unfolding ClientRequest by (intro hyp1, auto simp add: 2)
+      next
+        case 3
+        show ?thesis
+        proof (intro notI)
+          assume term_eq: "term m = currentTerm s n"
+          have "n = nm"
+          proof (intro hyp3)
+            from prem show "currentTerm t n < termBound" by simp
+            from prem have "(currentTerm s n, n) \<in> leaderHistory s" by (intro hyp6, simp add: ClientRequest)
+            thus "(currentTerm t n, n) \<in> leaderHistory t" by (simp add: ClientRequest)
+            from ClientRequest have "(currentTerm s nm, nm) \<in> leaderHistory s" by (intro hyp6, simp add: ClientRequest)
+            with term_eq 3 show "(currentTerm t n, nm) \<in> leaderHistory t" by (auto simp add: ClientRequest)
+          qed
+          with 3 show False by simp
+        qed
+      qed
+      thus ?thesis by (simp add: ClientRequest)
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      show ?thesis
+      proof (cases "nf = n")
+        case False
+        with HandlePublishRequest prem have "term m \<noteq> currentTerm s n"
+          by (intro hyp1, auto simp add: isPublishRequest_def)
+        thus ?thesis by (simp add: HandlePublishRequest)
+      next
+        case True
+        have "lastAcceptedTerm t n = currentTerm t n"
+          by (simp add: HandlePublishRequest True)
+        with prem show ?thesis by simp
+      qed
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "n = nr", auto simp add: isPublishRequest_def)
+    qed (auto simp add: isPublishRequest_def)
+  }
+  thus ?thesis unfolding NewLeaderSentNoMessagesYetBelow_def by simp
+qed
+
+lemma NewLeaderCanOnlySendOneMessageBelow_step:
+  assumes "s \<Turnstile> NewLeaderCanOnlySendOneMessageBelow termBound"
+  assumes "s \<Turnstile> NewLeaderSentNoMessagesYetBelow termBound"
+  assumes "s \<Turnstile> PublishRequestImpliesElectionWonBelow termBound"
+  shows "(s,t) \<Turnstile> NewLeaderCanOnlySendOneMessageBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound;
+                     term m = currentTerm s (source m);
+                     electionWon s (source m);
+                     currentTerm s (source m) \<noteq> lastAcceptedTerm s (source m) \<rbrakk>
+      \<Longrightarrow> version m = lastPublishedVersion s (source m)"
+    and hyp2: "\<And>n m. \<lbrakk> electionWon s n; lastAcceptedTerm s n \<noteq> currentTerm s n;
+                       lastAcceptedVersion s n = lastPublishedVersion s n;
+                       currentTerm s n < termBound;
+                       m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> term m \<noteq> currentTerm s n"
+    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; term m < termBound; isPublishRequest m; currentTerm s (source m) = term m;
+                     startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
+    unfolding NewLeaderCanOnlySendOneMessageBelow_def NewLeaderSentNoMessagesYetBelow_def
+      PublishRequestImpliesElectionWonBelow_def
+    by metis+
+
+  {
+    fix m
+    assume prem: "m \<in> messages t" "isPublishRequest m" "term m < termBound"
+                     "term m = currentTerm t (source m)"
+                     "electionWon t (source m)"
+                     "currentTerm t (source m) \<noteq> lastAcceptedTerm t (source m)"
+    from Next hyp1 prem have "version m = lastPublishedVersion t (source m)"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      with hyp1 prem show ?thesis by (cases "nf = source m", clarify, auto)
+    next
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      show ?thesis
+      proof (cases "nm = source m")
+        case False with HandleJoinRequest hyp1 prem show ?thesis by auto
+      next
+        case True
+        have "electionWon s (source m)"
+        proof (intro hyp3)
+          from prem show "term m < termBound" "isPublishRequest m" "currentTerm s (source m) = term m" "m \<in> messages s"
+            by (auto simp add: HandleJoinRequest)
+          from HandleJoinRequest show "startedJoinSinceLastReboot s (source m)" by (simp add: True)
+        qed
+        with HandleJoinRequest hyp1 prem show ?thesis by auto
+      qed
+    next
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      show ?thesis
+      proof (cases "nm = source m")
+        case False
+        with ClientRequest hyp1 prem show ?thesis by auto
+      next
+        case True
+        from ClientRequest prem have "m \<in> messages s \<or> m \<in> newPublishRequests" by auto
+        thus ?thesis
+        proof (elim disjE)
+          assume m_msg: "m \<in> messages s"
+          have "term m \<noteq> currentTerm s (source m)"
+          proof (intro hyp2 m_msg prem)
+            from prem show "currentTerm s (source m) < termBound"
+              "lastAcceptedTerm s (source m) \<noteq> currentTerm s (source m)"
+              "electionWon s (source m)"
+              by (auto simp add: ClientRequest)
+            from ClientRequest show "lastAcceptedVersion s (source m) = lastPublishedVersion s (source m)" by (simp add: True)
+          qed
+          with prem show ?thesis by (simp add: ClientRequest)
+        next
+          assume m_new: "m \<in> newPublishRequests"
+          thus ?thesis by (auto simp add: ClientRequest version_def)
+        qed
+      qed
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      with hyp1 prem show ?thesis by (cases "nf = source m", auto)
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "nr = source m", clarify, simp)
+    qed (auto simp add: isPublishRequest_def)
+  }
+  thus ?thesis unfolding NewLeaderCanOnlySendOneMessageBelow_def by simp
+qed
+
+lemma LeaderCannotPublishWithoutAcceptingPreviousRequestBelow_step:
+  assumes "s \<Turnstile> LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound"
+  assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
+  assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  assumes "s \<Turnstile> NewLeaderCanOnlySendOneMessageBelow termBound"
+  shows "(s,t) \<Turnstile> LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. \<lbrakk> electionWon s n; currentTerm s n < termBound \<rbrakk>
+    \<Longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
+    and hyp2: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
+    \<Longrightarrow> n = source m"
+    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk>
+    \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
+    and hyp4: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    and hyp5: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound;
+                     term m = currentTerm s (source m);
+                     electionWon s (source m);
+                     currentTerm s (source m) \<noteq> lastAcceptedTerm s (source m) \<rbrakk>
+      \<Longrightarrow> version m = lastPublishedVersion s (source m)"
+    unfolding LeaderCannotPublishWithoutAcceptingPreviousRequestBelow_def PublishRequestSentByMasterBelow_def
+      ElectionWonImpliesStartedJoin_def PublishRequestVersionAtMostSenderBelow_def
+      NewLeaderCanOnlySendOneMessageBelow_def
+    by metis+
+
+  {
+    fix n
+    assume prem: "electionWon t n" "currentTerm t n < termBound"
+    from Next hyp1 prem
+    have "lastPublishedVersion t n \<in> {lastAcceptedVersion t n, Suc (lastAcceptedVersion t n)}"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      with hyp1 prem show ?thesis by (cases "nf = n", auto)
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "nr = n", auto)
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      show ?thesis
+      proof (cases "nf = n")
+        case False with hyp1 prem HandlePublishRequest show ?thesis by simp
+      next
+        case nf_eq_n: True
+        define msg where "msg \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s nf
+          , payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
+        from HandlePublishRequest prem
+        have n_source: "n = source msg" by (intro hyp2, simp_all add: msg_def nf_eq_n isPublishRequest_def)
+        hence nm_eq_n: "nm = n" by (simp add: msg_def)
+
+        from prem have n_properties: "startedJoinSinceLastReboot s n" "electionWon s n"
+          using hyp4 unfolding HandlePublishRequest by simp_all 
+
+        from HandlePublishRequest prem
+        have "msgTermVersion msg \<le> termVersion (source msg) s"
+          by (intro hyp3, simp_all add: msg_def nf_eq_n isPublishRequest_def)
+        hence "newVersion \<le> lastPublishedVersion s n"
+          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nf_eq_n nm_eq_n less_eq_TermVersion_def)
+
+        show ?thesis
+        proof (cases "currentTerm s nf = lastAcceptedTerm s nf")
+          case False
+          have "version msg = lastPublishedVersion s (source msg)"
+          proof (intro hyp5)
+            from HandlePublishRequest show "msg \<in> messages s" by (auto simp add: msg_def)
+            show "isPublishRequest msg" by (simp add: msg_def isPublishRequest_def)
+            from prem show "term msg < termBound" "electionWon s (source msg)" "term msg = currentTerm s (source msg)" 
+              by (simp_all add: msg_def nf_eq_n nm_eq_n HandlePublishRequest)
+            from False show "currentTerm s (source msg) \<noteq> lastAcceptedTerm s (source msg)"
+              by (simp add: msg_def nm_eq_n nf_eq_n)
+          qed
+          thus ?thesis
+            by (simp add: msg_def version_def nm_eq_n HandlePublishRequest nf_eq_n)
+        next
+          case True
+          with HandlePublishRequest have "lastAcceptedVersion s nf < newVersion" by simp
+          also note `newVersion \<le> lastPublishedVersion s n`
+          finally have "lastAcceptedVersion s n \<noteq> lastPublishedVersion s n" by (simp add: nf_eq_n)
+
+          moreover from prem
+          have "lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
+            by (intro hyp1, simp_all add: HandlePublishRequest)
+          ultimately have "lastPublishedVersion s n = Suc (lastAcceptedVersion s n)" by simp
+
+          with `lastAcceptedVersion s nf < newVersion`
+          have "lastPublishedVersion s n \<le> newVersion" by (simp add: nf_eq_n)
+          with `newVersion \<le> lastPublishedVersion s n`
+          have "lastPublishedVersion s n = newVersion" by simp
+          thus ?thesis by (simp add: HandlePublishRequest nf_eq_n)
+        qed
+      qed
+
+    qed auto
+  }
+  thus ?thesis by (auto simp add: LeaderCannotPublishWithoutAcceptingPreviousRequestBelow_def)
+qed
+
+lemma LastAcceptedConfigurationEitherCommittedOrPublishedBelow_step:
+  assumes "s \<Turnstile> LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound"
+  assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
+  assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  shows "(s,t) \<Turnstile> LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. \<lbrakk> electionWon s n; currentTerm s n < termBound \<rbrakk>
+      \<Longrightarrow> lastAcceptedConfiguration s n \<in> { lastCommittedConfiguration s n, lastPublishedConfiguration s n }"
+    and hyp2: "\<And>m n. \<lbrakk> m \<in> messages s; term m = currentTerm s n; term m < termBound; isPublishRequest m; electionWon s n \<rbrakk>
+    \<Longrightarrow> n = source m"
+    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m; term m < termBound \<rbrakk>
+    \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
+    and hyp4: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    unfolding LastAcceptedConfigurationEitherCommittedOrPublishedBelow_def PublishRequestSentByMasterBelow_def
+      PublishRequestVersionAtMostSenderBelow_def ElectionWonImpliesStartedJoin_def
+    by metis+
+
+  {
+    fix n
+    assume prem: "electionWon t n" "currentTerm t n < termBound"
+    from Next hyp1 prem have "lastAcceptedConfiguration t n \<in> { lastCommittedConfiguration t n, lastPublishedConfiguration t n }"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      show ?thesis
+      proof (cases "nf = n")
+        case False with hyp1 prem HandleStartJoin show ?thesis by simp
+      next
+        case True with prem HandleStartJoin show ?thesis by simp
+      qed
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      show ?thesis
+      proof (cases "nf = n")
+        case False with hyp1 prem HandlePublishRequest show ?thesis by simp
+      next
+        case nf_eq_n: True
+        define msg where "msg \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s n
+          , payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
+        from HandlePublishRequest prem
+        have n_source: "n = source msg" by (intro hyp2, simp_all add: msg_def nf_eq_n isPublishRequest_def)
+        hence nm_eq_n: "nm = n" by (simp add: msg_def)
+
+        from prem have n_properties: "startedJoinSinceLastReboot s n" "electionWon s n"
+          using hyp4 unfolding HandlePublishRequest by simp_all
+
+        from HandlePublishRequest prem
+        have "msgTermVersion msg \<le> termVersion (source msg) s"
+          by (intro hyp3, simp_all add: msg_def nf_eq_n isPublishRequest_def)
+        hence "newVersion \<le> lastPublishedVersion s n"
+          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nm_eq_n less_eq_TermVersion_def)
+
+        have "newConfig = lastPublishedConfiguration s n" sorry
+        thus ?thesis by (simp add: HandlePublishRequest nf_eq_n)
+
+        (* leader is accepting its own publish request, so newConfig == lastPublishedConfiguration *)
+      qed
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "nr = n", auto)
+    qed auto
+  }
+  thus ?thesis by (auto simp add: LastAcceptedConfigurationEitherCommittedOrPublishedBelow_def)
 qed
 
 end
