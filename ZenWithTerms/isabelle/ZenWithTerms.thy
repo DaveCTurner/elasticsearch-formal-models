@@ -255,7 +255,8 @@ locale ZenWithTerms =
     (* node n commits a change *)
   fixes HandlePublishResponse :: "Node \<Rightarrow> Message \<Rightarrow> action"
   defines "HandlePublishResponse n m \<equiv> ACT
-    ( #(case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False)
+    ( id<$electionWon,#n>
+    \<and> #(case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False)
     \<and> #(term     m) = id<$currentTerm,#n>
     \<and> #(version  m) = id<$lastPublishedVersion,#n>
     \<and> modified publishVotes n (insert (source m))
@@ -480,7 +481,8 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; basedOn                          t    = basedOn                    s
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
-    \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
+    \<lbrakk> electionWon s nm
+    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ;   \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
       \<or> \<not> IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
@@ -504,7 +506,8 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; basedOn                    t    = basedOn                    s
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishResponse_Quorum: "\<And>nf nm.
-    \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
+    \<lbrakk> electionWon s nm
+    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
@@ -643,7 +646,7 @@ proof -
     from p obtain prs where prs: "payload m = PublishResponse prs" by (cases "payload m", auto simp add: HandlePublishResponse_def)
     from p have term_m: "term m = currentTerm s (dest m)" by (auto simp add: HandlePublishResponse_def)
 
-    have prq_eq: "prs = \<lparr>prs_version  = version  m\<rparr>" by (simp add: version_def prs)
+    have prq_eq: "prs = \<lparr>prs_version  = version m\<rparr>" by (simp add: version_def prs)
 
     have "m = \<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = PublishResponse prs \<rparr>"
       by (simp add: prs term_m)
@@ -655,12 +658,12 @@ proof -
                 \<and> IsQuorum (publishVotes t (dest m)) (lastPublishedConfiguration s (dest m))")
       case False
       with p is_message show P
-        apply (intro HandlePublishResponse_NoQuorum [of "source m" "dest m"])
+        apply (intro HandlePublishResponse_NoQuorum [where nm = "dest m" and nm = "source m"])
         by (auto simp add: HandlePublishResponse_def updated_def modified_def)
     next
       case True
       with p is_message show P
-        apply (intro HandlePublishResponse_Quorum [of "source m" "dest m"])
+        apply (intro HandlePublishResponse_Quorum [where nm = "dest m" and nm = "source m"])
         by (auto simp add: HandlePublishResponse_def updated_def modified_def)
     qed
   next
