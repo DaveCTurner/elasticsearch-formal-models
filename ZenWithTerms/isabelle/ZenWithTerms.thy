@@ -905,6 +905,9 @@ definition LastPublishedVersionImpliesLastPublishedConfigurationBelow :: "nat \<
 definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat \<Rightarrow> stpred" where "LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound s \<equiv>
   \<forall>n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastAcceptedConfiguration s n \<in> { lastCommittedConfiguration s n, lastPublishedConfiguration s n }"
 
+definition CommitMeansLaterPublicationsBelow :: "nat \<Rightarrow> stpred" where "CommitMeansLaterPublicationsBelow termBound s \<equiv>
+  \<forall> mc \<in> messages s. \<forall> mp \<in> messages s. isCommit mc \<longrightarrow> isPublishRequest mp \<longrightarrow> term mc < term mp \<longrightarrow> term mp < termBound \<longrightarrow> version mc < version mp"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
@@ -913,6 +916,57 @@ context
   fixes s t
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
 begin
+
+lemma CommitMeansLaterPublicationsBelow_step:
+  assumes "s \<Turnstile> CommitMeansLaterPublicationsBelow termBound"
+  shows "(s,t) \<Turnstile> CommitMeansLaterPublicationsBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>mc mp. \<lbrakk> mc \<in> messages s; mp \<in> messages s; isCommit mc; isPublishRequest mp;
+                         term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
+    unfolding CommitMeansLaterPublicationsBelow_def
+    by metis+
+
+  {
+    fix mc mp
+    assume prem: "mc \<in> messages t" "mp \<in> messages t" "isCommit mc" "isPublishRequest mp" "term mc < term mp" "term mp < termBound"
+    from Next prem hyp1 have "version mc < version mp"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      from prem have "mp \<in> messages s \<or> mp \<in> newPublishRequests" by (auto simp add: ClientRequest)
+      thus ?thesis
+      proof (elim disjE)
+        assume "mp \<in> messages s" with prem hyp1 show ?thesis by (auto simp add: ClientRequest isCommit_def)
+      next
+        assume "mp \<in> newPublishRequests"
+        show ?thesis sorry
+
+        (* making a new publish request *)
+        (* if have already published mp' in this term, then version mp = newPublishVersion > version mp' > version mc so ok *)
+        (* if nothing published yet then ...? *)
+        
+        (* do know that IsQuorum (joinVotes s nm) vs and electionWon s nm
+           and this \<longrightarrow> IsQuorum (joinVotes s nm) (lastCommittedConfiguration s nm)
+                   and  IsQuorum (joinVotes s nm) (lastAcceptedConfiguration  s nm) *)
+      qed
+    next
+      case (HandlePublishResponse_Quorum nf nm)
+        (* making a new commit *)
+        
+        (* know that IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
+                 and IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm) *)
+
+      then show ?thesis sorry
+    qed (auto simp add: isCommit_def isPublishRequest_def)
+  }
+  thus ?thesis by (auto simp add: CommitMeansLaterPublicationsBelow_def)
+qed
+
+
+  oops
+
+
+(*
 
 lemma FiniteMessagesTo_step:
   assumes "s \<Turnstile> FiniteMessagesTo"
