@@ -316,6 +316,31 @@ locale ZenWithTerms =
 context ZenWithTerms
 begin
 
+lemma IsQuorum_intersects:
+  assumes valid: "conf \<in> ValidConfigs"
+  assumes quorum1: "IsQuorum votes1 conf"
+  assumes quorum2: "IsQuorum votes2 conf"
+  shows "votes1 \<inter> votes2 \<noteq> {}"
+proof (intro notI)
+  assume disjoint: "votes1 \<inter> votes2 = {}"
+
+  from quorum1 quorum2
+  have "2 * card conf < 2 * card (votes1 \<inter> conf) + 2 * card (votes2 \<inter> conf)" by (simp add: IsQuorum_def)
+
+  also have "card ((votes1 \<inter> conf) \<union> (votes2 \<inter> conf)) = card (votes1 \<inter> conf) + card (votes2 \<inter> conf)"
+  proof (intro card_Un_disjoint)
+    from valid show "finite (votes1 \<inter> conf)" "finite (votes2 \<inter> conf)" by (auto simp add: ValidConfigs_def)
+    from disjoint show "votes1 \<inter> conf \<inter> (votes2 \<inter> conf) = {}" by auto
+  qed
+  hence "2 * card (votes1 \<inter> conf) + 2 * card (votes2 \<inter> conf) = 2 * card ((votes1 \<inter> conf) \<union> (votes2 \<inter> conf))" by simp
+
+  also from valid have "... \<le> 2 * card conf"
+    unfolding mult_le_cancel1
+    by (intro impI card_mono, auto simp add: ValidConfigs_def)
+
+  finally show False by simp
+qed
+
 lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin HandleJoinRequest ClientRequest
     HandlePublishRequest HandlePublishResponse_NoQuorum HandlePublishResponse_Quorum HandleCommitRequest RestartNode]:
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
