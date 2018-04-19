@@ -911,6 +911,16 @@ definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat \<Ri
 definition CommitMeansLaterPublicationsBelow :: "nat \<Rightarrow> stpred" where "CommitMeansLaterPublicationsBelow termBound s \<equiv>
   \<forall> mc \<in> messages s. \<forall> mp \<in> messages s. isCommit mc \<longrightarrow> isPublishRequest mp \<longrightarrow> term mc < term mp \<longrightarrow> term mp < termBound \<longrightarrow> version mc < version mp"
 
+definition CommittedVersionsUniqueBelow :: "nat \<Rightarrow> stpred" where "CommittedVersionsUniqueBelow termBound s \<equiv>
+  \<forall> mc1 mc2. mc1 \<in> messages s \<longrightarrow> mc2 \<in> messages s \<longrightarrow> isCommit mc1 \<longrightarrow> isCommit mc2 \<longrightarrow> term mc1 < termBound \<longrightarrow> term mc2 < termBound
+    \<longrightarrow> version mc1 = version mc2 \<longrightarrow> term mc1 = term mc2"
+
+definition CommitMeansPublishResponse :: stpred where "CommitMeansPublishResponse s \<equiv>
+  \<forall> mc \<in> messages s. isCommit mc \<longrightarrow> (\<exists> mp \<in> messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp)"
+
+definition PublishResponseMeansPublishRequest :: stpred where "PublishResponseMeansPublishRequest s \<equiv>
+  \<forall> mprs \<in> messages s. isPublishResponse mprs \<longrightarrow> (\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq)"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
@@ -920,14 +930,161 @@ context
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
 begin
 
+lemma CommittedVersionsUniqueBelow_step:
+  assumes "s \<Turnstile> CommittedVersionsUniqueBelow termBound"
+  assumes "t \<Turnstile> CommitMeansLaterPublicationsBelow termBound" (* DANGER need to show CommitMeansLaterPublicationsBelow holds first *)
+  assumes "s \<Turnstile> PublishResponseMeansPublishRequest"
+  assumes "s \<Turnstile> CommitMeansPublishResponse"
+  shows "(s,t) \<Turnstile> CommittedVersionsUniqueBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>mc1 mc2. \<lbrakk> mc1 \<in> messages s; mc2 \<in> messages s; isCommit mc1; isCommit mc2; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2 \<rbrakk> \<Longrightarrow> term mc1 = term mc2"
+    and hyp2: "\<And>mc mp. \<lbrakk> mc \<in> messages t; mp \<in> messages t; isCommit mc; isPublishRequest mp; term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
+    and hyp3: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> \<Longrightarrow> \<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
+    and hyp4: "\<And>mc. \<lbrakk> mc\<in>messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+    unfolding CommittedVersionsUniqueBelow_def CommitMeansLaterPublicationsBelow_def PublishResponseMeansPublishRequest_def
+      CommitMeansPublishResponse_def
+    by metis+
+
+  from hyp1 have hyp1': "\<And>mc1 mc2. \<lbrakk> mc1 \<in> messages s; mc2 \<in> messages s; isCommit mc1; isCommit mc2; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2; term mc1 < term mc2 \<rbrakk> \<Longrightarrow> False"
+    using nat_neq_iff by blast
+
+  {
+    fix mc1 mc2
+    assume prem: "mc1 \<in> messages t" "mc2 \<in> messages t" "isCommit mc1" "isCommit mc2" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2" "term mc1 < term mc2"
+    from Next prem prem hyp1' have False
+    proof (cases rule: square_Next_cases)
+      case (HandlePublishResponse_Quorum nf nm)
+
+      have messageE: "\<And>m P. m \<in> messages t \<Longrightarrow> (m \<in> messages s \<Longrightarrow> P) \<Longrightarrow> (\<And>nd. m = \<lparr>source = nm, dest = nd, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr> \<Longrightarrow> P) \<Longrightarrow> P"
+        unfolding HandlePublishResponse_Quorum by auto
+
+      from `mc2 \<in> messages t` obtain mprs where mprs: "mprs \<in> messages s" "isPublishResponse mprs" "term mprs = term mc2" "version mprs = version mc2"
+      proof (elim messageE)
+        assume mc2: "mc2 \<in> messages s"
+        with prem have "\<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc2 = term mp \<and> version mc2 = version mp" by (intro hyp4, simp_all)
+        thus thesis by (elim bexE, intro that, auto)
+      next
+        fix nd2
+        assume mc2: "mc2 = \<lparr>source = nm, dest = nd2, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr>"
+        from HandlePublishResponse_Quorum show thesis
+          by (intro that [of "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"],
+              auto simp add: mc2 version_def isPublishResponse_def)
+      qed
+
+      hence "\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
+        by (intro hyp3, simp_all)
+      then obtain mprq where mprq: "mprq \<in> messages s" "isPublishRequest mprq" "term mprq = term mprs" "version mprq = version mprs" by auto
+
+      have "version mc1 < version mprq"
+        by (intro hyp2 prem mprq, auto simp add: mprq mprs prem HandlePublishResponse_Quorum)
+      also have "... = version mc1" by (simp add: mprq mprs prem)
+      finally show ?thesis by simp
+    qed (auto simp add: isCommit_def)
+  }
+  note not_lt = this
+  {
+    fix mc1 mc2 :: Message
+    assume prem: "mc1 \<in> messages t" "mc2 \<in> messages t" "isCommit mc1" "isCommit mc2" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2"
+    consider (lt) "term mc1 < term mc2" | (eq) "term mc1 = term mc2" | (gt) "term mc2 < term mc1" using nat_neq_iff by blast
+    hence "term mc1 = term mc2"
+    proof cases
+      case eq thus ?thesis by simp
+    next
+      case lt with prem have False by (intro not_lt [of mc1 mc2], simp_all)
+      thus ?thesis by simp
+    next
+      case gt with prem have False by (intro not_lt [of mc2 mc1], simp_all)
+      thus ?thesis by simp
+    qed
+  }
+  thus ?thesis using nat_neq_iff by (auto simp add: CommittedVersionsUniqueBelow_def)
+qed
+
+
+lemma PublishResponseMeansPublishRequest_step:
+  assumes "s \<Turnstile> PublishResponseMeansPublishRequest"
+  shows "(s,t) \<Turnstile> PublishResponseMeansPublishRequest$"
+proof -
+  from assms
+  have hyp1: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> \<Longrightarrow> \<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
+    unfolding PublishResponseMeansPublishRequest_def
+    by metis+
+
+  {
+    fix mprs
+    assume prem: "mprs \<in> messages t" "isPublishResponse mprs"
+    from Next prem hyp1 have "\<exists> mprq \<in> messages t. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      with prem hyp1 
+      have "\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq" by (auto simp add: isPublishResponse_def)
+      thus ?thesis by (auto simp add: ClientRequest)
+    next
+      case (HandlePublishResponse_Quorum nf nm)
+      with prem hyp1 
+      have "\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq" by (auto simp add: isPublishResponse_def)
+      thus ?thesis by (auto simp add: HandlePublishResponse_Quorum)
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      hence prq: "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr> \<in> messages s"
+        by simp
+
+      with prem hyp1 show ?thesis
+        unfolding HandlePublishRequest
+        by (elim insertE, intro bexI [where x = "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"],
+          auto simp add: isPublishRequest_def version_def)
+    qed (auto simp add: isPublishResponse_def)
+  }
+  thus ?thesis by (simp add: PublishResponseMeansPublishRequest_def)
+qed
+
+lemma CommitMeansPublishResponse_step:
+  assumes "s \<Turnstile> CommitMeansPublishResponse"
+  shows "(s,t) \<Turnstile> CommitMeansPublishResponse$"
+proof -
+  from assms
+  have  hyp1: "\<And>mc. \<lbrakk> mc \<in> messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+    unfolding CommitMeansPublishResponse_def
+    by metis+
+
+  {
+    fix mc
+    assume prem: "mc \<in> messages t" "isCommit mc"
+    from Next prem hyp1 have "\<exists>mp\<in>messages t. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      from prem have "mc \<in> messages s" by (auto simp add: ClientRequest isCommit_def)
+      with hyp1 prem show ?thesis by (auto simp add: ClientRequest)
+    next
+      case (HandlePublishResponse_Quorum nf nm)
+      hence pr: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> messages s" by simp
+      from prem hyp1 have "\<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+      proof (unfold HandlePublishResponse_Quorum, elim UnE UnionE rangeE, simp_all)
+        fix n
+        from pr show "\<exists>mp\<in>messages s. isPublishResponse mp \<and> currentTerm s nm = term mp \<and> version \<lparr>source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr> = version mp"
+          by (intro bexI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"], auto simp add: isPublishResponse_def version_def)
+      qed
+      thus ?thesis by (auto simp add: HandlePublishResponse_Quorum)
+    qed (auto simp add: isCommit_def)
+  }
+  thus ?thesis by (simp add: CommitMeansPublishResponse_def)
+qed
+
+
 lemma CommitMeansLaterPublicationsBelow_step:
   assumes "s \<Turnstile> CommitMeansLaterPublicationsBelow termBound"
+  assumes "s \<Turnstile> LastAcceptedDataSource"
+  assumes "s \<Turnstile> LastAcceptedTermInPast"
   shows "(s,t) \<Turnstile> CommitMeansLaterPublicationsBelow termBound$"
 proof -
   from assms
   have  hyp1: "\<And>mc mp. \<lbrakk> mc \<in> messages s; mp \<in> messages s; isCommit mc; isPublishRequest mp;
                          term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
-    unfolding CommitMeansLaterPublicationsBelow_def
+    and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
+        else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
+    and hyp3: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
+    unfolding CommitMeansLaterPublicationsBelow_def LastAcceptedDataSource_def LastAcceptedTermInPast_def
     by metis+
 
   {
@@ -936,28 +1093,79 @@ proof -
     from Next prem hyp1 have "version mc < version mp"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      from prem have mc_messages: "mc \<in> messages s" by (auto simp add: ClientRequest isCommit_def)
       from prem have "mp \<in> messages s \<or> mp \<in> newPublishRequests" by (auto simp add: ClientRequest)
       thus ?thesis
       proof (elim disjE)
         assume "mp \<in> messages s" with prem hyp1 show ?thesis by (auto simp add: ClientRequest isCommit_def)
       next
-        assume "mp \<in> newPublishRequests"
-        show ?thesis sorry
+        assume mp: "mp \<in> newPublishRequests"
+        hence mp_simps: "source mp = nm" "term mp = currentTerm s nm" "version mp = newPublishVersion" "newPublishVersion = Suc (lastAcceptedVersion s nm)" "config mp = vs" "commConf mp = lastCommittedConfiguration s nm"
+          by (auto simp add: ClientRequest version_def config_def commConf_def)
 
-        (* making a new publish request *)
-        (* if have already published mp' in this term, then version mp = newPublishVersion > version mp' > version mc so ok *)
-        (* if nothing published yet then ...? *)
+        consider (gt) "term mc < lastAcceptedTerm s nm"
+          | (le) "lastAcceptedTerm s nm \<le> term mc"
+          using leI by auto
         
-        (* do know that IsQuorum (joinVotes s nm) vs and electionWon s nm
-           and this \<longrightarrow> IsQuorum (joinVotes s nm) (lastCommittedConfiguration s nm)
-                   and  IsQuorum (joinVotes s nm) (lastAcceptedConfiguration  s nm) *)
+        thus ?thesis
+        proof cases
+          case gt
+          with hyp2 [of nm]
+          obtain mp' where mp': "mp' \<in> messages s" "isPublishRequest mp'" "lastAcceptedTerm s nm = term mp'"
+            "lastAcceptedVersion s nm = version mp'" "lastAcceptedValue s nm = value mp'" "lastAcceptedConfiguration s nm = config mp'"
+            by auto
+          have "version mc < version mp'"
+          proof (intro hyp1 prem mp' mc_messages)
+            from gt mp' show "term mc < term mp'" by simp
+            have "term mp' = lastAcceptedTerm s nm" by (simp add: mp')
+            also have "... \<le> currentTerm s nm" by (intro hyp3)
+            also from mp have "... = term mp" by (simp add: mp_simps)
+            also from prem have "... < termBound" by simp
+            finally show "term mp' < termBound".
+          qed
+          also have "version mp' < version mp" using mp' mp_simps by simp
+          finally show ?thesis by simp
+        next
+          case le (* lastAcceptedTerm s nm \<le> term mc < term mp = currentTerm s nm *)
+
+
+
+          show ?thesis sorry
+
+        (* making a new publish request in a new term *)
+        (* 
+
+ do know that IsQuorum (joinVotes s nm) vs and electionWon s nm
+ and this \<longrightarrow> IsQuorum (joinVotes s nm) (lastCommittedConfiguration s nm)
+         and  IsQuorum (joinVotes s nm) (lastAcceptedConfiguration  s nm)
+
+Look at payloads of joinVotes. All have laTermVersion sender \<le> laTermVersion nm
+
+Does this mean no commits can occur between laTermVersion nm and termVersion nm? All those joinVotes mean
+the senders won't be voting for a PublishRequest P with termVersion P \<ge> laTermVersion and term P < term nm.
+Also no publications in term nm yet, so nothing to vote for there, so all PublishResponses R either have
+termVersion R \<le> laTermVersion nm or term R > term nm.
+
+Any intervening commit would need to get a quorum of votes vs the last committed config.
+
+Any intervening commit comes from a PublishRequest and therefore has a yet-higher version.
+Therefore "wlog" may assume that mc is the TermVersion-last commit before mp.
+
+
+*)
+        qed
       qed
     next
       case (HandlePublishResponse_Quorum nf nm)
         (* making a new commit *)
         
         (* know that IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
-                 and IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm) *)
+                 and IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm) 
+                 and electionWon s nm
+                 and this \<longrightarrow> lastAcceptedConfiguration s nm \<in> { lastCommittedConfiguration s nm, lastPublishedConfiguration s nm }
+                  so IsQuorum (publishVotes t nm) (lastAcceptedConfiguration s nm) too *)
+
+        (* do we need lastAcceptedConfiguration? *)
 
       then show ?thesis sorry
     qed (auto simp add: isCommit_def isPublishRequest_def)
