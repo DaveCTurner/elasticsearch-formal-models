@@ -741,6 +741,21 @@ definition msgTermVersion :: "Message \<Rightarrow> TermVersion"
 definition laTermVersion :: "(Node \<Rightarrow> TermVersion) stfun"
   where "laTermVersion s n \<equiv> TermVersion (lastAcceptedTerm s n) (lastAcceptedVersion s n)"
 
+definition publishResponsesBelow :: "Node \<Rightarrow> nat \<Rightarrow> Message set stfun" where "publishResponsesBelow n tm s \<equiv>
+  { mprs \<in> messages s. source mprs = n \<and> isPublishResponse mprs \<and> term mprs < tm }"
+
+(* The termWinningConfiguration is the configuration that was used to win an election in a
+particular term. It is the lastAcceptedConfiguration of the winning node at the time the election
+was won, which can be calculated by looking at the PublishResponse messages that that node sent in
+earlier terms. *)
+
+definition termWinningConfiguration :: "nat \<Rightarrow> Node set stfun" where "termWinningConfiguration tm s \<equiv>
+  let n = (SOME n. (tm, n) \<in> leaderHistory s);
+      publishResponses = publishResponsesBelow n tm s;
+      tv = Max (msgTermVersion ` publishResponses);
+      mprq = (SOME mprq. mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv)
+  in if publishResponses = {} then initialConfiguration s else config mprq"
+
 definition TheJoin :: "Node \<Rightarrow> Node \<Rightarrow> Message stfun" where "TheJoin nf nm s \<equiv> 
   THE m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> isJoin m \<and> m \<in> messages s"
 
@@ -833,28 +848,6 @@ definition PublishResponseBeforeLastAccepted :: stpred where "PublishResponseBef
 
 definition PublishResponseForLastAccepted :: stpred where "PublishResponseForLastAccepted s \<equiv>
   \<forall>n. 0 < lastAcceptedTerm s n \<longrightarrow> (\<exists> m \<in> messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n)"
-
-(*
-
-Want to be able to say that there is a quorum of joinVotes (w.r.t. some configuration) only in terms
-of the _messages_. Can do this w.r.t. lastAcceptedConfiguration by looking at PublishResponses:
-all PublishResponses are \<le> laTermVersion and one of them is == laTermVersion, hence lastAcceptedConfiguration
-is the config of the corresponding PublishRequest.
-
-Maybe need to consider the election-winning quorum specially? This is one that was accepted in a previous
-term. And is the maximum such.
-
-*)
-
-definition publishResponsesBelow :: "Node \<Rightarrow> nat \<Rightarrow> Message set stfun" where "publishResponsesBelow n tm s \<equiv>
-  { mprs \<in> messages s. source mprs = n \<and> isPublishResponse mprs \<and> term mprs < tm }"
-
-definition termWinningConfiguration :: "nat \<Rightarrow> Node set stfun" where "termWinningConfiguration tm s \<equiv>
-  let n = (SOME n. (tm, n) \<in> leaderHistory s);
-      publishResponses = publishResponsesBelow n tm s;
-      tv = Max (msgTermVersion ` publishResponses);
-      mprq = (SOME mprq. mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv)
-  in if publishResponses = {} then initialConfiguration s else config mprq"
 
 definition TermWinningConfigurationHasQuorumBelow :: "nat \<Rightarrow> stpred" where "TermWinningConfigurationHasQuorumBelow termBound s \<equiv>
   \<forall> tm < termBound. \<forall> n. (tm, n) \<in> leaderHistory s \<longrightarrow> IsQuorum (source ` { j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j }) (termWinningConfiguration tm s)"
@@ -1793,7 +1786,7 @@ proof -
 
           show ?thesis sorry
 
-(* making a new publish request in a new term *)
+(* making a new publish request in a brand-new term *)
 (* 
 
  do know that IsQuorum (joinVotes s nm) vs and electionWon s nm
