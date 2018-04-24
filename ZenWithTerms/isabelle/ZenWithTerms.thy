@@ -972,6 +972,9 @@ definition JoinLimitsPublishResponses :: stpred where "JoinLimitsPublishResponse
   \<forall> mj mprs. mj \<in> messages s \<longrightarrow> mprs \<in> messages s \<longrightarrow> isJoin mj \<longrightarrow> isPublishResponse mprs \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
     \<longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
 
+definition JoinTermNewerThanLastAccepted :: stpred where "JoinTermNewerThanLastAccepted s \<equiv>
+  \<forall> mj \<in> messages s. isJoin mj \<longrightarrow> laTerm mj < term mj"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
@@ -980,6 +983,38 @@ context
   fixes s t                                                                                                      
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
 begin
+
+lemma JoinTermNewerThanLastAccepted_step:
+  assumes "s \<Turnstile> JoinTermNewerThanLastAccepted"
+  assumes "s \<Turnstile> LastAcceptedTermInPast"
+  shows "(s,t) \<Turnstile> JoinTermNewerThanLastAccepted$"
+proof -
+  from assms
+  have  hyp1: "\<And>mj. \<lbrakk> mj \<in> messages s; isJoin mj \<rbrakk> \<Longrightarrow> laTerm mj < term mj"
+    and hyp2: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
+    unfolding JoinTermNewerThanLastAccepted_def LastAcceptedTermInPast_def
+    by metis+
+
+  {
+    fix mj
+    assume prem: "mj \<in> messages t" "isJoin mj"
+    from Next hyp1 prem
+    have "laTerm mj < term mj"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      from HandleStartJoin prem have "mj \<in> messages s \<or> mj = newJoinRequest" by auto
+      with prem hyp1 show ?thesis
+      proof (elim disjE)
+        assume mj: "mj = newJoinRequest"
+        with HandleStartJoin have "laTerm mj = lastAcceptedTerm s nf" by (simp add: laTerm_def)
+        also have "... \<le> currentTerm s nf" by (intro hyp2)
+        also have "... < term mj" by (simp add: mj HandleStartJoin)
+        finally show ?thesis .
+      qed metis
+    qed (auto simp add: isJoin_def)
+  }
+  thus ?thesis by (auto simp add: JoinTermNewerThanLastAccepted_def)
+qed
 
 lemma JoinLimitsPublishResponses_step:
   assumes "s \<Turnstile> JoinLimitsPublishResponses"
