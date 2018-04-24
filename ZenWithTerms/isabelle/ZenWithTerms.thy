@@ -968,6 +968,10 @@ definition CommitMeansPublishResponse :: stpred where "CommitMeansPublishRespons
 definition PublishResponseMeansPublishRequest :: stpred where "PublishResponseMeansPublishRequest s \<equiv>
   \<forall> mprs \<in> messages s. isPublishResponse mprs \<longrightarrow> (\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq)"
 
+definition JoinLimitsPublishResponses :: stpred where "JoinLimitsPublishResponses s \<equiv>
+  \<forall> mj mprs. mj \<in> messages s \<longrightarrow> mprs \<in> messages s \<longrightarrow> isJoin mj \<longrightarrow> isPublishResponse mprs \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
+    \<longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
@@ -976,6 +980,56 @@ context
   fixes s t                                                                                                      
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
 begin
+
+lemma JoinLimitsPublishResponses_step:
+  assumes "s \<Turnstile> JoinLimitsPublishResponses"
+  assumes "s \<Turnstile> PublishResponseBeforeLastAccepted"
+  assumes "s \<Turnstile> JoinRequestsAtMostCurrentTerm"
+  shows "(s,t) \<Turnstile> JoinLimitsPublishResponses$"
+proof -
+  from assms
+  have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> messages s; mprs \<in> messages s; isJoin mj; isPublishResponse mprs; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
+    and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
+    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isJoin m \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
+    unfolding JoinLimitsPublishResponses_def PublishResponseBeforeLastAccepted_def
+      JoinRequestsAtMostCurrentTerm_def
+    by metis+
+
+  {
+    fix mj mprs
+    assume prem: "mj \<in> messages t" "mprs \<in> messages t" "isJoin mj" "isPublishResponse mprs" "source mj = source mprs" "term mprs < term mj"
+    from Next hyp1 prem
+    have "msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      from prem have mprs: "mprs \<in> messages s" by (auto simp add: HandleStartJoin isPublishResponse_def)
+      from HandleStartJoin prem have "mj \<in> messages s \<or> mj = newJoinRequest" by auto
+      with mprs prem hyp1 show ?thesis
+      proof (elim disjE)
+        have "msgTermVersion mprs \<le> laTermVersion s (source mprs)" by (intro hyp2 mprs prem)
+        also assume "mj = newJoinRequest"
+        with HandleStartJoin prem
+        have "laTermVersion s (source mprs) = TermVersion (laTerm mj) (laVersion mj)"
+          by (auto simp add: laTerm_def laVersion_def laTermVersion_def)
+        finally show ?thesis .
+      qed metis
+    next
+      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+      from prem have mj: "mj \<in> messages s" by (auto simp add: HandlePublishRequest isJoin_def)
+      from HandlePublishRequest prem have "mprs \<in> messages s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>" by auto
+      with mj prem hyp1 show ?thesis
+      proof (elim disjE)
+        assume mprs: "mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
+        from mj prem have "term mj \<le> currentTerm s (source mj)" by (intro hyp3)
+        also have "... = currentTerm s (source mprs)" by (simp add: prem)
+        also have "... = term mprs" by (simp add: mprs)
+        also from prem have "... < term mj" by simp
+        finally show ?thesis by simp
+      qed metis
+    qed (auto simp add: isJoin_def isPublishResponse_def)
+  }
+  thus ?thesis by (auto simp add: JoinLimitsPublishResponses_def)
+qed
 
 lemma FiniteJoins_step:
   assumes "s \<Turnstile> FiniteJoins"
