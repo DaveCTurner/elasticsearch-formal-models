@@ -611,14 +611,13 @@ definition TheJoinProperty :: stpred where "TheJoinProperty s \<equiv>
     \<longrightarrow> source (TheJoin nf nm s) = nf
       \<and> dest (TheJoin nf nm s) = nm
       \<and> term (TheJoin nf nm s) = currentTerm s nm
-      \<and> isJoin (TheJoin nf nm s)
-      \<and> TheJoin nf nm s \<in> messages s"
+      \<and> TheJoin nf nm s \<in> sentJoins s"
 
 definition MessagePositiveTerm :: stpred where "MessagePositiveTerm s \<equiv>
   \<forall>m \<in> messages s. term m > 0"
 
 definition TermIncreasedByJoin :: stpred where "TermIncreasedByJoin s \<equiv>
-  \<forall>n. currentTerm s n > 0 \<longrightarrow> (\<exists> m \<in> messages s. isJoin m \<and> currentTerm s n = term m)"
+  \<forall>n. currentTerm s n > 0 \<longrightarrow> (\<exists> m \<in> sentJoins s. currentTerm s n = term m)"
 
 definition LastAcceptedTermInPast :: stpred where "LastAcceptedTermInPast s \<equiv>
   \<forall>n. lastAcceptedTerm s n \<le> currentTerm s n"
@@ -789,11 +788,11 @@ definition PublishResponseMeansPublishRequest :: stpred where "PublishResponseMe
   \<forall> mprs \<in> messages s. isPublishResponse mprs \<longrightarrow> (\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq)"
 
 definition JoinLimitsPublishResponses :: stpred where "JoinLimitsPublishResponses s \<equiv>
-  \<forall> mj mprs. mj \<in> messages s \<longrightarrow> mprs \<in> messages s \<longrightarrow> isJoin mj \<longrightarrow> isPublishResponse mprs \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
+  \<forall> mj mprs. mj \<in> sentJoins s \<longrightarrow> mprs \<in> messages s \<longrightarrow> isPublishResponse mprs \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
     \<longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
 
 definition JoinTermNewerThanLastAccepted :: stpred where "JoinTermNewerThanLastAccepted s \<equiv>
-  \<forall> mj \<in> messages s. isJoin mj \<longrightarrow> laTerm mj < term mj"
+  \<forall> mj \<in> sentJoins s. laTerm mj < term mj"
 
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
@@ -810,19 +809,19 @@ lemma JoinTermNewerThanLastAccepted_step:
   shows "(s,t) \<Turnstile> JoinTermNewerThanLastAccepted$"
 proof -
   from assms
-  have  hyp1: "\<And>mj. \<lbrakk> mj \<in> messages s; isJoin mj \<rbrakk> \<Longrightarrow> laTerm mj < term mj"
+  have  hyp1: "\<And>mj. mj \<in> sentJoins s \<Longrightarrow> laTerm mj < term mj"
     and hyp2: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
     unfolding JoinTermNewerThanLastAccepted_def LastAcceptedTermInPast_def
     by metis+
 
   {
     fix mj
-    assume prem: "mj \<in> messages t" "isJoin mj"
+    assume prem: "mj \<in> sentJoins t"
     from Next hyp1 prem
     have "laTerm mj < term mj"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
-      from HandleStartJoin prem have "mj \<in> messages s \<or> mj = newJoinRequest" by auto
+      from HandleStartJoin prem have "mj \<in> sentJoins s \<or> mj = newJoinRequest" by auto
       with prem hyp1 show ?thesis
       proof (elim disjE)
         assume mj: "mj = newJoinRequest"
@@ -843,7 +842,7 @@ lemma JoinLimitsPublishResponses_step:
   shows "(s,t) \<Turnstile> JoinLimitsPublishResponses$"
 proof -
   from assms
-  have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> messages s; mprs \<in> messages s; isJoin mj; isPublishResponse mprs; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
+  have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> sentJoins s; mprs \<in> messages s; isPublishResponse mprs; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
     and hyp3: "\<And>m. \<lbrakk> m \<in> sentJoins s \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
     unfolding JoinLimitsPublishResponses_def PublishResponseBeforeLastAccepted_def
@@ -852,13 +851,13 @@ proof -
 
   {
     fix mj mprs
-    assume prem: "mj \<in> messages t" "mprs \<in> messages t" "isJoin mj" "isPublishResponse mprs" "source mj = source mprs" "term mprs < term mj"
+    assume prem: "mj \<in> sentJoins t" "mprs \<in> messages t" "isPublishResponse mprs" "source mj = source mprs" "term mprs < term mj"
     from Next hyp1 prem
     have "msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
       from prem have mprs: "mprs \<in> messages s" by (auto simp add: HandleStartJoin)
-      from HandleStartJoin prem have "mj \<in> messages s \<or> mj = newJoinRequest" by auto
+      from HandleStartJoin prem have "mj \<in> sentJoins s \<or> mj = newJoinRequest" by auto
       with mprs prem hyp1 show ?thesis
       proof (elim disjE)
         have "msgTermVersion mprs \<le> laTermVersion s (source mprs)" by (intro hyp2 mprs prem)
@@ -870,7 +869,7 @@ proof -
       qed metis
     next
       case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
-      from prem have mj: "mj \<in> messages s" by (auto simp add: HandlePublishRequest)
+      from prem have mj: "mj \<in> sentJoins s" by (auto simp add: HandlePublishRequest)
       from HandlePublishRequest prem have "mprs \<in> messages s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>" by auto
       with mj prem hyp1 show ?thesis
       proof (elim disjE)
@@ -1965,22 +1964,14 @@ lemma TermIncreasedByJoin_step:
   assumes "s \<Turnstile> TermIncreasedByJoin"
   shows "(s,t) \<Turnstile> TermIncreasedByJoin$"
 proof -
-  from assms have hyp: "\<And>n. currentTerm s n > 0 \<Longrightarrow> \<exists> m \<in> messages s. isJoin m \<and> currentTerm s n = term m"
+  from assms have hyp: "\<And>n. currentTerm s n > 0 \<Longrightarrow> \<exists> m \<in> sentJoins s. currentTerm s n = term m"
     by (auto simp add: TermIncreasedByJoin_def)
 
   {
     fix n
     assume prem: "currentTerm t n > 0"
-    from Next hyp prem have "\<exists> m \<in> messages t. isJoin m \<and> currentTerm t n = term m"
-    proof (cases rule: square_Next_cases)
-      case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
-      with hyp prem have "\<exists> m \<in> messages s. isJoin m \<and> currentTerm t n = term m" by auto
-      thus ?thesis by (auto simp add: ClientRequest)
-    next
-      case (HandlePublishResponse_Quorum nf nm)
-      with hyp prem have "\<exists> m \<in> messages s. isJoin m \<and> currentTerm t n = term m" by auto
-      thus ?thesis by (auto simp add: HandlePublishResponse_Quorum)
-    qed auto
+    from Next hyp prem have "\<exists> m \<in> sentJoins t. currentTerm t n = term m"
+      by (cases rule: square_Next_cases, auto)
   }
   thus ?thesis by (auto simp add: TermIncreasedByJoin_def)
 qed
@@ -4106,10 +4097,10 @@ proof -
           by (auto simp add: JoinRequestsUniquePerTerm_def)
 
         from m' msg show "m' = \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr>"
-          by (intro eqI, auto simp add: P_def sentJoins_def)
+          by (intro eqI, auto simp add: P_def)
       qed
       thus "source (TheJoin nf nm s) = nf \<and> dest (TheJoin nf nm s) = nm
-          \<and> term (TheJoin nf nm s) = currentTerm s nm \<and> isJoin (TheJoin nf nm s) \<and> TheJoin nf nm s \<in> messages s"
+          \<and> term (TheJoin nf nm s) = currentTerm s nm \<and> TheJoin nf nm s \<in> sentJoins s"
         by (auto simp add: P_def sentJoins_def)
     qed
   qed
