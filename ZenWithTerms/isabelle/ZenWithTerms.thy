@@ -120,8 +120,6 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleJoinRequest: "\<And>nf nm laTerm_m laVersion_m.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laVersion  = laVersion_m \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
-    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laVersion  = laVersion_m \<rparr> \<rparr> \<in> sentJoins s
     ; startedJoinSinceLastReboot s nm
     ; laTerm_m < lastAcceptedTerm s nm \<or> (laTerm_m = lastAcceptedTerm s nm \<and> laVersion_m \<le> lastAcceptedVersion  s nm)
@@ -194,8 +192,6 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishRequest: "\<And>nf nm newVersion newValue newConfig commConfig.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
-    ; \<lparr> source = nm, dest = nf, term = currentTerm s nf
       , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> sentPublishRequests s
     ; currentTerm s nf = lastAcceptedTerm s nf \<Longrightarrow> lastAcceptedVersion  s nf < newVersion
     ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version = newVersion \<rparr> \<rparr> (messages s)
@@ -223,8 +219,6 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
     \<lbrakk> electionWon s nm
-    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
     ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> sentPublishResponses s
     ;   \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
@@ -255,8 +249,6 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_Quorum: "\<And>nf nm.
     \<lbrakk> electionWon s nm
     ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
-    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
       , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> sentPublishResponses s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
@@ -285,8 +277,6 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleCommitRequest: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
-    ; \<lparr> source = nm, dest = nf, term = currentTerm s nf
       , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> sentCommits s
     ; lastAcceptedTerm s nf = currentTerm s nf
     ; messages                   t          = messages                   s
@@ -1871,12 +1861,12 @@ proof -
     next
       case (HandlePublishRequest nf nm newVersion  newValue newConfig commConfig)
       with hyp1 [of "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version  = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"]
-      have "0 < currentTerm s nf" by auto
+      have "0 < currentTerm s nf" by (auto simp add: sentPublishRequests_def)
       with hyp1 prem show ?thesis by (auto simp add: HandlePublishRequest)
     next
       case (HandlePublishResponse_Quorum nf nm)
       with hyp1 [of "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version  = lastPublishedVersion  s nm\<rparr>\<rparr>"]
-      have "0 < currentTerm s nm" by auto
+      have "0 < currentTerm s nm" by (auto simp add: sentPublishResponses_def)
       with hyp1 prem show ?thesis by (auto simp add: HandlePublishResponse_Quorum)
     qed simp_all
   }
@@ -1961,7 +1951,7 @@ proof -
       proof (cases rule: square_Next_cases)
         case (HandlePublishRequest nf nm newVersion  newValue newConfig commConfig)
         with hyp2 [of "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version  = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"]
-        have "0 < currentTerm s nf" by simp
+        have "0 < currentTerm s nf" by (simp add: sentPublishRequests_def)
         with term'0 show ?thesis by (auto simp add: HandlePublishRequest lastAcceptedData)
       qed (simp_all add: lastAcceptedData)
       thus ?thesis by (simp add: term'0 P_def)
@@ -2159,7 +2149,7 @@ proof -
         case nf_eq_n: True
 
         from HandleCommitRequest hyp4 [of "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s nf\<rparr>\<rparr>"]
-        have "0 < lastAcceptedTerm s nf" by simp
+        have "0 < lastAcceptedTerm s nf" by (simp add: sentCommits_def)
         with hyp2 [of n]
         obtain mPub where mPub: "mPub \<in> sentPublishRequests s" "lastAcceptedTerm s n = term mPub"
           "lastAcceptedVersion  s n = version  mPub" "lastAcceptedValue s n = value mPub" "lastAcceptedConfiguration s n = config mPub"
@@ -4058,5 +4048,7 @@ lemma ElectionWonQuorumBelow_0: "\<turnstile> Spec \<longrightarrow> \<box>(Elec
 
 lemma OneMasterPerTermBelow_0: "\<turnstile> Spec \<longrightarrow> \<box>(OneMasterPerTermBelow 0)"
   by (intro temp_impI necT [temp_use] intI, auto simp add: OneMasterPerTermBelow_def)
+
+end
 
 end
