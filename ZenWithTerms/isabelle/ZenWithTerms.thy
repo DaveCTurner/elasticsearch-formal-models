@@ -630,7 +630,7 @@ definition PublishedConfigurationsValid :: stpred where "PublishedConfigurations
 
 definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfigurations s \<equiv>
   insert (initialConfiguration s)
-    { c. (\<exists> mPub \<in> messages s. isPublishRequest mPub \<and> config mPub = c
+    { c. (\<exists> mPub \<in> sentPublishRequests s. config mPub = c
            \<and> (\<exists> mCom \<in> messages s. isCommit mCom \<and> term mCom = term mPub \<and> version  mCom = version  mPub)) }"
 
 definition CommittedConfigurationsPublished :: stpred where "CommittedConfigurationsPublished s \<equiv>
@@ -2066,7 +2066,7 @@ proof -
   from Next have initialConfiguration_eq[simp]: "initialConfiguration t = initialConfiguration s" by (cases rule: square_Next_cases)
   show "CommittedConfigurations s \<subseteq> CommittedConfigurations t"
     unfolding CommittedConfigurations_def using messages_increasing
-    by (auto simp add: CommittedConfigurations_def)
+    by (auto simp add: CommittedConfigurations_def sentPublishRequests_def)
 qed
 
 lemma AcceptedConfigurationSource_step:
@@ -2220,9 +2220,9 @@ proof -
         have "lastAcceptedConfiguration s n \<in> CommittedConfigurations t"
           unfolding CommittedConfigurations_def
         proof (intro insertI2 CollectI bexI conjI)
-          from mPub show "isPublishRequest mPub" "config mPub = lastAcceptedConfiguration s n" by (simp_all add: sentPublishRequests_def)
+          from mPub show "config mPub = lastAcceptedConfiguration s n" by simp
           show "isCommit \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr>" by (simp add: nf_eq_n)
-          from mPub show "mPub \<in> messages t" by (simp add: HandleCommitRequest sentPublishRequests_def)
+          from mPub show "mPub \<in> sentPublishRequests t" by (simp add: HandleCommitRequest)
           from HandleCommitRequest mPub show "term \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = term mPub"
             "version  \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = version  mPub"
             "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> messages t"
