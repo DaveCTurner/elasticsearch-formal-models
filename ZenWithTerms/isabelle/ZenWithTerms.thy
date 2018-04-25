@@ -54,11 +54,82 @@ proof (intro notI)
   finally show False by simp
 qed
 
+
+definition isJoin            :: "Message \<Rightarrow> bool" where "isJoin            m \<equiv> case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False"
+definition isPublishRequest  :: "Message \<Rightarrow> bool" where "isPublishRequest  m \<equiv> case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False"
+definition isPublishResponse :: "Message \<Rightarrow> bool" where "isPublishResponse m \<equiv> case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False"
+definition isCommit          :: "Message \<Rightarrow> bool" where "isCommit          m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
+
+lemma isJoin_simps[simp]:
+  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = True"
+  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
+  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
+  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
+  by (simp_all add: isJoin_def)
+
+lemma isPublishRequest_simps[simp]:
+  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
+  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = True"
+  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
+  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
+  by (simp_all add: isPublishRequest_def)
+
+lemma isPublishResponse_simps[simp]:
+  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
+  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
+  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = True"
+  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
+  by (simp_all add: isPublishResponse_def)
+
+lemma isCommit_simps[simp]:
+  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
+  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
+  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
+  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = True"
+  by (simp_all add: isCommit_def)
+
+definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. isJoin m }"
+definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. isPublishRequest m }"
+definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. isPublishResponse m }"
+definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. isCommit m }"
+
+lemma sentJoins_simps[simp]:
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentJoins s) = (\<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> \<in> messages s)"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentJoins s) = False"
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentJoins s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentJoins s) = False"
+  by (simp_all add: sentJoins_def)
+
+lemma sentPublishRequests_simps[simp]:
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentPublishRequests s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentPublishRequests s) = (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> \<in> messages s)"
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentPublishRequests s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentPublishRequests s) = False"
+  by (simp_all add: sentPublishRequests_def)
+
+lemma sentPublishResponses_simps[simp]:
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentPublishResponses s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentPublishResponses s) = False"
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentPublishResponses s) = (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> messages s)"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentPublishResponses s) = False"
+  by (simp_all add: sentPublishResponses_def)
+
+lemma sentCommits_simps[simp]:
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentCommits s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentCommits s) = False"
+  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentCommits s) = False"
+  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentCommits s) = (\<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> \<in> messages s)"
+  by (simp_all add: sentCommits_def)
+
 lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin HandleJoinRequest ClientRequest
     HandlePublishRequest HandlePublishResponse_NoQuorum HandlePublishResponse_Quorum HandleCommitRequest RestartNode]:
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
   assumes unchanged:
     "\<lbrakk> messages                  t = messages                   s
+    ; sentJoins                  t = sentJoins                  s
+    ; sentPublishRequests        t = sentPublishRequests        s
+    ; sentPublishResponses       t = sentPublishResponses       s
+    ; sentCommits                t = sentCommits                s
     ; descendant                 t = descendant                 s
     ; currentTerm                t = currentTerm                s
     ; lastCommittedConfiguration t = lastCommittedConfiguration s
@@ -82,6 +153,10 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; newJoinRequest = \<lparr> source = nf, dest = nm, term = tm
         , payload = Join \<lparr> jp_laTerm = lastAcceptedTerm s nf, jp_laVersion = lastAcceptedVersion s nf \<rparr> \<rparr>
     ; messages                         t    = insert newJoinRequest (messages s)
+    ; sentJoins                        t    = insert newJoinRequest (sentJoins s)
+    ; sentPublishRequests              t    = sentPublishRequests        s
+    ; sentPublishResponses             t    = sentPublishResponses       s
+    ; sentCommits                      t    = sentCommits                s
     ; descendant                       t    = descendant                 s
     ; \<And>n'. currentTerm                t n' = (if n' = nf then tm else currentTerm s n')
     ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
@@ -107,10 +182,16 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleJoinRequest: "\<And>nf nm laTerm_m laVersion_m.
     \<lbrakk> \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laVersion  = laVersion_m \<rparr> \<rparr> \<in> messages s
+      , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laVersion  = laVersion_m \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
+    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
+      , payload = Join \<lparr> jp_laTerm = laTerm_m, jp_laVersion  = laVersion_m \<rparr> \<rparr> \<in> sentJoins s
     ; startedJoinSinceLastReboot s nm
     ; laTerm_m < lastAcceptedTerm s nm \<or> (laTerm_m = lastAcceptedTerm s nm \<and> laVersion_m \<le> lastAcceptedVersion  s nm)
     ; messages                         t    = messages                   s 
+    ; sentJoins                        t    = sentJoins                  s
+    ; sentPublishRequests              t    = sentPublishRequests        s
+    ; sentPublishResponses             t    = sentPublishResponses       s
+    ; sentCommits                      t    = sentCommits                s
     ; descendant                       t    = descendant                 s
     ; currentTerm                      t    = currentTerm                s
     ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
@@ -149,6 +230,10 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; matchingElems = { e \<in> descendant s. nextT e = prevT newEntry \<and> nextI e = prevI newEntry}
     ; newTransitiveElems = (\<Union> e \<in> matchingElems. {\<lparr> prevT = prevT e, prevI = prevI e, nextT = nextT newEntry, nextI = nextI newEntry \<rparr>})
     ; messages                         t    = (messages s) \<union> newPublishRequests
+    ; sentJoins                        t    = sentJoins                  s
+    ; sentPublishRequests              t    = sentPublishRequests        s \<union> newPublishRequests
+    ; sentPublishResponses             t    = sentPublishResponses       s
+    ; sentCommits                      t    = sentCommits                s
     ; descendant                       t    = (descendant s) \<union> insert newEntry newTransitiveElems
     ; currentTerm                      t    = currentTerm                s
     ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
@@ -171,9 +256,15 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandlePublishRequest: "\<And>nf nm newVersion newValue newConfig commConfig.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> messages s
+      , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
+    ; \<lparr> source = nm, dest = nf, term = currentTerm s nf
+      , payload = PublishRequest \<lparr> prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig \<rparr> \<rparr> \<in> sentPublishRequests s
     ; currentTerm s nf = lastAcceptedTerm s nf \<Longrightarrow> lastAcceptedVersion  s nf < newVersion
-    ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version = newVersion  \<rparr> \<rparr> (messages s)
+    ; messages t = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version = newVersion \<rparr> \<rparr> (messages s)
+    ; sentJoins                        t    = sentJoins                  s
+    ; sentPublishRequests              t    = sentPublishRequests        s
+    ; sentPublishResponses             t    = insert \<lparr> source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr> prs_version = newVersion \<rparr> \<rparr> (sentPublishResponses s)
+    ; sentCommits                      t    = sentCommits                s
     ; descendant                       t    = descendant                 s
     ; currentTerm                      t    = currentTerm                s
     ; \<And>n'. lastCommittedConfiguration t n' = (if n' = nf then commConfig       else lastCommittedConfiguration s n')
@@ -195,10 +286,16 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_NoQuorum: "\<And>nf nm.
     \<lbrakk> electionWon s nm
     ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
+    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> sentPublishResponses s
     ;   \<not> IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
       \<or> \<not> IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages                   s
+    ; sentJoins                  t    = sentJoins                  s
+    ; sentPublishRequests        t    = sentPublishRequests        s
+    ; sentPublishResponses       t    = sentPublishResponses       s
+    ; sentCommits                t    = sentCommits                s
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
     ; lastCommittedConfiguration t    = lastCommittedConfiguration s
@@ -224,6 +321,10 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
+    ; sentJoins                  t    = sentJoins                  s
+    ; sentPublishRequests        t    = sentPublishRequests        s
+    ; sentPublishResponses       t    = sentPublishResponses       s
+    ; sentCommits                t    = sentCommits                s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
     ; descendant                 t    = descendant                 s
     ; currentTerm                t    = currentTerm                s
     ; lastCommittedConfiguration t    = lastCommittedConfiguration s
@@ -247,6 +348,10 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
       , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> messages s
     ; lastAcceptedTerm s nf = currentTerm s nf
     ; messages                   t          = messages                   s
+    ; sentJoins                  t          = sentJoins                  s
+    ; sentPublishRequests        t          = sentPublishRequests        s
+    ; sentPublishResponses       t          = sentPublishResponses       s
+    ; sentCommits                t          = sentCommits                s
     ; descendant                 t          = descendant                 s
     ; currentTerm                t          = currentTerm                s
     ; \<And>n'. lastCommittedConfiguration t n' = (if n' = nf then lastAcceptedConfiguration s nf else lastCommittedConfiguration s n')
@@ -267,6 +372,10 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P" 
   assumes RestartNode: "\<And>nr.
     \<lbrakk> messages                         t    = messages                   s
+    ; sentJoins                        t    = sentJoins                  s
+    ; sentPublishRequests              t    = sentPublishRequests        s
+    ; sentPublishResponses             t    = sentPublishResponses       s
+    ; sentCommits                      t    = sentCommits                s
     ; descendant                       t    = descendant                 s
     ; currentTerm                      t    = currentTerm                s
     ; lastCommittedConfiguration       t    = lastCommittedConfiguration s
@@ -294,7 +403,7 @@ proof -
   from Next show P unfolding square_def Next_def
   proof (elim temp_disjE temp_exE temp_conjE)
     assume "(s,t) \<Turnstile> unchanged vars"
-    thus P by (intro unchanged, auto simp add: vars_def)
+    thus P by (intro unchanged, auto simp add: vars_def sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix n nm tm
     define joinRequest where "joinRequest \<equiv> \<lparr> source = n, dest = nm, term = tm
@@ -307,7 +416,8 @@ proof -
 
     with p show  P
       by (intro HandleStartJoin [of n tm joinRequest nm],
-          auto simp add: HandleStartJoin_def updated_def modified_def joinRequest_def unspecified_def)
+          auto simp add: HandleStartJoin_def updated_def modified_def joinRequest_def unspecified_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix m
     assume p: "(s,t) \<Turnstile> #m \<in> $messages" "(s,t) \<Turnstile> HandleJoinRequest (dest m) m"
@@ -324,14 +434,16 @@ proof -
 
     from p is_message show P
       apply (intro HandleJoinRequest [of "source m" "dest m" "laTerm m" "laVersion m"])
-      by (auto simp add: HandleJoinRequest_def updated_def modifyAt_def modified_def ElectionWon_def)
+      by (auto simp add: HandleJoinRequest_def updated_def modifyAt_def modified_def ElectionWon_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix nm v vs
     assume p: "(s,t) \<Turnstile> #vs \<in> #ValidConfigs" "(s,t) \<Turnstile> ClientRequest nm v vs"
 
     from p show P
       apply (intro ClientRequest [of nm vs])
-      by (auto simp add: ClientRequest_def updated_def modified_def)
+      by (auto simp add: ClientRequest_def updated_def modified_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix m
     assume p: "(s,t) \<Turnstile> #m \<in> $messages" "(s,t) \<Turnstile> HandlePublishRequest (dest m) m"
@@ -350,7 +462,8 @@ proof -
 
     from p is_message show P
       apply (intro HandlePublishRequest [of "source m" "dest m" "version  m" "value m" "config m" "commConf m"])
-      by (auto simp add: HandlePublishRequest_def updated_def modified_def)
+      by (auto simp add: HandlePublishRequest_def updated_def modified_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix m
     assume p: "(s,t) \<Turnstile> #m \<in> $messages" "(s,t) \<Turnstile> HandlePublishResponse (dest m) m"
@@ -371,12 +484,14 @@ proof -
       case False
       with p is_message show P
         apply (intro HandlePublishResponse_NoQuorum [where nm = "dest m" and nm = "source m"])
-        by (auto simp add: HandlePublishResponse_def updated_def modified_def)
+        by (auto simp add: HandlePublishResponse_def updated_def modified_def
+            sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
     next
       case True
       with p is_message show P
         apply (intro HandlePublishResponse_Quorum [where nm = "dest m" and nm = "source m"])
-        by (auto simp add: HandlePublishResponse_def updated_def modified_def)
+        by (auto simp add: HandlePublishResponse_def updated_def modified_def
+            sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
     qed
   next
     fix m
@@ -390,11 +505,13 @@ proof -
 
     from p show P
       apply (intro HandleCommitRequest [of "source m" "dest m"])
-      by (auto simp add: HandleCommitRequest_def is_message updated_def modified_def)
+      by (auto simp add: HandleCommitRequest_def is_message updated_def modified_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   next
     fix n assume p: "(s,t) \<Turnstile> RestartNode n"
     thus P
-      by (intro RestartNode [of n], auto simp add: RestartNode_def updated_def modified_def unspecified_def)
+      by (intro RestartNode [of n], auto simp add: RestartNode_def updated_def modified_def unspecified_def
+          sentJoins_def sentPublishRequests_def sentPublishResponses_def sentCommits_def)
   qed
 qed
 
@@ -431,43 +548,6 @@ qed
 definition messagesTo :: "(Node \<Rightarrow> Message set) stfun"
   where "messagesTo s n \<equiv> { m \<in> messages s. dest m = n }"
 
-definition isJoin :: "Message \<Rightarrow> bool"
-  where "isJoin m \<equiv> case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False"
-definition isPublishRequest :: "Message \<Rightarrow> bool"
-  where "isPublishRequest m \<equiv> case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False"
-definition isPublishResponse :: "Message \<Rightarrow> bool"
-  where "isPublishResponse m \<equiv> case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False"
-definition isCommit :: "Message \<Rightarrow> bool"
-  where "isCommit m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
-
-lemma isJoin_simps[simp]:
-  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> = True"
-  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> = False"
-  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> = False"
-  by (simp_all add: isJoin_def)
-
-lemma isPublishRequest_simps[simp]:
-  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> = False"
-  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> = True"
-  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> = False"
-  by (simp_all add: isPublishRequest_def)
-
-lemma isPublishResponse_simps[simp]:
-  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> = False"
-  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> = False"
-  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = True"
-  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> = False"
-  by (simp_all add: isPublishResponse_def)
-
-lemma isCommit_simps[simp]:
-  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> = True"
-  by (simp_all add: isCommit_def)
-
 definition termVersion  :: "Node \<Rightarrow> TermVersion  stfun"
   where "termVersion  n s \<equiv> if startedJoinSinceLastReboot s n
                               then TermVersion  (currentTerm s n) (if electionWon s n then lastPublishedVersion s n else 0)
@@ -493,7 +573,7 @@ definition termWinningConfiguration :: "nat \<Rightarrow> Node set stfun" where 
   let n = (SOME n. (tm, n) \<in> leaderHistory s);
       publishResponses = publishResponsesBelow n tm s;
       tv = Max (msgTermVersion ` publishResponses);
-      mprq = (SOME mprq. mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv)
+      mprq = (SOME mprq. mprq \<in> sentPublishRequests s \<and> msgTermVersion mprq = tv)
   in if publishResponses = {} then initialConfiguration s else config mprq"
 
 definition TheJoin :: "Node \<Rightarrow> Node \<Rightarrow> Message stfun" where "TheJoin nf nm s \<equiv> 
@@ -900,7 +980,7 @@ proof -
     case (HandleStartJoin nf nm tm' newJoinRequest)
     hence simps: "leaderHistory t = leaderHistory s"
       "initialConfiguration t = initialConfiguration s"
-      "\<And>mprq P. (mprq \<in> messages t \<and> isPublishRequest mprq \<and> P) = (mprq \<in> messages s \<and> isPublishRequest mprq \<and> P)"
+      "sentPublishRequests t = sentPublishRequests s"
       "\<And>n. publishResponsesBelow n tm t = publishResponsesBelow n tm s"
       by (auto simp add: publishResponsesBelow_def)
     show ?thesis unfolding termWinningConfiguration_def simps by simp
@@ -924,7 +1004,7 @@ proof -
     case (HandlePublishResponse_Quorum nf nm)
     hence simps: "leaderHistory t = leaderHistory s"
       "initialConfiguration t = initialConfiguration s"
-      "\<And>mprq P. (mprq \<in> messages t \<and> isPublishRequest mprq \<and> P) = (mprq \<in> messages s \<and> isPublishRequest mprq \<and> P)"
+      "sentPublishRequests t = sentPublishRequests s"
       "\<And>n. publishResponsesBelow n tm t = publishResponsesBelow n tm s"
       by (auto simp add: publishResponsesBelow_def)
     show ?thesis unfolding termWinningConfiguration_def simps by simp
@@ -944,8 +1024,8 @@ proof -
     define n where "n \<equiv> SOME n. (tm, n) \<in> leaderHistory s"
     define publishResponses where "publishResponses \<equiv> publishResponsesBelow n tm s"
     define tv where "tv \<equiv> Max (msgTermVersion ` publishResponses)"
-    define mprq_s where "mprq_s \<equiv> SOME mprq. mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv"
-    define mprq_t where "mprq_t \<equiv> SOME mprq. mprq \<in> messages t \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv"
+    define mprq_s where "mprq_s \<equiv> SOME mprq. mprq \<in> sentPublishRequests s \<and> msgTermVersion mprq = tv"
+    define mprq_t where "mprq_t \<equiv> SOME mprq. mprq \<in> sentPublishRequests t \<and> msgTermVersion mprq = tv"
 
     show ?thesis
     proof (cases "publishResponses = {}")
@@ -957,13 +1037,13 @@ proof -
         unfolding mprq_s_def mprq_t_def
       proof (intro cong [OF refl, where f = Eps] ext iffI)
         fix mprq
-        show "mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv \<Longrightarrow> mprq \<in> messages t \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv"
+        show "mprq \<in> sentPublishRequests s \<and> msgTermVersion mprq = tv \<Longrightarrow> mprq \<in> sentPublishRequests t \<and> msgTermVersion mprq = tv"
           by (auto simp add: ClientRequest)
-        assume "mprq \<in> messages t \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv"
-        hence disj: "mprq \<in> messages s \<or> mprq \<in> newPublishRequests" and mprq: "isPublishRequest mprq" "tv = msgTermVersion mprq" by (auto simp add: ClientRequest)
-        from disj show "mprq \<in> messages s \<and> isPublishRequest mprq \<and> msgTermVersion mprq = tv"
+        assume "mprq \<in> sentPublishRequests t \<and> msgTermVersion mprq = tv"
+        hence disj: "mprq \<in> sentPublishRequests s \<or> mprq \<in> newPublishRequests" and mprq: "tv = msgTermVersion mprq" by (auto simp add: ClientRequest)
+        from disj show "mprq \<in> sentPublishRequests s \<and> msgTermVersion mprq = tv"
         proof (elim disjE)
-          assume "mprq \<in> messages s" with mprq show ?thesis by simp
+          assume "mprq \<in> sentPublishRequests s" with mprq show ?thesis by simp
         next
           assume "mprq \<in> newPublishRequests"
           hence msgTermVersion_mprq: "msgTermVersion mprq = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
@@ -1024,8 +1104,7 @@ proof -
     case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
     hence simps: "leaderHistory t = leaderHistory s"
       "initialConfiguration t = initialConfiguration s"
-      "\<And>mprq P. (mprq \<in> messages t \<and> isPublishRequest mprq \<and> P) = (mprq \<in> messages s \<and> isPublishRequest mprq \<and> P)"
-      by (auto simp add: publishResponsesBelow_def)
+      "sentPublishRequests t = sentPublishRequests s" by auto
 
     define n where "n \<equiv> SOME n. (tm, n) \<in> leaderHistory s"
 
@@ -1200,8 +1279,8 @@ proof -
             obtain mprq where mprq: "mprq \<in> messages s" "isPublishRequest mprq" "term mprs = term mprq" "version mprs = version mprq" "msgTermVersion mprq = laTermVersion s nm"
               by (auto simp add: msgTermVersion_def)
 
-            define mprq' where "mprq' \<equiv> SOME mprq. mprq \<in> messages t \<and> isPublishRequest mprq \<and> msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
-            have mprq'_fold: "(SOME mprq. mprq \<in> messages t \<and> isPublishRequest mprq \<and> msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)) = mprq'"
+            define mprq' where "mprq' \<equiv> SOME mprq. mprq \<in> sentPublishRequests t \<and> msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
+            have mprq'_fold: "(SOME mprq. mprq \<in> sentPublishRequests t \<and> msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)) = mprq'"
               by (simp add: mprq'_def)
 
             from hyp12 [of nm] False 
@@ -1273,12 +1352,12 @@ proof -
             with mprq have termVersion_mprq: "msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
               by (simp add: msgTermVersion_def)
 
-            have "mprq' \<in> messages t \<and> isPublishRequest mprq' \<and> msgTermVersion mprq' = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
+            have "mprq' \<in> sentPublishRequests t \<and> msgTermVersion mprq' = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
               unfolding mprq'_def
             proof (intro someI conjI)
               from mprq termVersion_mprq
-              show "mprq \<in> messages t" "isPublishRequest mprq" "msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
-                by (auto simp add: HandleJoinRequest)
+              show "mprq \<in> sentPublishRequests t" "msgTermVersion mprq = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
+                by (auto simp add: HandleJoinRequest sentPublishRequests_def)
             qed
 
             with sym [OF termVersion_mprq] have payload_eq': "payload mprq' = payload mprq"
@@ -1288,7 +1367,7 @@ proof -
               also from new have "... = tm" by simp
               also from prem have "... < termBound" by simp
               finally show "term mprq < termBound" .
-            qed
+            qed (auto simp add: sentPublishRequests_def)
 
             from payload_eq' payload_eq'' mprq'' have config_eq: "config mprq' = lastAcceptedConfiguration s nm" by (simp add: config_def)
 
