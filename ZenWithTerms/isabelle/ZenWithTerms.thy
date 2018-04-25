@@ -785,31 +785,56 @@ proof -
     have "config mprq = lastPublishedConfiguration t (source mprq) \<and> commConf mprq = lastCommittedConfiguration t (source mprq)"
     proof (cases rule: square_Next_cases)
       case unchanged
-      show ?thesis sorry
+      with hyp1 prem show ?thesis unfolding termVersion_def unchanged by auto
     next
       case (HandleStartJoin nf nm tm newJoinRequest)
-      show ?thesis sorry
+      from prem have ne: "nf \<noteq> source mprq" by (intro notI, simp add: HandleStartJoin)
+      with HandleStartJoin have "termVersion (source mprq) t = termVersion (source mprq) s" unfolding termVersion_def by auto
+      with ne hyp1 prem HandleStartJoin show ?thesis by auto
     next
       case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+        (* might change electionWon nm, lastPublishedVersion & lastPublishedConfiguration (if electionWon changed) *)
       show ?thesis sorry
     next
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+        (* if source mprq = nm then we just sent a new publish request, so mprq cannot already have been a publish request *)
       show ?thesis sorry
     next
       case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
+        (* copies lastCommittedConfiguration from the message, but this must be a no-op on the master *)
       show ?thesis sorry
     next
       case (HandlePublishResponse_NoQuorum nf nm)
-      show ?thesis sorry
+      with hyp1 prem show ?thesis unfolding termVersion_def HandlePublishResponse_NoQuorum by auto
     next
       case (HandlePublishResponse_Quorum nf nm)
-      show ?thesis sorry
+      from prem
+      have "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits s" by (auto simp add: HandlePublishResponse_Quorum)
+      with HandlePublishResponse_Quorum hyp1 prem show ?thesis unfolding termVersion_def HandlePublishResponse_Quorum by auto
     next
       case (HandleCommitRequest nf nm)
-      show ?thesis sorry
+      show ?thesis
+      proof (cases "source mprq = nf")
+        case False
+        with hyp1 prem show ?thesis unfolding termVersion_def HandleCommitRequest by auto
+      next
+        case True
+          (* committing last-accepted on the master. But the preconditions say that the master's current termversion is uncommitted.
+             Wrinkle: current termversion is the last-published version; what if the master hasn't accepted it?
+             Think this is impossible: increment last-published, then last-accepted:
+
+LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound s \<equiv>
+  \<forall> n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}
+
+
+*)
+        show ?thesis sorry
+      qed
     next
       case (RestartNode nr)
-      show ?thesis sorry
+      from prem have ne: "nr \<noteq> source mprq" by (intro notI, simp add: RestartNode)
+      with RestartNode have "termVersion (source mprq) t = termVersion (source mprq) s" unfolding termVersion_def by auto
+      with ne hyp1 prem RestartNode show ?thesis by auto
     qed
   }
   thus ?thesis by (auto simp add: PublishRequestReflectsLeaderStateBelow_def)
