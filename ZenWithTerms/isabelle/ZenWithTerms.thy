@@ -583,7 +583,7 @@ definition FiniteMessagesTo :: stpred
   where "FiniteMessagesTo s \<equiv> \<forall>n. finite (messagesTo s n)"
 
 definition FiniteJoins :: stpred
-  where "FiniteJoins s \<equiv> finite { m \<in> messages s. isJoin m }"
+  where "FiniteJoins s \<equiv> finite (sentJoins s)"
 
 definition FiniteTermVersions :: stpred
   where "FiniteTermVersions s \<equiv> finite (msgTermVersion ` messages s)"
@@ -891,32 +891,12 @@ lemma FiniteJoins_step:
   shows "(s,t) \<Turnstile> FiniteJoins$"
 proof -
   from assms
-  have  hyp1: "finite { m \<in> messages s. isJoin m }"
+  have  hyp1: "finite (sentJoins s)"
     unfolding FiniteJoins_def
     by metis+
 
-  from Next hyp1 have "finite { m \<in> messages t. isJoin m }"
-  proof (cases rule: square_Next_cases)
-    case (HandleStartJoin nf nm tm newJoinRequest)
-    hence simp1: "{ m \<in> messages t. isJoin m } = insert newJoinRequest { m \<in> messages s. isJoin m }"
-      by auto
-    from hyp1 show ?thesis unfolding simp1 by simp
-  next
-    case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
-    have "{ m \<in> messages t. isJoin m } \<subseteq> { m \<in> messages s. isJoin m }"
-      by (auto simp add: ClientRequest)
-    with hyp1 show ?thesis using infinite_super by blast
-  next
-    case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
-    have "{ m \<in> messages t. isJoin m } \<subseteq> { m \<in> messages s. isJoin m }"
-      by (auto simp add: HandlePublishRequest)
-    with hyp1 show ?thesis using infinite_super by blast
-  next
-    case (HandlePublishResponse_Quorum nf nm)
-    have "{ m \<in> messages t. isJoin m } \<subseteq> { m \<in> messages s. isJoin m }"
-      by (auto simp add: HandlePublishResponse_Quorum)
-    with hyp1 show ?thesis using infinite_super by blast
-  qed auto
+  from Next hyp1 have "finite (sentJoins t)"
+    by (cases rule: square_Next_cases, simp_all)
   thus ?thesis by (simp add: FiniteJoins_def)
 qed
 
@@ -1161,7 +1141,11 @@ proof -
   from assms
   have  hyp1: "\<And>tm n. \<lbrakk> tm < termBound; (tm, n) \<in> leaderHistory s \<rbrakk>
     \<Longrightarrow> IsQuorum (source ` {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}) (termWinningConfiguration tm s)"
-    and hyp2: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory t; (tm, n2) \<in> leaderHistory t \<rbrakk> \<Longrightarrow> n1 = n2"
+    unfolding TermWinningConfigurationHasQuorumBelow_def
+    by auto
+
+  from assms 
+  have  hyp2: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory t; (tm, n2) \<in> leaderHistory t \<rbrakk> \<Longrightarrow> n1 = n2"
     and hyp3: "finite (msgTermVersion ` messages s)"
     and hyp4: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> 
       \<Longrightarrow> \<exists>mprq\<in>messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
@@ -1171,26 +1155,22 @@ proof -
     and hyp8: "\<And>n tm. (tm, n) \<in> leaderHistory s \<Longrightarrow> tm \<le> currentTerm s n"
     and hyp9: "\<And>n. electionWon s n \<Longrightarrow> (currentTerm s n, n) \<in> leaderHistory s"
     and hyp10: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists>joinPayload. \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> messages s"
-    and hyp11: "finite { m \<in> messages s. isJoin m }"
+    and hyp11: "finite (sentJoins s)"
     and hyp12: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
         else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp13: "\<And>m. m \<in> messages s \<Longrightarrow> 0 < term m"
     and hyp14: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
     and hyp15: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists>m\<in>messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n"
-    unfolding OneMasterPerTermBelow_def FiniteTermVersions_def PublishResponseMeansPublishRequest_def
-      PublishRequestVersionAtMostSenderBelow_def PublishRequestSentByMasterBelow_def
-      ElectionWonImpliesStartedJoin_def LeaderHistoryBounded_def TermWinningConfigurationHasQuorumBelow_def
-      LeaderHistoryFaithful_def JoinVotesFaithful_def FiniteJoins_def LastAcceptedDataSource_def
-      MessagePositiveTerm_def PublishResponseBeforeLastAccepted_def PublishResponseForLastAccepted_def
-    by auto
-
-  from assms 
-  have  hyp16: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isPublishRequest m1; isPublishRequest m2; term m1 < termBound; term m1 = term m2; version m1 = version m2 \<rbrakk> \<Longrightarrow> payload m1 = payload m2"
+    and hyp16: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isPublishRequest m1; isPublishRequest m2; term m1 < termBound; term m1 = term m2; version m1 = version m2 \<rbrakk> \<Longrightarrow> payload m1 = payload m2"
     and hyp17: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
     and hyp18: "\<And>n. \<lbrakk> (currentTerm s n, n) \<in> leaderHistory s; currentTerm s n < termBound; startedJoinSinceLastReboot s n \<rbrakk> \<Longrightarrow> electionWon s n"
     and hyp19: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
     unfolding PublishRequestsUniquePerTermVersionBelow_def LastAcceptedTermInPast_def EndOfTermIsPermanentBelow_def
-      PublishRequestFromHistoricalLeader_def
+      PublishRequestFromHistoricalLeader_def OneMasterPerTermBelow_def FiniteTermVersions_def PublishResponseMeansPublishRequest_def
+      PublishRequestVersionAtMostSenderBelow_def PublishRequestSentByMasterBelow_def
+      ElectionWonImpliesStartedJoin_def LeaderHistoryBounded_def 
+      LeaderHistoryFaithful_def JoinVotesFaithful_def FiniteJoins_def LastAcceptedDataSource_def
+      MessagePositiveTerm_def PublishResponseBeforeLastAccepted_def PublishResponseForLastAccepted_def
     by metis+
 
   {
@@ -1378,8 +1358,8 @@ proof -
         show ?thesis
           unfolding termWinningConfiguration_eq HandleJoinRequest
         proof (intro IsQuorum_mono [OF IsQuorum] finite_imageI finite_subset [OF _ hyp11] subsetI)
-          show "\<And>m. m \<in> {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j} \<Longrightarrow> m \<in> {m \<in> messages s. isJoin m}"
-            by (auto simp add: HandleJoinRequest)
+          show "\<And>m. m \<in> {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j} \<Longrightarrow> m \<in> sentJoins s"
+            by (auto simp add: HandleJoinRequest sentJoins_def)
           fix nv assume "nv \<in> joinVotes t nm" hence "nv = nf \<or> nv \<in> joinVotes s nm" by (simp add: HandleJoinRequest)
           thus "nv \<in> source ` {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
           proof (elim disjE)
