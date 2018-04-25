@@ -54,46 +54,10 @@ proof (intro notI)
   finally show False by simp
 qed
 
-definition isCommit          :: "Message \<Rightarrow> bool" where "isCommit          m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
-
-lemma isCommit_simps[simp]:
-  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = True"
-  by (simp_all add: isCommit_def)
-
 definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False }"
-definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. isCommit m }"
-
-lemma sentJoins_simps[simp]:
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentJoins s) = False"
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentJoins s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentJoins s) = False"
-  by (simp_all add: sentJoins_def)
-
-lemma sentPublishRequests_simps[simp]:
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentPublishRequests s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentPublishRequests s) = (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest pl \<rparr> \<in> messages s)"
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentPublishRequests s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentPublishRequests s) = False"
-  by (simp_all add: sentPublishRequests_def)
-
-lemma sentPublishResponses_simps[simp]:
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentPublishResponses s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentPublishResponses s) = False"
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentPublishResponses s) = (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> messages s)"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentPublishResponses s) = False"
-  by (simp_all add: sentPublishResponses_def)
-
-lemma sentCommits_simps[simp]:
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentCommits s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentCommits s) = False"
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentCommits s) = False"
-  "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentCommits s) = (\<lparr> source = nm, dest = nf, term = tm, payload = Commit pl \<rparr> \<in> messages s)"
-  by (simp_all add: sentCommits_def)
+definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False }"
 
 lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin HandleJoinRequest ClientRequest
     HandlePublishRequest HandlePublishResponse_NoQuorum HandlePublishResponse_Quorum HandleCommitRequest RestartNode]:
@@ -291,7 +255,9 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
   assumes HandlePublishResponse_Quorum: "\<And>nf nm.
     \<lbrakk> electionWon s nm
     ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
-      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
+    ; \<lparr> source = nf, dest = nm, term = currentTerm s nm
+      , payload = PublishResponse \<lparr> prs_version = lastPublishedVersion  s nm \<rparr> \<rparr> \<in> sentPublishResponses s
     ; IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)
     ; IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)
     ; messages                   t    = messages s \<union> (\<Union> n \<in> UNIV. {\<lparr> source = nm, dest = n, term = currentTerm s nm, payload = Commit \<lparr> c_version  = lastPublishedVersion  s nm \<rparr> \<rparr>})
@@ -319,7 +285,9 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<rbrakk> \<Longrightarrow> P"
   assumes HandleCommitRequest: "\<And>nf nm.
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
-      , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> messages s
+      , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> messages s (* TODO not needed? *)
+    ; \<lparr> source = nm, dest = nf, term = currentTerm s nf
+      , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> sentCommits s
     ; lastAcceptedTerm s nf = currentTerm s nf
     ; messages                   t          = messages                   s
     ; sentJoins                  t          = sentJoins                  s
@@ -614,8 +582,8 @@ definition PublishedConfigurationsValid :: stpred where "PublishedConfigurations
 
 definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfigurations s \<equiv>
   insert (initialConfiguration s)
-    { c. (\<exists> mPub \<in> sentPublishRequests s. config mPub = c
-           \<and> (\<exists> mCom \<in> messages s. isCommit mCom \<and> term mCom = term mPub \<and> version  mCom = version  mPub)) }"
+    { c. (\<exists> mprq \<in> sentPublishRequests s. config mprq = c
+           \<and> (\<exists> mc \<in> sentCommits s. term mc = term mprq \<and> version mc = version mprq)) }" (* TODO use msgTermVersion *)
 
 definition CommittedConfigurationsPublished :: stpred where "CommittedConfigurationsPublished s \<equiv>
   CommittedConfigurations s \<subseteq> PublishedConfigurations s"
@@ -748,14 +716,14 @@ definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat \<Ri
   \<forall>n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastAcceptedConfiguration s n \<in> { lastCommittedConfiguration s n, lastPublishedConfiguration s n }"
 
 definition CommitMeansLaterPublicationsBelow :: "nat \<Rightarrow> stpred" where "CommitMeansLaterPublicationsBelow termBound s \<equiv>
-  \<forall> mc \<in> messages s. \<forall> mp \<in> sentPublishRequests s. isCommit mc \<longrightarrow> term mc < term mp \<longrightarrow> term mp < termBound \<longrightarrow> version mc < version mp"
+  \<forall> mc \<in> sentCommits s. \<forall> mp \<in> sentPublishRequests s. term mc < term mp \<longrightarrow> term mp < termBound \<longrightarrow> version mc < version mp"
 
 definition CommittedVersionsUniqueBelow :: "nat \<Rightarrow> stpred" where "CommittedVersionsUniqueBelow termBound s \<equiv>
-  \<forall> mc1 mc2. mc1 \<in> messages s \<longrightarrow> mc2 \<in> messages s \<longrightarrow> isCommit mc1 \<longrightarrow> isCommit mc2 \<longrightarrow> term mc1 < termBound \<longrightarrow> term mc2 < termBound
+  \<forall> mc1 mc2. mc1 \<in> sentCommits s \<longrightarrow> mc2 \<in> sentCommits s \<longrightarrow> term mc1 < termBound \<longrightarrow> term mc2 < termBound
     \<longrightarrow> version mc1 = version mc2 \<longrightarrow> term mc1 = term mc2"
 
 definition CommitMeansPublishResponse :: stpred where "CommitMeansPublishResponse s \<equiv>
-  \<forall> mc \<in> messages s. isCommit mc \<longrightarrow> (\<exists> mp \<in> sentPublishResponses s. term mc = term mp \<and> version mc = version mp)"
+  \<forall> mc \<in> sentCommits s. \<exists> mp \<in> sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
 
 definition PublishResponseMeansPublishRequest :: stpred where "PublishResponseMeansPublishRequest s \<equiv>
   \<forall> mprs \<in> sentPublishResponses s. \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
@@ -1432,30 +1400,30 @@ lemma CommittedVersionsUniqueBelow_step:
   shows "(s,t) \<Turnstile> CommittedVersionsUniqueBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>mc1 mc2. \<lbrakk> mc1 \<in> messages s; mc2 \<in> messages s; isCommit mc1; isCommit mc2; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2 \<rbrakk> \<Longrightarrow> term mc1 = term mc2"
-    and hyp2: "\<And>mc mp. \<lbrakk> mc \<in> messages t; mp \<in> sentPublishRequests t; isCommit mc; term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
+  have  hyp1: "\<And>mc1 mc2. \<lbrakk> mc1 \<in> sentCommits s; mc2 \<in> sentCommits s; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2 \<rbrakk> \<Longrightarrow> term mc1 = term mc2"
+    and hyp2: "\<And>mc mp. \<lbrakk> mc \<in> sentCommits t; mp \<in> sentPublishRequests t; term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
     and hyp3: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
-    and hyp4: "\<And>mc. \<lbrakk> mc\<in>messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
+    and hyp4: "\<And>mc. mc \<in> sentCommits s \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
     unfolding CommittedVersionsUniqueBelow_def CommitMeansLaterPublicationsBelow_def PublishResponseMeansPublishRequest_def
       CommitMeansPublishResponse_def
     by metis+
 
-  from hyp1 have hyp1': "\<And>mc1 mc2. \<lbrakk> mc1 \<in> messages s; mc2 \<in> messages s; isCommit mc1; isCommit mc2; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2; term mc1 < term mc2 \<rbrakk> \<Longrightarrow> False"
+  from hyp1 have hyp1': "\<And>mc1 mc2. \<lbrakk> mc1 \<in> sentCommits s; mc2 \<in> sentCommits s; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2; term mc1 < term mc2 \<rbrakk> \<Longrightarrow> False"
     using nat_neq_iff by blast
 
   {
     fix mc1 mc2
-    assume prem: "mc1 \<in> messages t" "mc2 \<in> messages t" "isCommit mc1" "isCommit mc2" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2" "term mc1 < term mc2"
+    assume prem: "mc1 \<in> sentCommits t" "mc2 \<in> sentCommits t" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2" "term mc1 < term mc2"
     from Next prem prem hyp1' have False
     proof (cases rule: square_Next_cases)
       case (HandlePublishResponse_Quorum nf nm)
 
-      have messageE: "\<And>m P. m \<in> messages t \<Longrightarrow> (m \<in> messages s \<Longrightarrow> P) \<Longrightarrow> (\<And>nd. m = \<lparr>source = nm, dest = nd, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr> \<Longrightarrow> P) \<Longrightarrow> P"
+      have messageE: "\<And>m P. m \<in> sentCommits t \<Longrightarrow> (m \<in> sentCommits s \<Longrightarrow> P) \<Longrightarrow> (\<And>nd. m = \<lparr>source = nm, dest = nd, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr> \<Longrightarrow> P) \<Longrightarrow> P"
         unfolding HandlePublishResponse_Quorum by auto
 
-      from `mc2 \<in> messages t` obtain mprs where mprs: "mprs \<in> sentPublishResponses s" "term mprs = term mc2" "version mprs = version mc2"
+      from `mc2 \<in> sentCommits t` obtain mprs where mprs: "mprs \<in> sentPublishResponses s" "term mprs = term mc2" "version mprs = version mc2"
       proof (elim messageE)
-        assume mc2: "mc2 \<in> messages s"
+        assume mc2: "mc2 \<in> sentCommits s"
         with prem have "\<exists>mp\<in>sentPublishResponses s. term mc2 = term mp \<and> version mc2 = version mp" by (intro hyp4, simp_all)
         thus thesis by (elim bexE, intro that, auto)
       next
@@ -1479,7 +1447,7 @@ proof -
   note not_lt = this
   {
     fix mc1 mc2 :: Message
-    assume prem: "mc1 \<in> messages t" "mc2 \<in> messages t" "isCommit mc1" "isCommit mc2" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2"
+    assume prem: "mc1 \<in> sentCommits t" "mc2 \<in> sentCommits t" "term mc1 < termBound" "term mc2 < termBound" "version mc1 = version mc2"
     consider (lt) "term mc1 < term mc2" | (eq) "term mc1 = term mc2" | (gt) "term mc2 < term mc1" using nat_neq_iff by blast
     hence "term mc1 = term mc2"
     proof cases
@@ -1537,21 +1505,21 @@ lemma CommitMeansPublishResponse_step:
   shows "(s,t) \<Turnstile> CommitMeansPublishResponse$"
 proof -
   from assms
-  have  hyp1: "\<And>mc. \<lbrakk> mc \<in> messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
+  have  hyp1: "\<And>mc. mc \<in> sentCommits s \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
     unfolding CommitMeansPublishResponse_def
     by metis+
 
   {
     fix mc
-    assume prem: "mc \<in> messages t" "isCommit mc"
+    assume prem: "mc \<in> sentCommits t"
     from Next prem hyp1 have "\<exists>mp\<in>sentPublishResponses t. term mc = term mp \<and> version mc = version mp"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
-      from prem have "mc \<in> messages s" by (auto simp add: ClientRequest)
+      from prem have "mc \<in> sentCommits s" by (auto simp add: ClientRequest)
       with hyp1 prem show ?thesis by (auto simp add: ClientRequest)
     next
       case (HandlePublishResponse_Quorum nf nm)
-      hence pr: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> messages s" by simp
+      hence pr: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> sentPublishResponses s" by simp
       from prem hyp1 have "\<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
       proof (unfold HandlePublishResponse_Quorum, elim UnE UnionE rangeE, simp_all)
         fix n
@@ -1572,7 +1540,7 @@ lemma CommitMeansLaterPublicationsBelow_step:
   shows "(s,t) \<Turnstile> CommitMeansLaterPublicationsBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>mc mp. \<lbrakk> mc \<in> messages s; mp \<in> sentPublishRequests s; isCommit mc;
+  have  hyp1: "\<And>mc mp. \<lbrakk> mc \<in> sentCommits s; mp \<in> sentPublishRequests s;
                          term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
     and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
         else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
@@ -1582,11 +1550,11 @@ proof -
 
   {
     fix mc mp
-    assume prem: "mc \<in> messages t" "mp \<in> sentPublishRequests t" "isCommit mc" "term mc < term mp" "term mp < termBound"
+    assume prem: "mc \<in> sentCommits t" "mp \<in> sentPublishRequests t" "term mc < term mp" "term mp < termBound"
     from Next prem hyp1 have "version mc < version mp"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
-      from prem have mc_messages: "mc \<in> messages s" by (auto simp add: ClientRequest)
+      from prem have mc_messages: "mc \<in> sentCommits s" by (auto simp add: ClientRequest)
       from prem have "mp \<in> sentPublishRequests s \<or> mp \<in> newPublishRequests" by (auto simp add: ClientRequest)
       thus ?thesis
       proof (elim disjE)
@@ -2045,7 +2013,7 @@ lemma CommittedConfigurations_increasing: "CommittedConfigurations s \<subseteq>
 proof -
   from Next have initialConfiguration_eq[simp]: "initialConfiguration t = initialConfiguration s" by (cases rule: square_Next_cases)
   show "CommittedConfigurations s \<subseteq> CommittedConfigurations t"
-    unfolding CommittedConfigurations_def using messages_increasing
+    unfolding CommittedConfigurations_def using sentCommits_increasing sentPublishRequests_increasing
     by (auto simp add: CommittedConfigurations_def sentPublishRequests_def)
 qed
 
@@ -2201,11 +2169,10 @@ proof -
           unfolding CommittedConfigurations_def
         proof (intro insertI2 CollectI bexI conjI)
           from mPub show "config mPub = lastAcceptedConfiguration s n" by simp
-          show "isCommit \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr>" by (simp add: nf_eq_n)
           from mPub show "mPub \<in> sentPublishRequests t" by (simp add: HandleCommitRequest)
           from HandleCommitRequest mPub show "term \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = term mPub"
             "version  \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = version  mPub"
-            "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> messages t"
+            "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> sentCommits t"
             by (simp_all add: nf_eq_n)
         qed
         thus ?thesis by (simp add: HandleCommitRequest nf_eq_n)
