@@ -517,6 +517,9 @@ definition FiniteMessagesTo :: stpred
 definition FiniteJoins :: stpred
   where "FiniteJoins s \<equiv> finite (sentJoins s)"
 
+definition FinitePublishResponses :: stpred
+  where "FinitePublishResponses s \<equiv> finite (sentPublishResponses s)"
+
 definition FiniteTermVersions :: stpred
   where "FiniteTermVersions s \<equiv> finite (msgTermVersion ` messages s)"
 
@@ -725,6 +728,21 @@ definition JoinLimitsPublishResponses :: stpred where "JoinLimitsPublishResponse
 definition JoinTermNewerThanLastAccepted :: stpred where "JoinTermNewerThanLastAccepted s \<equiv>
   \<forall> mj \<in> sentJoins s. laTerm mj < term mj"
 
+definition JoinVotesFinite :: stpred where "JoinVotesFinite s \<equiv>
+  \<forall> n. finite (joinVotes s n)"
+
+definition PublishVotesOnlyCollectedByLeadersBelow :: "nat \<Rightarrow> stpred" where "PublishVotesOnlyCollectedByLeadersBelow termBound s \<equiv>
+  \<forall> n. currentTerm s n < termBound \<longrightarrow> publishVotes s n \<noteq> {} \<longrightarrow> electionWon s n"
+
+definition PublishVotesAreResponsesBelow :: "nat \<Rightarrow> stpred" where "PublishVotesAreResponsesBelow termBound s \<equiv>
+  \<forall> n. currentTerm s n < termBound \<longrightarrow> publishVotes s n \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+
+definition CommitMeansQuorumBelow :: "nat \<Rightarrow> stpred" where "CommitMeansQuorumBelow termBound s \<equiv>
+  \<forall> mc \<in> sentCommits s. term mc < termBound \<longrightarrow> (\<exists> mprq \<in> sentPublishRequests s.
+      msgTermVersion mprq = msgTermVersion mc
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (config mprq)
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (commConf mprq))"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def sentPublishRequests_def) 
@@ -733,6 +751,305 @@ context
   fixes s t                                                                                                      
   assumes Next: "(s,t) \<Turnstile> [Next]_vars"
 begin
+
+lemma sentJoins_increasing: "sentJoins s \<subseteq> sentJoins t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentPublishRequests_increasing: "sentPublishRequests s \<subseteq> sentPublishRequests t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentPublishResponses_increasing: "sentPublishResponses s \<subseteq> sentPublishResponses t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentCommits_increasing: "sentCommits s \<subseteq> sentCommits t" using Next by (cases rule: square_Next_cases, auto)
+lemma terms_increasing: shows "currentTerm s n \<le> currentTerm t n" using Next by (cases rule: square_Next_cases, auto)
+
+lemma JoinVotesFinite_step:
+  assumes "s \<Turnstile> JoinVotesFinite"
+  shows "(s,t) \<Turnstile> JoinVotesFinite$"
+  using Next assms
+  unfolding JoinVotesFinite_def
+  by (cases rule: square_Next_cases, auto)
+
+lemma PublishVotesOnlyCollectedByLeadersBelow_step:
+  assumes "s \<Turnstile> PublishVotesOnlyCollectedByLeadersBelow termBound"
+  assumes "s \<Turnstile> ElectionWonQuorumBelow termBound"
+  assumes "s \<Turnstile> JoinVotesFinite"
+  shows "(s,t) \<Turnstile> PublishVotesOnlyCollectedByLeadersBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. \<lbrakk> currentTerm s n < termBound; publishVotes s n \<noteq> {} \<rbrakk> \<Longrightarrow> electionWon s n"
+    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
+    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
+    and hyp4: "\<And>n. finite (joinVotes s n)"
+    unfolding PublishVotesOnlyCollectedByLeadersBelow_def ElectionWonQuorumBelow_def JoinVotesFinite_def
+    by auto
+
+  {
+    fix n
+    assume prem: "currentTerm t n < termBound" "publishVotes t n \<noteq> {}"
+    from Next hyp1 prem
+    have "electionWon t n"
+    proof (cases rule: square_Next_cases)
+      case (HandleStartJoin nf nm tm newJoinRequest)
+      with hyp1 prem show ?thesis by (cases "nf = n", auto)
+    next
+      case (RestartNode nr)
+      with hyp1 prem show ?thesis by (cases "nr = n", auto)
+    next
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      with hyp1 prem show ?thesis by (cases "nm = n", auto)
+    next
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      with prem hyp1 have electionWon: "electionWon s n"
+        and termBound: "currentTerm s n < termBound"
+        and joinVotes_increasing: "joinVotes s n \<subseteq> joinVotes t n" by auto
+
+      from HandleJoinRequest hyp4 [of n] have joinVotes_finite: "finite (joinVotes t n)" by auto
+      
+      have q1: "IsQuorum (joinVotes t n) (lastCommittedConfiguration s n)"
+        by (intro IsQuorum_mono [OF hyp2] electionWon termBound joinVotes_increasing joinVotes_finite)
+      have q2: "IsQuorum (joinVotes t n) (lastAcceptedConfiguration s n)"
+        by (intro IsQuorum_mono [OF hyp3] electionWon termBound joinVotes_increasing joinVotes_finite)
+
+      from q1 q2 electionWon
+      show ?thesis unfolding HandleJoinRequest by auto
+    next
+      case (HandlePublishResponse_NoQuorum nf nm)
+      with hyp1 prem show ?thesis by (cases "nm = n", auto)
+    next
+      case (HandlePublishResponse_Quorum nf nm)
+      with hyp1 prem show ?thesis by (cases "nm = n", auto)
+    next
+    qed auto
+  }
+  thus ?thesis by (auto simp add: PublishVotesOnlyCollectedByLeadersBelow_def)
+qed
+
+lemma PublishVotesAreResponsesBelow_step:
+  assumes "s \<Turnstile> PublishVotesAreResponsesBelow termBound"
+  assumes "s \<Turnstile> PublishVotesOnlyCollectedByLeadersBelow termBound"
+  assumes "s \<Turnstile> ElectionWonQuorumBelow termBound"
+  assumes "s \<Turnstile> JoinVotesFinite"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  shows "(s,t) \<Turnstile> PublishVotesAreResponsesBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>n. currentTerm s n < termBound \<Longrightarrow> publishVotes s n \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+    and hyp2: "\<And>n. \<lbrakk> currentTerm s n < termBound; publishVotes s n \<noteq> {} \<rbrakk> \<Longrightarrow> electionWon s n"
+    and hyp3: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
+    and hyp4: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastAcceptedConfiguration s n)"
+    and hyp5: "\<And>n. finite (joinVotes s n)"
+    and hyp6: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    unfolding PublishVotesAreResponsesBelow_def PublishVotesOnlyCollectedByLeadersBelow_def ElectionWonQuorumBelow_def JoinVotesFinite_def
+      ElectionWonImpliesStartedJoin_def
+    by auto
+
+  {
+    fix n
+    assume prem: "currentTerm t n < termBound"
+
+    from Next hyp1 [of n] prem have "publishVotes t n \<subseteq> source ` { mprs \<in> sentPublishResponses t. msgTermVersion mprs = termVersion n t }"
+    proof (cases rule: square_Next_cases)
+      case (HandleJoinRequest nf nm laTerm_m laVersion_m)
+      consider (ne) "nm \<noteq> n" | (noVotes) "nm = n" "publishVotes t n = {}" | (votes) "nm = n" "publishVotes t n \<noteq> {}" by auto
+      thus ?thesis
+      proof cases
+        case ne with hyp1 [of n] prem show ?thesis by (auto simp add: HandleJoinRequest termVersion_def)
+      next
+        case noVotes thus ?thesis by simp
+      next
+        case votes
+
+        note termVersion_def
+
+        from HandleJoinRequest prem hyp2 votes have electionWon: "electionWon s n"
+          and termBound: "currentTerm s n < termBound"
+          and joinVotes_increasing: "joinVotes s n \<subseteq> joinVotes t n" by auto
+
+        from HandleJoinRequest hyp5 [of n] have joinVotes_finite: "finite (joinVotes t n)" by auto
+
+        have q1: "IsQuorum (joinVotes t n) (lastCommittedConfiguration s n)"
+          by (intro IsQuorum_mono [OF hyp3] electionWon termBound joinVotes_increasing joinVotes_finite)
+        have q2: "IsQuorum (joinVotes t n) (lastAcceptedConfiguration s n)"
+          by (intro IsQuorum_mono [OF hyp4] electionWon termBound joinVotes_increasing joinVotes_finite)
+
+        from q1 q2 have electionWon': "electionWon t n" by (simp add: HandleJoinRequest votes)
+
+        from HandleJoinRequest have startedJoinSinceLastReboot: "startedJoinSinceLastReboot s nm" "startedJoinSinceLastReboot t nm" by simp_all
+
+        from startedJoinSinceLastReboot electionWon' electionWon have tv_eq: "termVersion n t = termVersion n s"
+          by (simp add: termVersion_def votes HandleJoinRequest)
+
+        from prem show ?thesis by (simp add: HandleJoinRequest tv_eq, intro hyp1)
+      qed
+    next
+      case (HandlePublishResponse_NoQuorum nf nm)
+      show ?thesis 
+      proof (cases "nm = n")
+        case False with hyp1 [of n] prem show ?thesis
+          by (auto simp add: HandlePublishResponse_NoQuorum termVersion_def)
+      next
+        case True
+
+        have termVersion_simp: "termVersion n t = termVersion n s"
+          unfolding termVersion_def HandlePublishResponse_NoQuorum by simp
+
+        have "publishVotes t n = insert nf (publishVotes s n)" by (simp add: HandlePublishResponse_NoQuorum True)
+        also have "... \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+        proof (intro subsetI, elim insertE)
+          fix nf' assume "nf' \<in> publishVotes s n"
+          also from prem have "publishVotes s n \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+            by (intro hyp1, simp add: HandlePublishResponse_NoQuorum)
+          finally show "nf' \<in> ..." .
+        next
+          fix nf' assume "nf' = nf"
+          with HandlePublishResponse_NoQuorum hyp6 show "nf' \<in> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+            by (intro image_eqI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"],
+                auto simp add: termVersion_def True msgTermVersion_def)
+        qed
+        also have "... = source ` { mprs \<in> sentPublishResponses t. msgTermVersion mprs = termVersion n t }"
+          unfolding termVersion_def HandlePublishResponse_NoQuorum by simp
+        finally show ?thesis .
+      qed
+    next
+      case (HandlePublishResponse_Quorum nf nm)
+      show ?thesis 
+      proof (cases "nm = n")
+        case False with hyp1 [of n] prem show ?thesis
+          by (auto simp add: HandlePublishResponse_Quorum termVersion_def)
+      next
+        case True
+
+        have termVersion_simp: "termVersion n t = termVersion n s"
+          unfolding termVersion_def HandlePublishResponse_Quorum by simp
+
+        have "publishVotes t n = insert nf (publishVotes s n)" by (simp add: HandlePublishResponse_Quorum True)
+        also have "... \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+        proof (intro subsetI, elim insertE)
+          fix nf' assume "nf' \<in> publishVotes s n"
+          also from prem have "publishVotes s n \<subseteq> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+            by (intro hyp1, simp add: HandlePublishResponse_Quorum)
+          finally show "nf' \<in> ..." .
+        next
+          fix nf' assume "nf' = nf"
+          with HandlePublishResponse_Quorum hyp6 show "nf' \<in> source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s }"
+            by (intro image_eqI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"],
+                auto simp add: termVersion_def True msgTermVersion_def)
+        qed
+        also have "... = source ` { mprs \<in> sentPublishResponses t. msgTermVersion mprs = termVersion n t }"
+          unfolding termVersion_def HandlePublishResponse_Quorum by simp
+        finally show ?thesis .
+      qed
+    qed (auto simp add: termVersion_def)
+  }
+  thus ?thesis unfolding PublishVotesAreResponsesBelow_def by auto
+qed
+
+lemma FinitePublishResponses_step:
+  assumes "s \<Turnstile> FinitePublishResponses"
+  shows "(s,t) \<Turnstile> FinitePublishResponses$"
+  using Next assms
+  unfolding FinitePublishResponses_def
+  by (cases rule: square_Next_cases, auto)
+
+lemma CommitMeansQuorumBelow_step:
+  assumes "s \<Turnstile> CommitMeansQuorumBelow termBound"
+  assumes "s \<Turnstile> FinitePublishResponses"
+  assumes "s \<Turnstile> PublishVotesAreResponsesBelow termBound"
+  assumes "s \<Turnstile> PublishResponseMeansPublishRequest"
+  assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
+  shows "(s,t) \<Turnstile> CommitMeansQuorumBelow termBound$"
+proof -
+  from assms
+  have   hyp1: "\<And>mc. \<lbrakk> mc \<in> sentCommits s; term mc < termBound \<rbrakk> \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s.
+      msgTermVersion mprq = msgTermVersion mc
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (config mprq)
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (commConf mprq)"
+    and hyp2: "finite (sentPublishResponses s)"
+    and hyp3: "\<And>n. currentTerm s n < termBound \<Longrightarrow> publishVotes s n \<subseteq> source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion n s}"
+    and hyp4: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
+    and hyp5: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
+    unfolding CommitMeansQuorumBelow_def FinitePublishResponses_def PublishVotesAreResponsesBelow_def
+      PublishResponseMeansPublishRequest_def ElectionWonImpliesStartedJoin_def
+    by auto
+
+  {
+    fix mc
+    assume prem: "mc \<in> sentCommits t" "term mc < termBound"
+
+    have "\<exists> mprq \<in> sentPublishRequests t.
+      msgTermVersion mprq = msgTermVersion mc
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc }) (config mprq)
+    \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc }) (commConf mprq)"
+    proof (cases "mc \<in> sentCommits s")
+      case True
+      with prem hyp1
+      obtain mprq where mprq: "mprq \<in> sentPublishRequests s"
+        and tv: "msgTermVersion mprq = msgTermVersion mc"
+        and q1: "IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (config mprq)"
+        and q2: "IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (commConf mprq)"
+        by auto
+
+      have IsQuorum_step: "\<And>cf. IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc}) cf
+             \<Longrightarrow> IsQuorum (source ` {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}) cf"
+      proof (rule IsQuorum_mono [OF _ image_mono finite_imageI])
+        from sentPublishResponses_increasing show "{mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc} \<subseteq> {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}" by auto
+        from Next hyp2 show "finite {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}" by (cases rule: square_Next_cases, auto)
+      qed
+
+      show ?thesis
+      proof (intro bexI [where x = mprq] conjI tv IsQuorum_step q1 q2)
+        from mprq sentPublishRequests_increasing show "mprq \<in> sentPublishRequests t" by auto
+      qed
+    next
+      case isNewCommit: False
+      from Next hyp1 prem isNewCommit
+      show ?thesis
+      proof (cases rule: square_Next_cases)
+        case (HandlePublishResponse_Quorum nf nm)
+        from prem isNewCommit
+        obtain nd where mc_eq: "mc = \<lparr>source = nm, dest = nd, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr>"
+          unfolding HandlePublishResponse_Quorum
+          by auto
+
+        from HandlePublishResponse_Quorum 
+        have "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> sentPublishResponses s" by simp
+        from hyp4 [OF this] obtain mprq where mprq: "mprq \<in> sentPublishRequests s" "term mprq = currentTerm s nm" "version mprq = lastPublishedVersion s nm"
+          by auto
+
+        have tv_eq: "msgTermVersion mc = termVersion nm s"
+          using hyp5 HandlePublishResponse_Quorum
+          by (auto simp add: msgTermVersion_def termVersion_def mc_eq)
+
+        have IsQuorum_step: "\<And>cf. IsQuorum (publishVotes t nm) cf
+             \<Longrightarrow> IsQuorum (source ` {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}) cf"
+        proof (rule IsQuorum_mono [OF _ _ finite_imageI])
+          have "publishVotes t nm = insert nf (publishVotes s nm)" by (simp add: HandlePublishResponse_Quorum)
+          also have "... \<subseteq> source ` {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}"
+            unfolding HandlePublishResponse_Quorum tv_eq
+          proof (intro insert_subsetI hyp3)
+            from prem show "currentTerm s nm < termBound" by (simp add: mc_eq)
+            from HandlePublishResponse_Quorum 
+            have "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> sentPublishResponses s" by simp
+            thus "nf \<in> source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = termVersion nm s}"
+              using hyp5 HandlePublishResponse_Quorum
+              by (intro image_eqI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"], auto simp add: msgTermVersion_def termVersion_def)
+          qed
+          finally show "publishVotes t nm \<subseteq> ..." .
+          from Next hyp2 show "finite {mprs \<in> sentPublishResponses t. msgTermVersion mprs = msgTermVersion mc}" by (cases rule: square_Next_cases, auto)
+        qed
+
+        show ?thesis
+        proof (intro bexI conjI IsQuorum_step)
+          from mprq sentPublishRequests_increasing show "mprq \<in> sentPublishRequests t" by auto
+          show "msgTermVersion mprq = msgTermVersion mc" by (simp add: mprq msgTermVersion_def mc_eq)
+
+          from `IsQuorum (publishVotes t nm) (lastCommittedConfiguration s nm)`
+          show "IsQuorum (publishVotes t nm) (commConf mprq)" sorry
+
+          from `IsQuorum (publishVotes t nm) (lastPublishedConfiguration s nm)`
+          show "IsQuorum (publishVotes t nm) (config mprq)" sorry
+        qed
+      qed auto
+    qed
+  }
+  thus ?thesis by (auto simp add: CommitMeansQuorumBelow_def)
+qed
 
 lemma JoinTermNewerThanLastAccepted_step:
   assumes "s \<Turnstile> JoinTermNewerThanLastAccepted"
@@ -1745,15 +2062,6 @@ proof -
   thus ?thesis by (simp add: JoinRequestsUniquePerTerm_def)
 qed
 
-lemma messages_increasing: "messages s \<subseteq> messages t" using Next by (cases rule: square_Next_cases, auto) (* TODO not necessary? *)
-lemma sentJoins_increasing: "sentJoins s \<subseteq> sentJoins t" using Next by (cases rule: square_Next_cases, auto)
-lemma sentPublishRequests_increasing: "sentPublishRequests s \<subseteq> sentPublishRequests t" using Next by (cases rule: square_Next_cases, auto)
-lemma sentPublishResponses_increasing: "sentPublishResponses s \<subseteq> sentPublishResponses t" using Next by (cases rule: square_Next_cases, auto)
-lemma sentCommits_increasing: "sentCommits s \<subseteq> sentCommits t" using Next by (cases rule: square_Next_cases, auto)
-
-lemma terms_increasing:
-  shows "currentTerm s n \<le> currentTerm t n"
-  using Next by (cases rule: square_Next_cases, auto)
 
 lemma JoinVotesFaithful_step:
   assumes "s \<Turnstile> JoinVotesFaithful"
