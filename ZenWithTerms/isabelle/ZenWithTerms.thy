@@ -646,7 +646,7 @@ definition CurrentConfigurationSource :: stpred where "CurrentConfigurationSourc
   \<forall>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
 
 definition CurrentConfigurationMsgSource :: stpred where "CurrentConfigurationMsgSource s \<equiv>
-  \<forall>m \<in> messages s. isPublishRequest m \<longrightarrow> commConf m \<in> CommittedConfigurations s"
+  \<forall>m \<in> sentPublishRequests s. commConf m \<in> CommittedConfigurations s"
 
 definition PublicationsInPastTerm :: stpred where "PublicationsInPastTerm s \<equiv>
   \<forall>m \<in> messages s. isPublishRequest m \<longrightarrow> term m \<le> currentTerm s (source m)"
@@ -2181,7 +2181,7 @@ proof -
   have  hyp1: "\<And>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
     and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion  s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
       else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion  s n = version  m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
-    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> commConf m \<in> CommittedConfigurations s"
+    and hyp3: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> commConf m \<in> CommittedConfigurations s"
     and hyp4: "\<And>m. m \<in> messages s \<Longrightarrow> term m > 0"
     by (auto simp add: CurrentConfigurationSource_def CurrentConfigurationMsgSource_def LastAcceptedDataSource_def MessagePositiveTerm_def)
 
@@ -2247,23 +2247,19 @@ lemma CurrentConfigurationMsgSource_step:
 proof -
   from assms
   have  hyp1: "\<And>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
-    and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> commConf m \<in> CommittedConfigurations s"
+    and hyp2: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> commConf m \<in> CommittedConfigurations s"
     by (auto simp add: CurrentConfigurationSource_def CurrentConfigurationMsgSource_def)
 
   {
     fix m
-    assume prem: "m \<in> messages t" "isPublishRequest m"
+    assume prem: "m \<in> sentPublishRequests t"
     with Next hyp2 have "commConf m \<in> CommittedConfigurations s"
     proof (cases rule: square_Next_cases)
-      case (HandleStartJoin nf nm tm newJoinRequest)
-      from prem have "m \<in> messages s" unfolding HandleStartJoin by auto
-      with hyp2 prem show "commConf m \<in> CommittedConfigurations s" by simp
-    next
       case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
-      with prem have "m \<in> messages s \<or> m \<in> newPublishRequests" by auto
+      with prem have "m \<in> sentPublishRequests s \<or> m \<in> newPublishRequests" by auto
       thus ?thesis
       proof (elim disjE)
-        assume "m : messages s"
+        assume "m : sentPublishRequests s"
         with hyp2 prem show "commConf m \<in> CommittedConfigurations s" by simp
       next
         assume "m \<in> newPublishRequests"
@@ -2272,14 +2268,6 @@ proof -
         also note hyp1
         finally show ?thesis .
       qed
-    next
-      case (HandlePublishRequest nf nm newVersion  newValue newConfig commConfig)
-      from prem have "m \<in> messages s" unfolding HandlePublishRequest by auto
-      with hyp2 prem show "commConf m \<in> CommittedConfigurations s" by simp
-    next
-      case (HandlePublishResponse_Quorum nf nm)
-      from prem have "m \<in> messages s" unfolding HandlePublishResponse_Quorum by auto
-      with hyp2 prem show "commConf m \<in> CommittedConfigurations s" by simp
     qed (auto simp add: CommittedConfigurations_def)
     also note CommittedConfigurations_increasing
     finally have "commConf m \<in> CommittedConfigurations t" .
@@ -4152,7 +4140,7 @@ proof -
   proof invariant
     show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init P"
       by (auto simp add: Spec_def Initial_def Init_def P_def 
-          CurrentConfigurationSource_def CurrentConfigurationMsgSource_def CommittedConfigurations_def)
+          CurrentConfigurationSource_def CurrentConfigurationMsgSource_def CommittedConfigurations_def sentPublishRequests_def)
 
     show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable P"
     proof (intro Stable actionI temp_impI)
