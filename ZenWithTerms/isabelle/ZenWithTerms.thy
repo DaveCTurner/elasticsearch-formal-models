@@ -617,11 +617,10 @@ definition LastAcceptedDataSource :: stpred where "LastAcceptedDataSource s \<eq
         then lastAcceptedVersion       s n = 0
            \<and> lastAcceptedValue         s n = initialValue s
            \<and> lastAcceptedConfiguration s n = initialConfiguration s
-        else (\<exists> m \<in> messages s. isPublishRequest m
-                                        \<and> lastAcceptedTerm          s n = term     m
-                                        \<and> lastAcceptedVersion       s n = version  m
-                                        \<and> lastAcceptedValue         s n = value    m
-                                        \<and> lastAcceptedConfiguration s n = config   m)"
+        else (\<exists> m \<in> sentPublishRequests s. lastAcceptedTerm          s n = term     m
+                                         \<and> lastAcceptedVersion       s n = version  m
+                                         \<and> lastAcceptedValue         s n = value    m
+                                         \<and> lastAcceptedConfiguration s n = config   m)"
 
 definition PublishedConfigurations :: "Node set set stfun" where "PublishedConfigurations s \<equiv>
   insert (initialConfiguration s) (config ` { m \<in> messages s. isPublishRequest m })"
@@ -1146,7 +1145,7 @@ proof -
     and hyp10: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists>joinPayload. \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> sentJoins s"
     and hyp11: "finite (sentJoins s)"
     and hyp12: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
-        else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
+        else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp13: "\<And>m. m \<in> messages s \<Longrightarrow> 0 < term m"
     and hyp14: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
     and hyp15: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists>m\<in>messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n"
@@ -1253,7 +1252,7 @@ proof -
               by (simp add: mprq'_def)
 
             from hyp12 [of nm] False 
-            obtain mprq'' where mprq'': "mprq'' \<in> messages s" "isPublishRequest mprq''" "lastAcceptedTerm s nm = term mprq''"
+            obtain mprq'' where mprq'': "mprq'' \<in> sentPublishRequests s" "lastAcceptedTerm s nm = term mprq''"
               "lastAcceptedVersion s nm = version mprq''" "lastAcceptedValue s nm = value mprq''" "lastAcceptedConfiguration s nm = config mprq''"
               by auto
 
@@ -1265,6 +1264,7 @@ proof -
               also from new have "... = tm" by simp
               also from prem have "... < termBound" by simp
               finally show "term mprq'' < termBound" .
+              from mprq'' show "mprq'' \<in> messages s" "isPublishRequest mprq''" by (auto simp add: sentPublishRequests_def)
             qed
 
             have mprq_publishResponsesBelow: "mprs \<in> publishResponsesBelow nm tm t"
@@ -1594,7 +1594,7 @@ proof -
   have  hyp1: "\<And>mc mp. \<lbrakk> mc \<in> messages s; mp \<in> messages s; isCommit mc; isPublishRequest mp;
                          term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
     and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
-        else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
+        else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp3: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
     unfolding CommitMeansLaterPublicationsBelow_def LastAcceptedDataSource_def LastAcceptedTermInPast_def
     by metis+
@@ -1623,7 +1623,7 @@ proof -
         proof cases
           case gt
           with hyp2 [of nm]
-          obtain mp' where mp': "mp' \<in> messages s" "isPublishRequest mp'" "lastAcceptedTerm s nm = term mp'"
+          obtain mp' where mp': "mp' \<in> sentPublishRequests s" "lastAcceptedTerm s nm = term mp'"
             "lastAcceptedVersion s nm = version mp'" "lastAcceptedValue s nm = value mp'" "lastAcceptedConfiguration s nm = config mp'"
             by auto
           have "version mc < version mp'"
@@ -1634,6 +1634,7 @@ proof -
             also from mp have "... = term mp" by (simp add: mp_simps)
             also from prem have "... < termBound" by simp
             finally show "term mp' < termBound".
+            from mp' show "mp' \<in> messages s" "isPublishRequest mp'" by (auto simp add: sentPublishRequests_def)
           qed
           also have "version mp' < version mp" using mp' mp_simps by simp
           finally show ?thesis by simp
@@ -1979,11 +1980,10 @@ proof -
         then lastAcceptedVersion       s n = 0
            \<and> lastAcceptedValue         s n = initialValue s
            \<and> lastAcceptedConfiguration s n = initialConfiguration s
-        else (\<exists> m \<in> messages s. isPublishRequest m
-                                        \<and> lastAcceptedTerm          s n = term     m
-                                        \<and> lastAcceptedVersion       s n = version  m
-                                        \<and> lastAcceptedValue         s n = value    m
-                                        \<and> lastAcceptedConfiguration s n = config   m)"
+        else (\<exists> m \<in> sentPublishRequests s. lastAcceptedTerm          s n = term     m
+                                         \<and> lastAcceptedVersion       s n = version  m
+                                         \<and> lastAcceptedValue         s n = value    m
+                                         \<and> lastAcceptedConfiguration s n = config   m)"
 
   from assms
   have  hyp1: "\<And>n. P s n"
@@ -2019,15 +2019,15 @@ proof -
       thus ?thesis by (simp add: term'0 P_def)
     next
       case term'Pos: False
-      from Next term'Pos hyp1 have "\<exists> m \<in> messages t. isPublishRequest m
-                                        \<and> lastAcceptedTerm          t n = term     m
+      from Next term'Pos hyp1 have "\<exists> m \<in> sentPublishRequests t.
+                                          lastAcceptedTerm          t n = term     m
                                         \<and> lastAcceptedVersion       t n = version  m
                                         \<and> lastAcceptedValue         t n = value    m
                                         \<and> lastAcceptedConfiguration t n = config   m"
       proof (cases rule: square_Next_cases)
         case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
-        with term'Pos hyp1 have "\<exists> m \<in> messages s. isPublishRequest m
-                                        \<and> lastAcceptedTerm          s n = term     m
+        with term'Pos hyp1 have "\<exists> m \<in> sentPublishRequests s.
+                                          lastAcceptedTerm          s n = term     m
                                         \<and> lastAcceptedVersion       s n = version  m
                                         \<and> lastAcceptedValue         s n = value    m
                                         \<and> lastAcceptedConfiguration s n = config   m"
@@ -2047,8 +2047,8 @@ proof -
         qed
       next
         case (HandlePublishResponse_Quorum nf nm)
-        with term'Pos hyp1 have "\<exists> m \<in> messages s. isPublishRequest m
-                                        \<and> lastAcceptedTerm          s n = term     m
+        with term'Pos hyp1 have "\<exists> m \<in> sentPublishRequests s.
+                                          lastAcceptedTerm          s n = term     m
                                         \<and> lastAcceptedVersion       s n = version  m
                                         \<and> lastAcceptedValue         s n = value    m
                                         \<and> lastAcceptedConfiguration s n = config   m"
@@ -2180,7 +2180,7 @@ proof -
   from assms
   have  hyp1: "\<And>n. lastCommittedConfiguration s n \<in> CommittedConfigurations s"
     and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion  s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
-      else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion  s n = version  m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
+      else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion  s n = version  m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> commConf m \<in> CommittedConfigurations s"
     and hyp4: "\<And>m. m \<in> messages s \<Longrightarrow> term m > 0"
     by (auto simp add: CurrentConfigurationSource_def CurrentConfigurationMsgSource_def LastAcceptedDataSource_def MessagePositiveTerm_def)
@@ -2213,16 +2213,16 @@ proof -
         from HandleCommitRequest hyp4 [of "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s nf\<rparr>\<rparr>"]
         have "0 < lastAcceptedTerm s nf" by simp
         with hyp2 [of n]
-        obtain mPub where mPub: "mPub \<in> messages s" "isPublishRequest mPub" "lastAcceptedTerm s n = term mPub"
+        obtain mPub where mPub: "mPub \<in> sentPublishRequests s" "lastAcceptedTerm s n = term mPub"
           "lastAcceptedVersion  s n = version  mPub" "lastAcceptedValue s n = value mPub" "lastAcceptedConfiguration s n = config mPub"
           unfolding nf_eq_n by auto
 
         have "lastAcceptedConfiguration s n \<in> CommittedConfigurations t"
           unfolding CommittedConfigurations_def
         proof (intro insertI2 CollectI bexI conjI)
-          from mPub show "isPublishRequest mPub" "config mPub = lastAcceptedConfiguration s n" by simp_all
+          from mPub show "isPublishRequest mPub" "config mPub = lastAcceptedConfiguration s n" by (simp_all add: sentPublishRequests_def)
           show "isCommit \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr>" by (simp add: nf_eq_n)
-          from mPub show "mPub \<in> messages t" by (simp add: HandleCommitRequest)
+          from mPub show "mPub \<in> messages t" by (simp add: HandleCommitRequest sentPublishRequests_def)
           from HandleCommitRequest mPub show "term \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = term mPub"
             "version  \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = version  mPub"
             "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> messages t"
@@ -2549,35 +2549,35 @@ proof -
         then lastAcceptedVersion       s n = 0
            \<and> lastAcceptedValue         s n = initialValue s
            \<and> lastAcceptedConfiguration s n = initialConfiguration s
-        else (\<exists> m \<in> messages s. isPublishRequest m
-                                        \<and> lastAcceptedTerm          s n = term     m
-                                        \<and> lastAcceptedVersion       s n = version  m
-                                        \<and> lastAcceptedValue         s n = value    m
-                                        \<and> lastAcceptedConfiguration s n = config   m)"
-    by (auto simp add: BasedOnBasedOn_def PublishRequestBasedOn_def LastAcceptedDataSource_def)
+        else (\<exists> m \<in> sentPublishRequests s. lastAcceptedTerm          s n = term     m
+                                         \<and> lastAcceptedVersion       s n = version  m
+                                         \<and> lastAcceptedValue         s n = value    m
+                                         \<and> lastAcceptedConfiguration s n = config   m)"
+    unfolding BasedOnBasedOn_def PublishRequestBasedOn_def LastAcceptedDataSource_def
+    by metis+
 
   {
     fix tiCurr tPrev iPrev
-    assume prem: "(tiCurr, TermVersion  tPrev iPrev) \<in> basedOn t" "0 < iPrev"
+    assume prem: "(tiCurr, TermVersion tPrev iPrev) \<in> basedOn t" "0 < iPrev"
     from Next hyp1 prem
-    have "\<exists> tiPrevPrev. (TermVersion  tPrev iPrev, tiPrevPrev) \<in> basedOn t"
+    have "\<exists> tiPrevPrev. (TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn t"
     proof (cases rule: square_Next_cases)
-      case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
       from prem consider
-        (s) "(tiCurr, TermVersion  tPrev iPrev) \<in> basedOn s"
+        (s) "(tiCurr, TermVersion tPrev iPrev) \<in> basedOn s"
         | (new) "tPrev = lastAcceptedTerm s nm" "iPrev = lastAcceptedVersion  s nm"
-          "tiCurr = TermVersion  (currentTerm s nm) (Suc (lastAcceptedVersion  s nm))"
+          "tiCurr = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion  s nm))"
         unfolding ClientRequest by auto
       thus ?thesis
       proof cases
         case s
-        with prem have "\<exists> tiPrevPrev. (TermVersion  tPrev iPrev, tiPrevPrev) \<in> basedOn s" by (intro hyp1)
+        with prem have "\<exists> tiPrevPrev. (TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn s" by (intro hyp1)
         thus ?thesis by (auto simp add: ClientRequest)
       next
         case new with hyp3 [of nm] prem
-        obtain m where m: "m \<in> messages s" "isPublishRequest m" "term m = tPrev" "version  m = iPrev"
+        obtain m where m: "m \<in> sentPublishRequests s" "term m = tPrev" "version  m = iPrev"
           by (cases "lastAcceptedTerm s nm = 0", auto)
-        with hyp2 obtain tiPrevPrev where "(TermVersion  tPrev iPrev, tiPrevPrev) \<in> basedOn s" by auto
+        with hyp2 obtain tiPrevPrev where "(TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn s" unfolding sentPublishRequests_def by auto
         thus ?thesis unfolding ClientRequest by auto
       qed
     qed auto
