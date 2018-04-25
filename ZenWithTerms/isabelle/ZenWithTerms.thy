@@ -315,8 +315,8 @@ proof -
     from p obtain jp where jp: "payload m = Join jp" by (cases "payload m", auto simp add: HandleJoinRequest_def)
     from p have term_m: "term m = currentTerm s (dest m)" by (auto simp add: HandleJoinRequest_def)
 
-    have jp_eq: "jp = \<lparr>jp_laTerm = laTerm m, jp_laVersion  = laVersion  m\<rparr>"
-      by (simp add: laTerm_def jp laVersion_def)
+    from jp have jp_eq: "jp = \<lparr>jp_laTerm = laTerm m, jp_laVersion  = laVersion  m\<rparr>"
+      by (cases m, cases jp, simp)
 
     have "m = \<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = Join jp \<rparr>"
       by (simp add: jp term_m)
@@ -339,8 +339,8 @@ proof -
     from p obtain prq where prq: "payload m = PublishRequest prq" by (cases "payload m", auto simp add: HandlePublishRequest_def)
     from p have term_m: "term m = currentTerm s (dest m)" by (auto simp add: HandlePublishRequest_def)
 
-    have prq_eq: "prq = \<lparr>prq_version  = version  m, prq_value = value m, prq_config = config m, prq_commConf = commConf m\<rparr>"
-      by (simp add: version_def prq value_def config_def commConf_def)
+    from prq have prq_eq: "prq = \<lparr>prq_version  = version  m, prq_value = value m, prq_config = config m, prq_commConf = commConf m\<rparr>"
+      by (cases m, cases prq, simp)
 
     have "m = \<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = PublishRequest prq \<rparr>"
       by (simp add: prq term_m)
@@ -358,11 +358,11 @@ proof -
     from p obtain prs where prs: "payload m = PublishResponse prs" by (cases "payload m", auto simp add: HandlePublishResponse_def)
     from p have term_m: "term m = currentTerm s (dest m)" by (auto simp add: HandlePublishResponse_def)
 
-    have prq_eq: "prs = \<lparr>prs_version  = version m\<rparr>" by (simp add: version_def prs)
+    from prs have prs_eq: "prs = \<lparr>prs_version  = version m\<rparr>" by (cases m, cases prs, simp)
 
     have "m = \<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = PublishResponse prs \<rparr>"
       by (simp add: prs term_m)
-    with p prq_eq have is_message: "\<lparr> source = source m, dest = dest m, term = currentTerm s (dest m)
+    with p prs_eq have is_message: "\<lparr> source = source m, dest = dest m, term = currentTerm s (dest m)
             , payload = PublishResponse \<lparr>prs_version  = version  m\<rparr> \<rparr> \<in> messages s" by simp
 
     show P
@@ -381,7 +381,7 @@ proof -
   next
     fix m
     assume p: "(s,t) \<Turnstile> #m \<in> $messages" "(s,t) \<Turnstile> HandleCommitRequest (dest m) m"
-    from p have payload_eq: "payload m = Commit \<lparr>c_version  = lastAcceptedVersion  s (dest m)\<rparr>"
+    from p have payload_eq: "payload m = Commit \<lparr>c_version = lastAcceptedVersion s (dest m)\<rparr>"
       by (cases "payload m", auto simp add: HandleCommitRequest_def version_def)
 
     have "m = \<lparr> source = source m, dest = dest m, term = term m, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s (dest m)\<rparr> \<rparr>" by (simp add: payload_eq)
@@ -718,7 +718,7 @@ proof -
       with prem hyp1 show ?thesis
       proof (elim disjE)
         assume mj: "mj = newJoinRequest"
-        with HandleStartJoin have "laTerm mj = lastAcceptedTerm s nf" by (simp add: laTerm_def)
+        with HandleStartJoin have "laTerm mj = lastAcceptedTerm s nf" by (simp add: (*laTerm_def TODO*))
         also have "... \<le> currentTerm s nf" by (intro hyp2)
         also have "... < term mj" by (simp add: mj HandleStartJoin)
         finally show ?thesis .
@@ -757,7 +757,7 @@ proof -
         also assume "mj = newJoinRequest"
         with HandleStartJoin prem
         have "laTermVersion s (source mprs) = TermVersion (laTerm mj) (laVersion mj)"
-          by (auto simp add: laTerm_def laVersion_def laTermVersion_def)
+          by (auto simp add: (*laTerm_def TODO*) (*laVersion_def TODO*) laTermVersion_def)
         finally show ?thesis .
       qed metis
     next
@@ -826,12 +826,12 @@ proof -
   proof (cases rule: square_Next_cases)
     case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
     have "msgTermVersion ` messages t \<subseteq> insert (TermVersion (currentTerm s nm) newPublishVersion) (msgTermVersion ` messages s)"
-      unfolding ClientRequest by (auto simp add: msgTermVersion_def version_def)
+      unfolding ClientRequest by (auto simp add: msgTermVersion_def (*version_def TODO*))
     with hyp1 show ?thesis by (meson finite.insertI finite_subset)
   next
     case (HandlePublishResponse_Quorum nf nm)
     have "msgTermVersion ` messages t \<subseteq> insert (TermVersion (currentTerm s nm) (lastPublishedVersion s nm)) (msgTermVersion ` messages s)"
-      unfolding HandlePublishResponse_Quorum by (auto simp add: msgTermVersion_def version_def)
+      unfolding HandlePublishResponse_Quorum by (auto simp add: msgTermVersion_def (*version_def TODO*))
     with hyp1 show ?thesis by (meson finite.insertI finite_subset)
   qed auto
   thus ?thesis by (auto simp add: FiniteTermVersions_def)
@@ -939,7 +939,7 @@ proof -
         next
           assume "mprq \<in> newPublishRequests"
           hence msgTermVersion_mprq: "msgTermVersion mprq = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
-            by (auto simp add: ClientRequest msgTermVersion_def version_def)
+            by (auto simp add: ClientRequest msgTermVersion_def (*version_def TODO*))
 
           have tv: "tv \<in> msgTermVersion ` publishResponses" and tv_max: "\<And>tv'. tv' \<in> msgTermVersion ` publishResponses \<Longrightarrow> tv' \<le> tv"
           proof -
@@ -1342,7 +1342,7 @@ proof -
         finally show ?thesis by simp
       next
         assume m: "m = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
-        hence "msgTermVersion m = TermVersion (currentTerm s (source m)) newVersion" by (simp add: msgTermVersion_def version_def)
+        hence "msgTermVersion m = TermVersion (currentTerm s (source m)) newVersion" by (simp add: msgTermVersion_def (*version_def TODO*))
         also have "... \<le> laTermVersion t (source m)" by (simp add: laTermVersion_def HandlePublishRequest m)
         finally show ?thesis by simp
       qed
@@ -1378,7 +1378,7 @@ proof -
         case True
         show ?thesis
           by (intro bexI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"],
-              auto simp add: True isPublishResponse_def msgTermVersion_def laTermVersion_def HandlePublishRequest version_def)
+              auto simp add: True isPublishResponse_def msgTermVersion_def laTermVersion_def HandlePublishRequest (*version_def TODO*))
       qed
     qed (auto simp add: laTermVersion_def)
   }
@@ -1424,7 +1424,7 @@ proof -
         assume mc2: "mc2 = \<lparr>source = nm, dest = nd2, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr>"
         from HandlePublishResponse_Quorum show thesis
           by (intro that [of "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"],
-              auto simp add: mc2 version_def isPublishResponse_def)
+              auto simp add: mc2 (*version_def TODO*) isPublishResponse_def)
       qed
 
       hence "\<exists> mprq \<in> messages s. isPublishRequest mprq \<and> term mprs = term mprq \<and> version mprs = version mprq"
@@ -1488,7 +1488,7 @@ proof -
       with prem hyp1 show ?thesis
         unfolding HandlePublishRequest
         by (elim insertE, intro bexI [where x = "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"],
-            auto simp add: isPublishRequest_def version_def)
+            auto simp add: isPublishRequest_def (*version_def TODO*))
     qed (auto simp add: isPublishResponse_def)
   }
   thus ?thesis by (simp add: PublishResponseMeansPublishRequest_def)
@@ -1518,7 +1518,7 @@ proof -
       proof (unfold HandlePublishResponse_Quorum, elim UnE UnionE rangeE, simp_all)
         fix n
         from pr show "\<exists>mp\<in>messages s. isPublishResponse mp \<and> currentTerm s nm = term mp \<and> lastPublishedVersion s nm = version mp"
-          by (intro bexI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"], auto simp add: isPublishResponse_def version_def)
+          by (intro bexI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"], auto simp add: isPublishResponse_def (*version_def TODO*))
       qed
       thus ?thesis by (auto simp add: HandlePublishResponse_Quorum)
     qed (auto simp add: isCommit_def)
@@ -1556,7 +1556,7 @@ proof -
       next
         assume mp: "mp \<in> newPublishRequests"
         hence mp_simps: "source mp = nm" "term mp = currentTerm s nm" "version mp = newPublishVersion" "newPublishVersion = Suc (lastAcceptedVersion s nm)" "config mp = vs" "commConf mp = lastCommittedConfiguration s nm"
-          by (auto simp add: ClientRequest version_def config_def commConf_def)
+          by (auto simp add: ClientRequest (*version_def TODO*) (*config_def TODO*) (*commConf_def TODO*))
 
         consider (gt) "term mc < lastAcceptedTerm s nm"
           | (le) "lastAcceptedTerm s nm \<le> term mc"
@@ -1995,7 +1995,7 @@ proof -
           case True
           with term'Pos hyp1 HandlePublishRequest show ?thesis
             by (intro bexI [where x = "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version  = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"],
-                auto simp add: isPublishRequest_def version_def value_def config_def)
+                auto simp add: isPublishRequest_def (*version_def TODO*) (*value_def TODO*) (*config_def TODO*))
         qed
       next
         case (HandlePublishResponse_Quorum nf nm)
@@ -2048,7 +2048,7 @@ proof -
         also from HandlePublishRequest have "newConfig \<in> config ` {m \<in> messages s. isPublishRequest m}"
         proof (intro image_eqI)
           show "newConfig = config \<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
-            by (simp add: config_def)
+            by (simp add: (*config_def TODO*))
         qed (simp add: isPublishRequest_def)
         also have "... \<subseteq> PublishedConfigurations s"
           by (auto simp add: PublishedConfigurations_def)
@@ -2101,7 +2101,7 @@ proof -
         have "vs \<in> config ` {m \<in> messages t. isPublishRequest m}"
         proof (intro image_eqI)
           show "vs = config (prq nm)"
-            by (auto simp add: config_def prq_def)
+            by (auto simp add: (*config_def TODO*) prq_def)
           have "prq nm \<in> newPublishRequests" by (auto simp add: prq_def ClientRequest)
           also have "... \<subseteq> {m \<in> messages t. isPublishRequest m}"
             by (auto simp add: ClientRequest isPublishRequest_def)
@@ -2147,7 +2147,7 @@ proof -
         case True
         hence "lastCommittedConfiguration t n = commConf \<lparr>source = nm, dest = nf,
               term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version  = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
-          by (simp add: HandlePublishRequest commConf_def)
+          by (simp add: HandlePublishRequest (*commConf_def TODO*))
         also from HandlePublishRequest have "... \<in> CommittedConfigurations s"
           by (intro hyp3, auto simp add: isPublishRequest_def)
         also note CommittedConfigurations_increasing
@@ -2178,7 +2178,7 @@ proof -
           from HandleCommitRequest mPub show "term \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = term mPub"
             "version  \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = version  mPub"
             "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> messages t"
-            by (simp_all add: nf_eq_n version_def)
+            by (simp_all add: nf_eq_n (*version_def TODO*))
         qed
         thus ?thesis by (simp add: HandleCommitRequest nf_eq_n)
       qed
@@ -2220,7 +2220,7 @@ proof -
       next
         assume "m \<in> newPublishRequests"
         hence "commConf m = lastCommittedConfiguration s nm"
-          by (auto simp add: ClientRequest commConf_def)
+          by (auto simp add: ClientRequest (*commConf_def TODO*))
         also note hyp1
         finally show ?thesis .
       qed
@@ -2262,7 +2262,7 @@ proof -
         assume "m \<in> messages s" with prem hyp show ?thesis by simp
       next
         assume "m \<in> newPublishRequests"
-        hence "config m = vs" by (auto simp add: ClientRequest config_def)
+        hence "config m = vs" by (auto simp add: ClientRequest (*config_def TODO*))
         with ClientRequest show ?thesis by simp
       qed
     qed (auto simp add: isPublishRequest_def)
@@ -2300,7 +2300,7 @@ proof -
     fix m
     assume prem: "m \<in> messages t" "isPublishRequest m"
     from Next hyp prem have "0 < version  m"
-      by (cases rule: square_Next_cases, auto simp add: isPublishRequest_def version_def)
+      by (cases rule: square_Next_cases, auto simp add: isPublishRequest_def (*version_def TODO*))
   }
   thus ?thesis by (auto simp add: PublishRequestVersionPositive_def)
 qed
@@ -2441,7 +2441,7 @@ proof -
         finally show ?thesis by auto
       next
         assume "m \<in> newPublishRequests"
-        thus ?thesis unfolding ClientRequest by (elim UN_E insertE, auto simp add: version_def)
+        thus ?thesis unfolding ClientRequest by (elim UN_E insertE, auto simp add: (*version_def TODO*))
       qed
     qed (auto simp add: isPublishRequest_def)
   }
@@ -2478,7 +2478,7 @@ proof -
       next
         case new
         have "\<exists>m\<in>newPublishRequests. isPublishRequest m \<and> term m = tCurr \<and> version  m = iCurr"
-          by (auto simp add: ClientRequest new version_def isPublishRequest_def)
+          by (auto simp add: ClientRequest new (*version_def TODO*) isPublishRequest_def)
         thus ?thesis unfolding ClientRequest by auto
       qed
     qed (auto simp add: isPublishRequest_def)
@@ -2692,7 +2692,7 @@ proof -
         hence config_m: "config m = vs"
           and commConf_m: "commConf m = lastCommittedConfiguration s (source m)"
           and source_m: "source m = nm" 
-          by (auto simp add: ClientRequest config_def commConf_def)
+          by (auto simp add: ClientRequest (*config_def TODO*) (*commConf_def TODO*))
 
         from ClientRequest have joinVotes_eq: "joinVotes t = joinVotes s" by simp
 
@@ -2787,7 +2787,7 @@ proof -
         have config_eqs: "joinVotes t = joinVotes s"
           "lastCommittedConfiguration t n = commConf publishRequest"
           "lastAcceptedConfiguration t n = config publishRequest"
-          by (simp_all add: HandlePublishRequest nf_eq_n commConf_def config_def publishRequest_def)
+          by (simp_all add: HandlePublishRequest nf_eq_n (*commConf_def TODO*) (*config_def TODO*) publishRequest_def)
 
         from HandlePublishRequest prem
         have n_source: "n = source publishRequest"
@@ -3052,7 +3052,7 @@ proof -
           hence source_eq: "source m = nm" by (auto simp add: ClientRequest)
 
           from m_new have 1: "msgTermVersion  m = TermVersion  (currentTerm s nm) (Suc (lastAcceptedVersion  s nm))"
-            by (auto simp add: msgTermVersion_def ClientRequest version_def)
+            by (auto simp add: msgTermVersion_def ClientRequest (*version_def TODO*))
 
           from ClientRequest have "electionWon s nm" by simp
           hence "startedJoinSinceLastReboot s nm" by (intro hyp2, auto simp add: IsQuorum_def)
@@ -3146,7 +3146,7 @@ proof -
         also have "... = termVersion  (source m2) s" by (simp add: source_eq)
         also from old_new have "... = termVersion  nm s" by (auto simp add: ClientRequest)
         also from ClientRequest startedJoinSinceLastReboot_nm have "... < termVersion  nm t" by (auto simp add: termVersion_def)
-        also from ClientRequest old_new startedJoinSinceLastReboot_nm have "... = msgTermVersion  m2" by (auto simp add: msgTermVersion_def termVersion_def version_def)
+        also from ClientRequest old_new startedJoinSinceLastReboot_nm have "... = msgTermVersion  m2" by (auto simp add: msgTermVersion_def termVersion_def (*version_def TODO*))
         also from prem have "... = msgTermVersion  m1" by (simp add: msgTermVersion_def)
         finally show ?thesis by simp
       next
@@ -3155,7 +3155,7 @@ proof -
         also have "... = termVersion  (source m1) s" by (simp add: source_eq)
         also from new_old have "... = termVersion  nm s" by (auto simp add: ClientRequest)
         also from ClientRequest startedJoinSinceLastReboot_nm have "... < termVersion  nm t" by (auto simp add: termVersion_def)
-        also from ClientRequest new_old startedJoinSinceLastReboot_nm have "... = msgTermVersion  m1" by (auto simp add: msgTermVersion_def termVersion_def version_def)
+        also from ClientRequest new_old startedJoinSinceLastReboot_nm have "... = msgTermVersion  m1" by (auto simp add: msgTermVersion_def termVersion_def (*version_def TODO*))
         also from prem have "... = msgTermVersion  m2" by (simp add: msgTermVersion_def)
         finally show ?thesis by simp
       qed
@@ -3356,13 +3356,13 @@ proof -
         case old_old with prem hyp1 have "(TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn s" by simp
         with ClientRequest show ?thesis by auto
       next
-        case new_new with prem show ?thesis by (auto simp add: ClientRequest version_def)
+        case new_new with prem show ?thesis by (auto simp add: ClientRequest (*version_def TODO*))
       next
         case new_old
         from new_old prem have nm_eq: "nm = source m2" by (intro hyp4, auto simp add: ClientRequest)
         from new_old prem have "msgTermVersion  m2 \<le> termVersion  nm s" unfolding nm_eq by (intro hyp2, auto)
         with new_old prem show ?thesis
-          by (auto simp add: msgTermVersion_def termVersion_def startedJoinSinceLastReboot less_eq_TermVersion_def ClientRequest version_def)
+          by (auto simp add: msgTermVersion_def termVersion_def startedJoinSinceLastReboot less_eq_TermVersion_def ClientRequest (*version_def TODO*))
       next
         case old_new
         from old_new prem have nm_eq: "nm = source m1" "nm = source m2" by (intro hyp4, auto simp add: ClientRequest)
@@ -3380,7 +3380,7 @@ proof -
         qed
 
         moreover from old_new prem have "(TermVersion (term m2) (version m2), TermVersion (lastAcceptedTerm s nm) (version m2 - 1)) \<in> basedOn t"
-          by (auto simp add: ClientRequest isPublishRequest_def version_def)
+          by (auto simp add: ClientRequest isPublishRequest_def (*version_def TODO*))
 
         moreover from old_new have "term m2 = currentTerm s nm" by (auto simp add: ClientRequest)
 
@@ -3617,7 +3617,7 @@ proof -
           with prem show ?thesis by (simp add: ClientRequest)
         next
           assume m_new: "m \<in> newPublishRequests"
-          thus ?thesis by (auto simp add: ClientRequest version_def)
+          thus ?thesis by (auto simp add: ClientRequest (*version_def TODO*))
         qed
       qed
     next
@@ -3688,7 +3688,7 @@ proof -
         have "msgTermVersion msg \<le> termVersion (source msg) s"
           by (intro hyp3, simp_all add: msg_def nf_eq_n isPublishRequest_def)
         hence "newVersion \<le> lastPublishedVersion s n"
-          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nf_eq_n nm_eq_n less_eq_TermVersion_def)
+          by (auto simp add: msgTermVersion_def msg_def (*version_def TODO*) termVersion_def n_properties nf_eq_n nm_eq_n less_eq_TermVersion_def)
 
         show ?thesis
         proof (cases "currentTerm s nf = lastAcceptedTerm s nf")
@@ -3703,7 +3703,7 @@ proof -
               by (simp add: msg_def nm_eq_n nf_eq_n)
           qed
           thus ?thesis
-            by (simp add: msg_def version_def nm_eq_n HandlePublishRequest nf_eq_n)
+            by (simp add: msg_def (*version_def TODO*) nm_eq_n HandlePublishRequest nf_eq_n)
         next
           case True
           with HandlePublishRequest have "lastAcceptedVersion s nf < newVersion" by simp
@@ -3792,7 +3792,7 @@ proof -
       thus ?thesis
       proof (elim disjE)
         assume "m \<in> newPublishRequests"
-        thus ?thesis by (auto simp add: ClientRequest config_def)
+        thus ?thesis by (auto simp add: ClientRequest (*config_def TODO*))
       next
         assume m_msg: "m \<in> messages s"
         show ?thesis
@@ -3882,7 +3882,7 @@ proof -
         have "msgTermVersion msg \<le> termVersion (source msg) s"
           by (intro hyp3, simp_all add: msg_def nf_eq_n isPublishRequest_def)
         hence "newVersion \<le> lastPublishedVersion s n"
-          by (auto simp add: msgTermVersion_def msg_def version_def termVersion_def n_properties nm_eq_n nf_eq_n less_eq_TermVersion_def)
+          by (auto simp add: msgTermVersion_def msg_def (*version_def TODO*) termVersion_def n_properties nm_eq_n nf_eq_n less_eq_TermVersion_def)
 
         have "lastPublishedVersion s n = newVersion" 
         proof (cases "currentTerm s nf = lastAcceptedTerm s nf")
@@ -3896,7 +3896,7 @@ proof -
             from False show "currentTerm s (source msg) \<noteq> lastAcceptedTerm s (source msg)"
               by (simp add: msg_def nm_eq_n nf_eq_n)
           qed
-          thus "lastPublishedVersion s n = newVersion" by (simp add: msg_def version_def nm_eq_n)
+          thus "lastPublishedVersion s n = newVersion" by (simp add: msg_def (*version_def TODO*) nm_eq_n)
         next
           case True
           with HandlePublishRequest have "lastAcceptedVersion s nf < newVersion" by simp
@@ -3910,7 +3910,7 @@ proof -
           show "lastPublishedVersion s n = newVersion" by (auto simp add: nf_eq_n)
         qed
 
-        have "newConfig = config msg" by (simp add: msg_def config_def)
+        have "newConfig = config msg" by (simp add: msg_def (*config_def TODO*))
         also have "config msg = lastPublishedConfiguration s (source msg)"
         proof (intro hyp7)
           from HandlePublishRequest show "msg \<in> messages s" by (auto simp add: msg_def)
@@ -3919,7 +3919,7 @@ proof -
             by (auto simp add: msg_def HandlePublishRequest nf_eq_n nm_eq_n)
           from `lastPublishedVersion s n = newVersion`
           show "version msg = lastPublishedVersion s (source msg)"
-            by (simp add: msg_def nm_eq_n nf_eq_n version_def)
+            by (simp add: msg_def nm_eq_n nf_eq_n (*version_def TODO*))
         qed
         finally have "newConfig = lastPublishedConfiguration s n" by (simp add: msg_def nm_eq_n)
         thus ?thesis by (simp add: HandlePublishRequest nf_eq_n)
