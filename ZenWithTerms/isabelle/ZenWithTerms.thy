@@ -669,7 +669,7 @@ definition PublishResponseForLastAccepted :: stpred where "PublishResponseForLas
   \<forall>n. 0 < lastAcceptedTerm s n \<longrightarrow> (\<exists> m \<in> messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n)"
 
 definition TermWinningConfigurationHasQuorumBelow :: "nat \<Rightarrow> stpred" where "TermWinningConfigurationHasQuorumBelow termBound s \<equiv>
-  \<forall> tm < termBound. \<forall> n. (tm, n) \<in> leaderHistory s \<longrightarrow> IsQuorum (source ` { j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j }) (termWinningConfiguration tm s)"
+  \<forall> tm < termBound. \<forall> n. (tm, n) \<in> leaderHistory s \<longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = n \<and> term j = tm }) (termWinningConfiguration tm s)"
 
 definition PublishRequestVersionPositive :: stpred where "PublishRequestVersionPositive s \<equiv>
   \<forall> m \<in> messages s. isPublishRequest m \<longrightarrow> 0 < version  m"
@@ -1139,7 +1139,7 @@ lemma TermWinningConfigurationHasQuorumBelow_step:
 proof -
   from assms
   have  hyp1: "\<And>tm n. \<lbrakk> tm < termBound; (tm, n) \<in> leaderHistory s \<rbrakk>
-    \<Longrightarrow> IsQuorum (source ` {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}) (termWinningConfiguration tm s)"
+    \<Longrightarrow> IsQuorum (source ` {j \<in> sentJoins s. dest j = n \<and> term j = tm }) (termWinningConfiguration tm s)"
     unfolding TermWinningConfigurationHasQuorumBelow_def
     by auto
 
@@ -1184,19 +1184,19 @@ proof -
     }
     note termWinningConfiguration[simp] = this
 
-    from Next hyp1 prem have "IsQuorum (source ` {j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j}) (termWinningConfiguration tm t)"
+    from Next hyp1 prem have "IsQuorum (source ` {j \<in> sentJoins t. dest j = n \<and> term j = tm}) (termWinningConfiguration tm t)"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm' newJoinRequest)
       hence simps1: "leaderHistory t = leaderHistory s" "termWinningConfiguration tm t = termWinningConfiguration tm s" by simp_all
       show ?thesis
       proof (cases "newJoinRequest \<in> {j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j}")
         case False
-        hence simps2: "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
+        hence simps2: "{j \<in> sentJoins t. dest j = n \<and> term j = tm} = {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
           by (auto simp add: HandleStartJoin)
         from prem show ?thesis unfolding simps1 simps2 by (intro hyp1, simp_all)
       next
         case True
-        hence simps2: "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = insert newJoinRequest {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
+        hence simps2: "{j \<in> sentJoins t. dest j = n \<and> term j = tm} = insert newJoinRequest {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
           by (auto simp add: HandleStartJoin)
         from prem show ?thesis unfolding simps1 simps2 image_insert by (intro IsQuorum_insert hyp1, simp_all)
       qed
