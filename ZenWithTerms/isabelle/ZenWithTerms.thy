@@ -573,7 +573,7 @@ definition PublishedConfigurationsValid :: stpred where "PublishedConfigurations
 definition CommittedConfigurations :: "Node set set stfun" where "CommittedConfigurations s \<equiv>
   insert (initialConfiguration s)
     { c. (\<exists> mprq \<in> sentPublishRequests s. config mprq = c
-           \<and> (\<exists> mc \<in> sentCommits s. term mc = term mprq \<and> version mc = version mprq)) }" (* TODO use msgTermVersion *)
+           \<and> (\<exists> mc \<in> sentCommits s. msgTermVersion mc = msgTermVersion mprq)) }"
 
 definition CommittedConfigurationsPublished :: stpred where "CommittedConfigurationsPublished s \<equiv>
   CommittedConfigurations s \<subseteq> PublishedConfigurations s"
@@ -2160,10 +2160,9 @@ proof -
         proof (intro insertI2 CollectI bexI conjI)
           from mPub show "config mPub = lastAcceptedConfiguration s n" by simp
           from mPub show "mPub \<in> sentPublishRequests t" by (simp add: HandleCommitRequest)
-          from HandleCommitRequest mPub show "term \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = term mPub"
-            "version  \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> = version  mPub"
+          from HandleCommitRequest mPub show "msgTermVersion \<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion s n\<rparr>\<rparr> = msgTermVersion mPub"
             "\<lparr>source = nm, dest = n, term = currentTerm s n, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s n\<rparr>\<rparr> \<in> sentCommits t"
-            by (simp_all add: nf_eq_n)
+            by (simp_all add: nf_eq_n msgTermVersion_def)
         qed
         thus ?thesis by (simp add: HandleCommitRequest nf_eq_n)
       qed
