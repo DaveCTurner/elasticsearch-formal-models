@@ -623,7 +623,7 @@ definition LastAcceptedDataSource :: stpred where "LastAcceptedDataSource s \<eq
                                          \<and> lastAcceptedConfiguration s n = config   m)"
 
 definition PublishedConfigurations :: "Node set set stfun" where "PublishedConfigurations s \<equiv>
-  insert (initialConfiguration s) (config ` { m \<in> messages s. isPublishRequest m })"
+  insert (initialConfiguration s) (config ` sentPublishRequests s)"
 
 definition PublishedConfigurationsValid :: stpred where "PublishedConfigurationsValid s \<equiv>
   PublishedConfigurations s \<subseteq> ValidConfigs"
@@ -785,7 +785,7 @@ definition JoinTermNewerThanLastAccepted :: stpred where "JoinTermNewerThanLastA
 
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
-  by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def) 
+  by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def sentPublishRequests_def) 
 
 context
   fixes s t                                                                                                      
@@ -2099,7 +2099,7 @@ proof -
             by simp
         qed simp
         also have "... \<subseteq> PublishedConfigurations s"
-          by (auto simp add: PublishedConfigurations_def)
+          by (auto simp add: PublishedConfigurations_def sentPublishRequests_def)
         finally show ?thesis by simp
       next
         case False with HandlePublishRequest hyp1 show ?thesis by simp
@@ -2156,7 +2156,7 @@ proof -
           finally show "prq nm \<in> {m \<in> messages t. isPublishRequest m}" .
         qed
         also have "... \<subseteq> PublishedConfigurations t"
-          unfolding PublishedConfigurations_def by auto
+          unfolding PublishedConfigurations_def by (auto simp add: sentPublishRequests_def)
         finally show ?thesis by (auto simp add: ClientRequest True)
       qed
     next
@@ -2291,7 +2291,7 @@ lemma PublishedConfigurationsValid_step:
   assumes "s \<Turnstile> PublishedConfigurationsValid"
   shows "(s,t) \<Turnstile> PublishedConfigurationsValid$"
 proof -
-  from assms have hyp: "\<And>m. \<lbrakk> m \<in> messages s; isPublishRequest m \<rbrakk> \<Longrightarrow> config m \<in> ValidConfigs"
+  from assms have hyp: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> config m \<in> ValidConfigs"
     and init: "initialConfiguration s \<in> ValidConfigs"
     by (auto simp add: PublishedConfigurationsValid_def PublishedConfigurations_def)
 
@@ -2300,14 +2300,14 @@ proof -
   moreover
   {
     fix m
-    assume prem: "m \<in> messages t" "isPublishRequest m"
+    assume prem: "m \<in> sentPublishRequests t"
     from Next hyp prem have "config m \<in> ValidConfigs"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion  newPublishRequests newEntry matchingElems newTransitiveElems)
-      with prem have "m \<in> messages s \<or> m \<in> newPublishRequests" by auto
+      with prem have "m \<in> sentPublishRequests s \<or> m \<in> newPublishRequests" by auto
       thus ?thesis
       proof (elim disjE)
-        assume "m \<in> messages s" with prem hyp show ?thesis by simp
+        assume "m \<in> sentPublishRequests s" with prem hyp show ?thesis by simp
       next
         assume "m \<in> newPublishRequests"
         hence "config m = vs" by (auto simp add: ClientRequest)
@@ -4177,7 +4177,7 @@ qed
 lemma PublishedConfigurationsValid_INV: "\<turnstile> Spec \<longrightarrow> \<box>PublishedConfigurationsValid"
 proof invariant
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init PublishedConfigurationsValid"
-    by (auto simp add: Spec_def Initial_def Init_def PublishedConfigurationsValid_def PublishedConfigurations_def)
+    by (auto simp add: Spec_def Initial_def Init_def PublishedConfigurationsValid_def PublishedConfigurations_def sentPublishRequests_def)
 
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable PublishedConfigurationsValid"
   proof (intro Stable actionI temp_impI)
