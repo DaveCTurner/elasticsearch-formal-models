@@ -54,15 +54,7 @@ proof (intro notI)
   finally show False by simp
 qed
 
-definition isPublishResponse :: "Message \<Rightarrow> bool" where "isPublishResponse m \<equiv> case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isCommit          :: "Message \<Rightarrow> bool" where "isCommit          m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
-
-lemma isPublishResponse_simps[simp]:
-  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
-  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
-  "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = True"
-  "\<And>pl. isPublishResponse \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
-  by (simp_all add: isPublishResponse_def)
 
 lemma isCommit_simps[simp]:
   "\<And>pl. isCommit \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
@@ -73,7 +65,7 @@ lemma isCommit_simps[simp]:
 
 definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False }"
-definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. isPublishResponse m }"
+definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. isCommit m }"
 
 lemma sentJoins_simps[simp]:
@@ -544,7 +536,7 @@ definition laTermVersion :: "(Node \<Rightarrow> TermVersion) stfun"
   where "laTermVersion s n \<equiv> TermVersion (lastAcceptedTerm s n) (lastAcceptedVersion s n)"
 
 definition publishResponsesBelow :: "Node \<Rightarrow> nat \<Rightarrow> Message set stfun" where "publishResponsesBelow n tm s \<equiv>
-  { mprs \<in> messages s. source mprs = n \<and> isPublishResponse mprs \<and> term mprs < tm }"
+  { mprs \<in> sentPublishResponses s. source mprs = n \<and> term mprs < tm }"
 
 (* The termWinningConfiguration is the configuration that was used to win an election in a
 particular term. It is the lastAcceptedConfiguration of the winning node at the time the election
@@ -644,10 +636,10 @@ definition PublicationsInPastTerm :: stpred where "PublicationsInPastTerm s \<eq
   \<forall>m \<in> sentPublishRequests s. term m \<le> currentTerm s (source m)"
 
 definition PublishResponseBeforeLastAccepted :: stpred where "PublishResponseBeforeLastAccepted s \<equiv>
-  \<forall>m \<in> messages s. isPublishResponse m \<longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
+  \<forall>m \<in> sentPublishResponses s. msgTermVersion m \<le> laTermVersion s (source m)"
 
 definition PublishResponseForLastAccepted :: stpred where "PublishResponseForLastAccepted s \<equiv>
-  \<forall>n. 0 < lastAcceptedTerm s n \<longrightarrow> (\<exists> m \<in> messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n)"
+  \<forall>n. 0 < lastAcceptedTerm s n \<longrightarrow> (\<exists> m \<in> sentPublishResponses s. source m = n \<and> msgTermVersion m = laTermVersion s n)"
 
 definition TermWinningConfigurationHasQuorumBelow :: "nat \<Rightarrow> stpred" where "TermWinningConfigurationHasQuorumBelow termBound s \<equiv>
   \<forall> tm < termBound. \<forall> n. (tm, n) \<in> leaderHistory s \<longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = n \<and> term j = tm }) (termWinningConfiguration tm s)"
@@ -763,13 +755,13 @@ definition CommittedVersionsUniqueBelow :: "nat \<Rightarrow> stpred" where "Com
     \<longrightarrow> version mc1 = version mc2 \<longrightarrow> term mc1 = term mc2"
 
 definition CommitMeansPublishResponse :: stpred where "CommitMeansPublishResponse s \<equiv>
-  \<forall> mc \<in> messages s. isCommit mc \<longrightarrow> (\<exists> mp \<in> messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp)"
+  \<forall> mc \<in> messages s. isCommit mc \<longrightarrow> (\<exists> mp \<in> sentPublishResponses s. term mc = term mp \<and> version mc = version mp)"
 
 definition PublishResponseMeansPublishRequest :: stpred where "PublishResponseMeansPublishRequest s \<equiv>
-  \<forall> mprs \<in> messages s. isPublishResponse mprs \<longrightarrow> (\<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq)"
+  \<forall> mprs \<in> sentPublishResponses s. \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
 
 definition JoinLimitsPublishResponses :: stpred where "JoinLimitsPublishResponses s \<equiv>
-  \<forall> mj mprs. mj \<in> sentJoins s \<longrightarrow> mprs \<in> messages s \<longrightarrow> isPublishResponse mprs \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
+  \<forall> mj mprs. mj \<in> sentJoins s \<longrightarrow> mprs \<in> sentPublishResponses s \<longrightarrow> source mj = source mprs \<longrightarrow> term mprs < term mj
     \<longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
 
 definition JoinTermNewerThanLastAccepted :: stpred where "JoinTermNewerThanLastAccepted s \<equiv>
@@ -823,8 +815,8 @@ lemma JoinLimitsPublishResponses_step:
   shows "(s,t) \<Turnstile> JoinLimitsPublishResponses$"
 proof -
   from assms
-  have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> sentJoins s; mprs \<in> messages s; isPublishResponse mprs; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
-    and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
+  have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> sentJoins s; mprs \<in> sentPublishResponses s; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
+    and hyp2: "\<And>m. m \<in> sentPublishResponses s \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
     and hyp3: "\<And>m. \<lbrakk> m \<in> sentJoins s \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
     unfolding JoinLimitsPublishResponses_def PublishResponseBeforeLastAccepted_def
       JoinRequestsAtMostCurrentTerm_def
@@ -832,12 +824,12 @@ proof -
 
   {
     fix mj mprs
-    assume prem: "mj \<in> sentJoins t" "mprs \<in> messages t" "isPublishResponse mprs" "source mj = source mprs" "term mprs < term mj"
+    assume prem: "mj \<in> sentJoins t" "mprs \<in> sentPublishResponses t" "source mj = source mprs" "term mprs < term mj"
     from Next hyp1 prem
     have "msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
-      from prem have mprs: "mprs \<in> messages s" by (auto simp add: HandleStartJoin)
+      from prem have mprs: "mprs \<in> sentPublishResponses s" by (auto simp add: HandleStartJoin)
       from HandleStartJoin prem have "mj \<in> sentJoins s \<or> mj = newJoinRequest" by auto
       with mprs prem hyp1 show ?thesis
       proof (elim disjE)
@@ -851,7 +843,7 @@ proof -
     next
       case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
       from prem have mj: "mj \<in> sentJoins s" by (auto simp add: HandlePublishRequest)
-      from HandlePublishRequest prem have "mprs \<in> messages s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>" by auto
+      from HandlePublishRequest prem have "mprs \<in> sentPublishResponses s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>" by auto
       with mj prem hyp1 show ?thesis
       proof (elim disjE)
         assume mprs: "mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
@@ -921,8 +913,7 @@ proof -
   from assms
   have  hyp1: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory t; (tm, n2) \<in> leaderHistory t \<rbrakk> \<Longrightarrow> n1 = n2"
     and hyp2: "finite (msgTermVersion ` messages s)"
-    and hyp3: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> 
-      \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
+    and hyp3: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
     and hyp4: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     and hyp5: "\<And>m n. \<lbrakk> m \<in> sentPublishRequests s; term m = currentTerm s n; term m < termBound; electionWon s n \<rbrakk> \<Longrightarrow> n = source m"
     and hyp6: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
@@ -1012,14 +1003,14 @@ proof -
           have tv: "tv \<in> msgTermVersion ` publishResponses" and tv_max: "\<And>tv'. tv' \<in> msgTermVersion ` publishResponses \<Longrightarrow> tv' \<le> tv"
           proof -
             have fin: "finite (msgTermVersion ` publishResponses)"
-              by (intro finite_subset [OF image_mono, OF _ hyp2], auto simp add: publishResponses_def publishResponsesBelow_def)
+              by (intro finite_subset [OF image_mono, OF _ hyp2], auto simp add: publishResponses_def publishResponsesBelow_def sentPublishResponses_def)
             from fin havePublishResponse show "tv \<in> msgTermVersion ` publishResponses" unfolding tv_def by (intro Max_in, auto)
             fix tv' assume "tv' \<in> msgTermVersion ` publishResponses"
             with fin show "tv' \<le> tv" unfolding tv_def by (intro Max_ge, auto)
           qed
 
           then obtain mprs where mprs: "mprs \<in> publishResponses" "tv = msgTermVersion mprs" by auto
-          hence mprs_properties: "mprs \<in> messages s" "source mprs = n" "isPublishResponse mprs" "term mprs < tm"
+          hence mprs_properties: "mprs \<in> sentPublishResponses s" "source mprs = n" "term mprs < tm"
             unfolding publishResponses_def publishResponsesBelow_def by auto
 
           have "msgTermVersion mprs = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
@@ -1076,12 +1067,12 @@ proof -
     next
       fix mprs
       assume "mprs \<in> publishResponsesBelow n tm t"
-      hence disj: "mprs \<in> messages s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
-        and mprs: "source mprs = n" "isPublishResponse mprs" "term mprs < tm"
+      hence disj: "mprs \<in> sentPublishResponses s \<or> mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
+        and mprs: "source mprs = n" "term mprs < tm"
         by (auto simp add: publishResponsesBelow_def HandlePublishRequest)
       from disj show "mprs \<in> publishResponsesBelow n tm s"
       proof (elim disjE)
-        assume "mprs \<in> messages s" with mprs show ?thesis by (auto simp add: publishResponsesBelow_def)
+        assume "mprs \<in> sentPublishResponses s" with mprs show ?thesis by (auto simp add: publishResponsesBelow_def)
       next
         assume mprs_eq: "mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
         with mprs have "currentTerm s n < tm" by simp
@@ -1127,9 +1118,8 @@ proof -
   from assms 
   have  hyp2: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory t; (tm, n2) \<in> leaderHistory t \<rbrakk> \<Longrightarrow> n1 = n2"
     and hyp3: "finite (msgTermVersion ` messages s)"
-    and hyp4: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> 
-      \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
-    and hyp5: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s;  term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
+    and hyp4: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
+    and hyp5: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     and hyp6: "\<And>m n. \<lbrakk> m \<in> sentPublishRequests s; term m = currentTerm s n; term m < termBound; electionWon s n \<rbrakk> \<Longrightarrow> n = source m"
     and hyp7: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp8: "\<And>n tm. (tm, n) \<in> leaderHistory s \<Longrightarrow> tm \<le> currentTerm s n"
@@ -1139,8 +1129,8 @@ proof -
     and hyp12: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
         else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
     and hyp13: "\<And>m. m \<in> messages s \<Longrightarrow> 0 < term m"
-    and hyp14: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
-    and hyp15: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists>m\<in>messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n"
+    and hyp14: "\<And>m. m \<in> sentPublishResponses s \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
+    and hyp15: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists>m\<in>sentPublishResponses s. source m = n \<and> msgTermVersion m = laTermVersion s n"
     and hyp16: "\<And>m1 m2. \<lbrakk> m1 \<in> sentPublishRequests s; m2 \<in> sentPublishRequests s; term m1 < termBound; term m1 = term m2; version m1 = version m2 \<rbrakk> \<Longrightarrow> payload m1 = payload m2"
     and hyp17: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
     and hyp18: "\<And>n. \<lbrakk> (currentTerm s n, n) \<in> leaderHistory s; currentTerm s n < termBound; startedJoinSinceLastReboot s n \<rbrakk> \<Longrightarrow> electionWon s n"
@@ -1220,10 +1210,10 @@ proof -
             moreover have "publishResponsesBelow nm tm t = {}"
             proof (rule ccontr)
               assume "\<not>?thesis"
-              then obtain mprs where mprs: "mprs \<in> messages s" "source mprs = nm" "isPublishResponse mprs" "term mprs < tm"
+              then obtain mprs where mprs: "mprs \<in> sentPublishResponses s" "source mprs = nm" "term mprs < tm"
                 unfolding publishResponsesBelow_def HandleJoinRequest by auto
 
-              from mprs have mprs_positive: "0 < term mprs" by (intro hyp13)
+              from mprs have mprs_positive: "0 < term mprs" by (intro hyp13, simp add: sentPublishResponses_def)
               from mprs have "msgTermVersion mprs \<le> laTermVersion s (source mprs)" by (intro hyp14)
               with mprs_positive True show False by (auto simp add: laTermVersion_def msgTermVersion_def mprs less_eq_TermVersion_def)
             qed
@@ -1233,7 +1223,7 @@ proof -
             case False
             hence positive: "0 < lastAcceptedTerm s nm" by simp
             from hyp15 [OF positive]
-            obtain mprs where mprs: "mprs \<in> messages s" "isPublishResponse mprs" "source mprs = nm" "msgTermVersion mprs = laTermVersion s nm" by auto
+            obtain mprs where mprs: "mprs \<in> sentPublishResponses s" "source mprs = nm" "msgTermVersion mprs = laTermVersion s nm" by auto
 
             from mprs hyp4 [of mprs]
             obtain mprq where mprq: "mprq \<in> sentPublishRequests s" "term mprs = term mprq" "version mprs = version mprq" "msgTermVersion mprq = laTermVersion s nm"
@@ -1261,7 +1251,7 @@ proof -
             have mprq_publishResponsesBelow: "mprs \<in> publishResponsesBelow nm tm t"
               unfolding publishResponsesBelow_def
             proof (intro CollectI conjI)
-              from mprs show "mprs \<in> messages t" "source mprs = nm" "isPublishResponse mprs" by (simp_all add: HandleJoinRequest)
+              from mprs show "mprs \<in> sentPublishResponses t" "source mprs = nm" by (simp_all add: HandleJoinRequest)
               show "term mprs < tm"
               proof (cases "term mprs = currentTerm s nm")
                 case False
@@ -1292,14 +1282,14 @@ proof -
             have termVersion_mprs: "msgTermVersion mprs = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
             proof (intro order_antisym Max_ge)
               show 1: "finite (msgTermVersion ` publishResponsesBelow nm tm t)"
-                by (intro finite_subset [OF _ hyp3] image_mono, auto simp add: publishResponsesBelow_def HandleJoinRequest)
+                by (intro finite_subset [OF _ hyp3] image_mono, auto simp add: publishResponsesBelow_def HandleJoinRequest sentPublishResponses_def)
               from mprq_publishResponsesBelow
               show "msgTermVersion mprs \<in> msgTermVersion ` publishResponsesBelow nm tm t" by simp
 
               from havePublishResponse
               have "Max (msgTermVersion ` publishResponsesBelow nm tm t) \<in> msgTermVersion ` publishResponsesBelow nm tm t"
                 by (intro Max_in 1, auto)
-              then obtain mprs' where mprs': "mprs' \<in> messages s" "source mprs' = nm" "isPublishResponse mprs'"
+              then obtain mprs' where mprs': "mprs' \<in> sentPublishResponses s" "source mprs' = nm"
                 "term mprs' < tm" "msgTermVersion mprs' = Max (msgTermVersion ` publishResponsesBelow nm tm t)"
                 by (auto simp add: HandleJoinRequest publishResponsesBelow_def)
 
@@ -1371,20 +1361,20 @@ lemma PublishResponseBeforeLastAccepted_step:
   shows "(s,t) \<Turnstile> PublishResponseBeforeLastAccepted$"
 proof -
   from assms
-  have  hyp1: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
+  have  hyp1: "\<And>m. m \<in> sentPublishResponses s \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
     and hyp2: "\<And>n. lastAcceptedTerm s n \<le> currentTerm s n"
     unfolding PublishResponseBeforeLastAccepted_def LastAcceptedTermInPast_def
     by metis+
 
   {
-    fix m assume prem: "m \<in> messages t" "isPublishResponse m"
+    fix m assume prem: "m \<in> sentPublishResponses t"
     from Next hyp1 prem have "msgTermVersion m \<le> laTermVersion t (source m)"
     proof (cases rule: square_Next_cases)
       case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
-      from prem have "m = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr> \<or> m \<in> messages s" by (auto simp add: HandlePublishRequest)
+      from prem have "m = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr> \<or> m \<in> sentPublishResponses s" by (auto simp add: HandlePublishRequest)
       thus ?thesis
       proof (elim disjE)
-        assume "m \<in> messages s"
+        assume "m \<in> sentPublishResponses s"
         with HandlePublishRequest hyp1 prem have "msgTermVersion m \<le> laTermVersion s (source m)" by simp
         also from HandlePublishRequest hyp2 [of "source m"] have "... \<le> laTermVersion t (source m)"
           by (auto simp add: laTermVersion_def less_eq_TermVersion_def)
@@ -1405,17 +1395,17 @@ lemma PublishResponseForLastAccepted_step:
   shows "(s,t) \<Turnstile> PublishResponseForLastAccepted$"
 proof -
   from assms
-  have hyp1: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists> m \<in> messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n"
+  have hyp1: "\<And>n. 0 < lastAcceptedTerm s n \<Longrightarrow> \<exists> m \<in> sentPublishResponses s. source m = n \<and> msgTermVersion m = laTermVersion s n"
     unfolding PublishResponseForLastAccepted_def
     by metis+
 
   {
     fix n
     assume prem: "0 < lastAcceptedTerm t n"
-    from Next hyp1 prem have "\<exists> m \<in> messages t. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion t n"
+    from Next hyp1 prem have "\<exists> m \<in> sentPublishResponses t. source m = n \<and> msgTermVersion m = laTermVersion t n"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
-      with hyp1 prem have "\<exists> m \<in> messages s. isPublishResponse m \<and> source m = n \<and> msgTermVersion m = laTermVersion s n" by auto
+      with hyp1 prem have "\<exists> m \<in> sentPublishResponses s. source m = n \<and> msgTermVersion m = laTermVersion s n" by auto
       thus ?thesis by (auto simp add: laTermVersion_def ClientRequest)
     next
       case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
@@ -1444,8 +1434,8 @@ proof -
   from assms
   have  hyp1: "\<And>mc1 mc2. \<lbrakk> mc1 \<in> messages s; mc2 \<in> messages s; isCommit mc1; isCommit mc2; term mc1 < termBound; term mc2 < termBound; version mc1 = version mc2 \<rbrakk> \<Longrightarrow> term mc1 = term mc2"
     and hyp2: "\<And>mc mp. \<lbrakk> mc \<in> messages t; mp \<in> sentPublishRequests t; isCommit mc; term mc < term mp; term mp < termBound \<rbrakk> \<Longrightarrow> version mc < version mp"
-    and hyp3: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
-    and hyp4: "\<And>mc. \<lbrakk> mc\<in>messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+    and hyp3: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
+    and hyp4: "\<And>mc. \<lbrakk> mc\<in>messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
     unfolding CommittedVersionsUniqueBelow_def CommitMeansLaterPublicationsBelow_def PublishResponseMeansPublishRequest_def
       CommitMeansPublishResponse_def
     by metis+
@@ -1463,10 +1453,10 @@ proof -
       have messageE: "\<And>m P. m \<in> messages t \<Longrightarrow> (m \<in> messages s \<Longrightarrow> P) \<Longrightarrow> (\<And>nd. m = \<lparr>source = nm, dest = nd, term = currentTerm s nm, payload = Commit \<lparr>c_version = lastPublishedVersion s nm\<rparr>\<rparr> \<Longrightarrow> P) \<Longrightarrow> P"
         unfolding HandlePublishResponse_Quorum by auto
 
-      from `mc2 \<in> messages t` obtain mprs where mprs: "mprs \<in> messages s" "isPublishResponse mprs" "term mprs = term mc2" "version mprs = version mc2"
+      from `mc2 \<in> messages t` obtain mprs where mprs: "mprs \<in> sentPublishResponses s" "term mprs = term mc2" "version mprs = version mc2"
       proof (elim messageE)
         assume mc2: "mc2 \<in> messages s"
-        with prem have "\<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc2 = term mp \<and> version mc2 = version mp" by (intro hyp4, simp_all)
+        with prem have "\<exists>mp\<in>sentPublishResponses s. term mc2 = term mp \<and> version mc2 = version mp" by (intro hyp4, simp_all)
         thus thesis by (elim bexE, intro that, auto)
       next
         fix nd2
@@ -1511,13 +1501,13 @@ lemma PublishResponseMeansPublishRequest_step:
   shows "(s,t) \<Turnstile> PublishResponseMeansPublishRequest$"
 proof -
   from assms
-  have hyp1: "\<And>mprs. \<lbrakk> mprs \<in> messages s; isPublishResponse mprs \<rbrakk> \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
+  have hyp1: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists> mprq \<in> sentPublishRequests s. term mprs = term mprq \<and> version mprs = version mprq"
     unfolding PublishResponseMeansPublishRequest_def
     by metis+
 
   {
     fix mprs
-    assume prem: "mprs \<in> messages t" "isPublishResponse mprs"
+    assume prem: "mprs \<in> sentPublishResponses t"
     from Next prem hyp1 have "\<exists> mprq \<in> sentPublishRequests t. term mprs = term mprq \<and> version mprs = version mprq"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
@@ -1547,14 +1537,14 @@ lemma CommitMeansPublishResponse_step:
   shows "(s,t) \<Turnstile> CommitMeansPublishResponse$"
 proof -
   from assms
-  have  hyp1: "\<And>mc. \<lbrakk> mc \<in> messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+  have  hyp1: "\<And>mc. \<lbrakk> mc \<in> messages s; isCommit mc \<rbrakk> \<Longrightarrow> \<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
     unfolding CommitMeansPublishResponse_def
     by metis+
 
   {
     fix mc
     assume prem: "mc \<in> messages t" "isCommit mc"
-    from Next prem hyp1 have "\<exists>mp\<in>messages t. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+    from Next prem hyp1 have "\<exists>mp\<in>sentPublishResponses t. term mc = term mp \<and> version mc = version mp"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
       from prem have "mc \<in> messages s" by (auto simp add: ClientRequest)
@@ -1562,10 +1552,10 @@ proof -
     next
       case (HandlePublishResponse_Quorum nf nm)
       hence pr: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr> \<in> messages s" by simp
-      from prem hyp1 have "\<exists>mp\<in>messages s. isPublishResponse mp \<and> term mc = term mp \<and> version mc = version mp"
+      from prem hyp1 have "\<exists>mp\<in>sentPublishResponses s. term mc = term mp \<and> version mc = version mp"
       proof (unfold HandlePublishResponse_Quorum, elim UnE UnionE rangeE, simp_all)
         fix n
-        from pr show "\<exists>mp\<in>messages s. isPublishResponse mp \<and> currentTerm s nm = term mp \<and> lastPublishedVersion s nm = version mp"
+        from pr show "\<exists>mp\<in>sentPublishResponses s. currentTerm s nm = term mp \<and> lastPublishedVersion s nm = version mp"
           by (intro bexI [where x = "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = PublishResponse \<lparr>prs_version = lastPublishedVersion s nm\<rparr>\<rparr>"], auto)
       qed
       thus ?thesis by (auto simp add: HandlePublishResponse_Quorum)
