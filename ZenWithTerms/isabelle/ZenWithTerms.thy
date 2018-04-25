@@ -577,7 +577,7 @@ definition termWinningConfiguration :: "nat \<Rightarrow> Node set stfun" where 
   in if publishResponses = {} then initialConfiguration s else config mprq"
 
 definition TheJoin :: "Node \<Rightarrow> Node \<Rightarrow> Message stfun" where "TheJoin nf nm s \<equiv> 
-  THE m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> isJoin m \<and> m \<in> messages s"
+  THE m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> m \<in> sentJoins s"
 
 definition FiniteMessagesTo :: stpred
   where "FiniteMessagesTo s \<equiv> \<forall>n. finite (messagesTo s n)"
@@ -4116,7 +4116,7 @@ proof -
       with s obtain joinPayload where msg: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> messages s"
         by (auto simp add: JoinVotesFaithful_def)
 
-      define P where "P \<equiv> \<lambda>m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> isJoin m \<and> m \<in> messages s"
+      define P where "P \<equiv> \<lambda>m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> m \<in> sentJoins s"
 
       have 1: "TheJoin nf nm s = The P" by (simp add: P_def TheJoin_def)
       have "P (TheJoin nf nm s)"
@@ -4129,11 +4129,11 @@ proof -
           by (auto simp add: JoinRequestsUniquePerTerm_def)
 
         from m' msg show "m' = \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr>"
-          by (intro eqI, auto simp add: P_def)
+          by (intro eqI, auto simp add: P_def sentJoins_def)
       qed
       thus "source (TheJoin nf nm s) = nf \<and> dest (TheJoin nf nm s) = nm
           \<and> term (TheJoin nf nm s) = currentTerm s nm \<and> isJoin (TheJoin nf nm s) \<and> TheJoin nf nm s \<in> messages s"
-        by (auto simp add: P_def)
+        by (auto simp add: P_def sentJoins_def)
     qed
   qed
   finally show ?thesis .
