@@ -589,11 +589,11 @@ definition FiniteTermVersions :: stpred
   where "FiniteTermVersions s \<equiv> finite (msgTermVersion ` messages s)"
 
 definition JoinRequestsAtMostCurrentTerm :: stpred where "JoinRequestsAtMostCurrentTerm s \<equiv> 
-  \<forall> m. isJoin m \<longrightarrow> m \<in> messages s \<longrightarrow> term m \<le> currentTerm s (source m)"
+  \<forall> m \<in> sentJoins s. term m \<le> currentTerm s (source m)"
 
 definition JoinRequestsUniquePerTerm :: stpred where "JoinRequestsUniquePerTerm s \<equiv> 
-  \<forall> m1 m2. m1 \<in> messages s \<longrightarrow> m2 \<in> messages s 
-      \<longrightarrow> isJoin m1 \<longrightarrow> isJoin m2 \<longrightarrow> source m1 = source m2 \<longrightarrow> term m1 = term m2
+  \<forall> m1 m2. m1 \<in> sentJoins s \<longrightarrow> m2 \<in> sentJoins s 
+      \<longrightarrow> source m1 = source m2 \<longrightarrow> term m1 = term m2
       \<longrightarrow> m1 = m2"
 
 definition JoinVotesFaithful :: stpred where "JoinVotesFaithful s \<equiv> 
@@ -845,7 +845,7 @@ proof -
   from assms
   have  hyp1: "\<And>mj mprs. \<lbrakk> mj \<in> messages s; mprs \<in> messages s; isJoin mj; isPublishResponse mprs; source mj = source mprs; term mprs < term mj \<rbrakk> \<Longrightarrow> msgTermVersion mprs \<le> TermVersion (laTerm mj) (laVersion mj)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> messages s; isPublishResponse m \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> laTermVersion s (source m)"
-    and hyp3: "\<And>m. \<lbrakk> m \<in> messages s; isJoin m \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
+    and hyp3: "\<And>m. \<lbrakk> m \<in> sentJoins s \<rbrakk> \<Longrightarrow> term m \<le> currentTerm s (source m)"
     unfolding JoinLimitsPublishResponses_def PublishResponseBeforeLastAccepted_def
       JoinRequestsAtMostCurrentTerm_def
     by metis+
@@ -875,7 +875,7 @@ proof -
       with mj prem hyp1 show ?thesis
       proof (elim disjE)
         assume mprs: "mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
-        from mj prem have "term mj \<le> currentTerm s (source mj)" by (intro hyp3)
+        from mj prem have "term mj \<le> currentTerm s (source mj)" by (intro hyp3, simp_all add: sentJoins_def)
         also have "... = currentTerm s (source mprs)" by (simp add: prem)
         also have "... = term mprs" by (simp add: mprs)
         also from prem have "... < term mj" by simp
@@ -1765,20 +1765,19 @@ lemma JoinRequestsAtMostCurrentTerm_step:
   assumes "s \<Turnstile> JoinRequestsAtMostCurrentTerm"
   shows "(s,t) \<Turnstile> JoinRequestsAtMostCurrentTerm$"
 proof -
-  from assms have hyp: "\<And>m. isJoin m \<Longrightarrow> m \<in> messages s \<Longrightarrow> term m \<le> currentTerm s (source m)"
+  from assms have hyp: "\<And>m. m \<in> sentJoins s \<Longrightarrow> term m \<le> currentTerm s (source m)"
     by (auto simp add: JoinRequestsAtMostCurrentTerm_def)
   {
     fix m
-    assume isJoin: "isJoin m" with hyp have hyp: "m \<in> messages s \<Longrightarrow> term m \<le> currentTerm s (source m)" by simp
-    assume prem: "m : messages t"
+    assume prem: "m \<in> sentJoins t"
 
     from Next hyp prem have "term m \<le> currentTerm t (source m)"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
-      from prem have "m = newJoinRequest \<or> m \<in> messages s" by (simp add: HandleStartJoin)
+      from prem have "m = newJoinRequest \<or> m \<in> sentJoins s" by (simp add: HandleStartJoin)
       thus ?thesis
       proof (elim disjE)
-        assume "m \<in> messages s"
+        assume "m \<in> sentJoins s"
         note hyp [OF this]
         also from HandleStartJoin have "currentTerm s (source m) \<le> currentTerm t (source m)" by simp
         finally show ?thesis .
@@ -1796,37 +1795,35 @@ lemma JoinRequestsUniquePerTerm_step:
   shows "(s,t) \<Turnstile> JoinRequestsUniquePerTerm$"
 proof -
   from assms
-  have prem: "\<And>m. isJoin m \<Longrightarrow> m \<in> messages s \<Longrightarrow> term m \<le> currentTerm s (source m)"
-    and hyp: "\<And>m1 m2. m1 \<in> messages s \<Longrightarrow> m2 \<in> messages s \<Longrightarrow> isJoin m1 \<Longrightarrow> isJoin m2 \<Longrightarrow> source m1 = source m2 \<Longrightarrow> term m1 = term m2 \<Longrightarrow> m1 = m2"
+  have prem: "\<And>m. m \<in> sentJoins s \<Longrightarrow> term m \<le> currentTerm s (source m)"
+    and hyp: "\<And>m1 m2. m1 \<in> sentJoins s \<Longrightarrow> m2 \<in> sentJoins s \<Longrightarrow> source m1 = source m2 \<Longrightarrow> term m1 = term m2 \<Longrightarrow> m1 = m2"
     by (auto simp add: JoinRequestsAtMostCurrentTerm_def JoinRequestsUniquePerTerm_def)
 
   {
     fix m1 m2
-    assume isJoin: "isJoin m1" "isJoin m2"
-    assume msgs: "m1 \<in> messages t" "m2 \<in> messages t"
+    assume msgs: "m1 \<in> sentJoins t" "m2 \<in> sentJoins t"
     assume source_eq: "source m1 = source m2" and term_eq: "term m1 = term m2"
 
-    from Next hyp isJoin msgs source_eq term_eq have "m1 = m2"
+    from Next hyp msgs source_eq term_eq have "m1 = m2"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
-      from isJoin source_eq term_eq hyp have hyp: "m1 \<in> messages s \<Longrightarrow> m2 \<in> messages s \<Longrightarrow> m1 = m2" by simp
-      from msgs have "m1 = newJoinRequest \<or> m1 \<in> messages s" "m2 = newJoinRequest \<or> m2 \<in> messages s" by (simp_all add: HandleStartJoin)
+      from msgs have "m1 = newJoinRequest \<or> m1 \<in> sentJoins s" "m2 = newJoinRequest \<or> m2 \<in> sentJoins s" by (simp_all add: HandleStartJoin)
       thus ?thesis
       proof (elim disjE)
-        assume "m1 \<in> messages s" "m2 \<in> messages s" with hyp show ?thesis by metis
+        assume "m1 \<in> sentJoins s" "m2 \<in> sentJoins s" with hyp source_eq term_eq show ?thesis by metis
       next
         assume "m1 = newJoinRequest" "m2 = newJoinRequest" thus ?thesis by simp
       next
-        assume m1: "m1 \<in> messages s" and m2: "m2 = newJoinRequest"
-        from m1 isJoin prem have "term m1 \<le> currentTerm s (source m1)" by metis
+        assume m1: "m1 \<in> sentJoins s" and m2: "m2 = newJoinRequest"
+        from m1 prem have "term m1 \<le> currentTerm s (source m1)" by metis
         also from m2 source_eq have "source m1 = nf" by (simp add: HandleStartJoin)
         hence "currentTerm s (source m1) < tm" by (simp add: HandleStartJoin)
         also from m2 have "tm = term m2" by (simp add: HandleStartJoin)
         also note term_eq
         finally show ?thesis by simp
       next
-        assume m1: "m1 = newJoinRequest" and m2: "m2 \<in> messages s"
-        from m2 isJoin prem have "term m2 \<le> currentTerm s (source m2)" by metis
+        assume m1: "m1 = newJoinRequest" and m2: "m2 \<in> sentJoins s"
+        from m2 prem have "term m2 \<le> currentTerm s (source m2)" by metis
         also from m1 source_eq have "source m2 = nf" by (simp add: HandleStartJoin)
         hence "currentTerm s (source m2) < tm" by (simp add: HandleStartJoin)
         also from m1 have "tm = term m1" by (simp add: HandleStartJoin)
@@ -4036,7 +4033,7 @@ qed
 lemma JoinRequestsAtMostCurrentTerm_INV: "\<turnstile> Spec \<longrightarrow> \<box>JoinRequestsAtMostCurrentTerm"
 proof invariant
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init JoinRequestsAtMostCurrentTerm"
-    by (auto simp add: Spec_def Initial_def Init_def JoinRequestsAtMostCurrentTerm_def)
+    by (auto simp add: Spec_def Initial_def Init_def JoinRequestsAtMostCurrentTerm_def sentJoins_def)
 
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable JoinRequestsAtMostCurrentTerm"
   proof (intro Stable actionI temp_impI)
@@ -4049,7 +4046,7 @@ qed
 lemma JoinRequestsUniquePerTerm_INV: "\<turnstile> Spec \<longrightarrow> \<box>JoinRequestsUniquePerTerm"
 proof invariant
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init JoinRequestsUniquePerTerm"
-    by (auto simp add: Spec_def Initial_def Init_def JoinRequestsUniquePerTerm_def)
+    by (auto simp add: Spec_def Initial_def Init_def JoinRequestsUniquePerTerm_def sentJoins_def)
 
   show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable JoinRequestsUniquePerTerm"
   proof (intro Stable actionI temp_impI)
@@ -4105,7 +4102,7 @@ proof -
         from msg show "P \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr>" by (simp add: P_def)
         fix m' assume m': "P m'"
 
-        from s have eqI: "\<And>m1 m2. \<lbrakk> m1 \<in> messages s; m2 \<in> messages s; isJoin m1; isJoin m2; source m1 = source m2; term m1 = term m2 \<rbrakk> \<Longrightarrow> m1 = m2"
+        from s have eqI: "\<And>m1 m2. \<lbrakk> m1 \<in> sentJoins s; m2 \<in> sentJoins s; source m1 = source m2; term m1 = term m2 \<rbrakk> \<Longrightarrow> m1 = m2"
           by (auto simp add: JoinRequestsUniquePerTerm_def)
 
         from m' msg show "m' = \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr>"
@@ -4279,37 +4276,4 @@ lemma ElectionWonQuorumBelow_0: "\<turnstile> Spec \<longrightarrow> \<box>(Elec
 lemma OneMasterPerTermBelow_0: "\<turnstile> Spec \<longrightarrow> \<box>(OneMasterPerTermBelow 0)"
   by (intro temp_impI necT [temp_use] intI, auto simp add: OneMasterPerTermBelow_def)
 
-lemma ElectionWonQuorumBelow_Suc:
-  assumes hyp1: "\<turnstile> Spec \<longrightarrow> \<box>(ElectionWonQuorumBelow termBound)"
-  shows "\<turnstile> Spec \<longrightarrow> \<box>(ElectionWonQuorumBelow (Suc termBound))"
-proof invariant
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init (ElectionWonQuorumBelow (Suc termBound))"
-    by (auto simp add: Spec_def Initial_def Init_def ElectionWonQuorumBelow_def)
-
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable (ElectionWonQuorumBelow (Suc termBound))"
-  proof (intro Stable actionI temp_impI)
-    from imp_box_before_afterI [OF hyp1]
-    show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> \<box>([Next]_vars \<and> ElectionWonQuorumBelow termBound$)"
-      by (auto simp add: Spec_def Valid_def more_temp_simps)
-
-    fix s t assume "(s,t) \<Turnstile> $ElectionWonQuorumBelow (Suc termBound) \<and> [Next]_vars \<and> ElectionWonQuorumBelow termBound$"
-    thus "(s,t) \<Turnstile> ElectionWonQuorumBelow (Suc termBound)$" by (intro ElectionWonQuorumBelow_step, auto)
-  qed
-qed
-
-lemma PublishRequestImpliesElectionWon_INV: "\<turnstile> Spec \<longrightarrow> \<box>PublishRequestImpliesElectionWon"
-proof invariant
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> Init PublishRequestImpliesElectionWon"
-    by (auto simp add: Spec_def Initial_def Init_def PublishRequestImpliesElectionWon_def)
-
-  show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> stable PublishRequestImpliesElectionWon"
-  proof (intro Stable actionI temp_impI)
-    from imp_box_before_afterI [OF PublicationsInPastTerm_INV]
-    show "\<And>sigma. sigma \<Turnstile> Spec \<Longrightarrow> sigma \<Turnstile> \<box>([Next]_vars \<and> $PublicationsInPastTerm)"
-      by (auto simp add: Spec_def Valid_def more_temp_simps)
-
-    fix s t assume "(s,t) \<Turnstile> $PublishRequestImpliesElectionWon \<and> [Next]_vars \<and> $PublicationsInPastTerm"
-    thus "(s,t) \<Turnstile> PublishRequestImpliesElectionWon$"
-      by (intro PublishRequestImpliesElectionWon_step, auto)
-  qed
-qed
+end
