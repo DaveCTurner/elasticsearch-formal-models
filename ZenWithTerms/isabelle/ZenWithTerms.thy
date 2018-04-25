@@ -54,18 +54,9 @@ proof (intro notI)
   finally show False by simp
 qed
 
-
-definition isJoin            :: "Message \<Rightarrow> bool" where "isJoin            m \<equiv> case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isPublishRequest  :: "Message \<Rightarrow> bool" where "isPublishRequest  m \<equiv> case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isPublishResponse :: "Message \<Rightarrow> bool" where "isPublishResponse m \<equiv> case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isCommit          :: "Message \<Rightarrow> bool" where "isCommit          m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
-
-lemma isJoin_simps[simp]:
-  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = True"
-  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = False"
-  "\<And>pl. isJoin \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isJoin \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
-  by (simp_all add: isJoin_def)
 
 lemma isPublishRequest_simps[simp]:
   "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
@@ -88,13 +79,12 @@ lemma isCommit_simps[simp]:
   "\<And>pl. isCommit \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = True"
   by (simp_all add: isCommit_def)
 
-definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. isJoin m }"
+definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. isPublishRequest m }"
 definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. isPublishResponse m }"
 definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. isCommit m }"
 
 lemma sentJoins_simps[simp]:
-  "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> \<in> sentJoins s) = (\<lparr> source = nf, dest = nm, term = tm, payload = Join pl \<rparr> \<in> messages s)"
   "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> \<in> sentJoins s) = False"
   "\<And>pl. (\<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> \<in> sentJoins s) = False"
   "\<And>pl. (\<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> \<in> sentJoins s) = False"
@@ -499,8 +489,8 @@ proof -
     from p have payload_eq: "payload m = Commit \<lparr>c_version = lastAcceptedVersion s (dest m)\<rparr>"
       by (cases "payload m", auto simp add: HandleCommitRequest_def version_def)
 
-    have "m = \<lparr> source = source m, dest = dest m, term = term m, payload = Commit \<lparr>c_version  = lastAcceptedVersion  s (dest m)\<rparr> \<rparr>" by (simp add: payload_eq)
-    with p have is_message: "\<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = Commit \<lparr>c_version  = lastAcceptedVersion  s (dest m)\<rparr> \<rparr> \<in> messages s"
+    have "m = \<lparr> source = source m, dest = dest m, term = term m, payload = Commit \<lparr>c_version  = lastAcceptedVersion s (dest m)\<rparr> \<rparr>" by (simp add: payload_eq)
+    with p have is_message: "\<lparr> source = source m, dest = dest m, term = currentTerm s (dest m), payload = Commit \<lparr>c_version = lastAcceptedVersion s (dest m)\<rparr> \<rparr> \<in> messages s"
       by (auto simp add: HandleCommitRequest_def)
 
     from p show P
@@ -598,7 +588,7 @@ definition JoinRequestsUniquePerTerm :: stpred where "JoinRequestsUniquePerTerm 
 
 definition JoinVotesFaithful :: stpred where "JoinVotesFaithful s \<equiv> 
   \<forall> nm nf. nf \<in> joinVotes s nm
-      \<longrightarrow> (\<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s)"
+      \<longrightarrow> (\<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> sentJoins s)"
 
 definition JoinVotesImpliesStartedJoin :: stpred where "JoinVotesImpliesStartedJoin s \<equiv>
   \<forall> n. joinVotes s n \<noteq> {} \<longrightarrow> startedJoinSinceLastReboot s n"
@@ -874,7 +864,7 @@ proof -
       with mj prem hyp1 show ?thesis
       proof (elim disjE)
         assume mprs: "mprs = \<lparr>source = nf, dest = nm, term = currentTerm s nf, payload = PublishResponse \<lparr>prs_version = newVersion\<rparr>\<rparr>"
-        from mj prem have "term mj \<le> currentTerm s (source mj)" by (intro hyp3, simp_all add: sentJoins_def)
+        from mj prem have "term mj \<le> currentTerm s (source mj)" by (intro hyp3, simp_all)
         also have "... = currentTerm s (source mprs)" by (simp add: prem)
         also have "... = term mprs" by (simp add: mprs)
         also from prem have "... < term mj" by simp
@@ -1153,7 +1143,7 @@ proof -
     and hyp7: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp8: "\<And>n tm. (tm, n) \<in> leaderHistory s \<Longrightarrow> tm \<le> currentTerm s n"
     and hyp9: "\<And>n. electionWon s n \<Longrightarrow> (currentTerm s n, n) \<in> leaderHistory s"
-    and hyp10: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists>joinPayload. \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> messages s"
+    and hyp10: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists>joinPayload. \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> sentJoins s"
     and hyp11: "finite (sentJoins s)"
     and hyp12: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
         else \<exists>m\<in>messages s. isPublishRequest m \<and> lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
@@ -1189,7 +1179,7 @@ proof -
       case (HandleStartJoin nf nm tm' newJoinRequest)
       hence simps1: "leaderHistory t = leaderHistory s" "termWinningConfiguration tm t = termWinningConfiguration tm s" by simp_all
       show ?thesis
-      proof (cases "newJoinRequest \<in> {j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j}")
+      proof (cases "newJoinRequest \<in> {j \<in> sentJoins t. dest j = n \<and> term j = tm}")
         case False
         hence simps2: "{j \<in> sentJoins t. dest j = n \<and> term j = tm} = {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
           by (auto simp add: HandleStartJoin)
@@ -1203,7 +1193,7 @@ proof -
     next
       case (HandleJoinRequest nf nm laTerm_m laVersion_m)
 
-      have simp1: "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
+      have simp1: "{j \<in> sentJoins t. dest j = n \<and> term j = tm} = {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
         by (auto simp add: HandleJoinRequest)
 
       from HandleJoinRequest
@@ -1357,46 +1347,28 @@ proof -
         show ?thesis
           unfolding termWinningConfiguration_eq HandleJoinRequest
         proof (intro IsQuorum_mono [OF IsQuorum] finite_imageI finite_subset [OF _ hyp11] subsetI)
-          show "\<And>m. m \<in> {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j} \<Longrightarrow> m \<in> sentJoins s"
-            by (auto simp add: HandleJoinRequest sentJoins_def)
+          show "\<And>m. m \<in> {j \<in> sentJoins s. dest j = n \<and> term j = tm} \<Longrightarrow> m \<in> sentJoins s"
+            by (auto simp add: HandleJoinRequest)
           fix nv assume "nv \<in> joinVotes t nm" hence "nv = nf \<or> nv \<in> joinVotes s nm" by (simp add: HandleJoinRequest)
-          thus "nv \<in> source ` {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
+          thus "nv \<in> source ` {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
           proof (elim disjE)
             assume "nv = nf"
             thus ?thesis
             proof (intro image_eqI)
               from HandleJoinRequest new
               show "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join \<lparr>jp_laTerm = laTerm_m, jp_laVersion = laVersion_m\<rparr>\<rparr>
-                            \<in> {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
+                            \<in> {j \<in> sentJoins s. dest j = n \<and> term j = tm}"
                 by auto
             qed simp
           next
             assume "nv \<in> joinVotes s nm"
             from hyp10 [OF this]
-            obtain joinPayload where "\<lparr>source = nv, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> messages s" by auto
+            obtain joinPayload where "\<lparr>source = nv, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> sentJoins s" by auto
             with new show ?thesis
               by (intro image_eqI [where x = "\<lparr>source = nv, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr>"], auto)
           qed
         qed
       qed
-    next
-      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
-      hence "leaderHistory t = leaderHistory s" "termWinningConfiguration tm t = termWinningConfiguration tm s"
-        "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
-        by auto
-      with hyp1 prem show ?thesis by simp
-    next
-      case (HandlePublishRequest nf nm newVersion newValue newConfig commConfig)
-      hence "leaderHistory t = leaderHistory s" "termWinningConfiguration tm t = termWinningConfiguration tm s"
-        "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
-        by auto
-      with hyp1 prem show ?thesis by simp
-    next
-      case (HandlePublishResponse_Quorum nf nm)
-      hence "leaderHistory t = leaderHistory s" "termWinningConfiguration tm t = termWinningConfiguration tm s"
-        "{j \<in> messages t. dest j = n \<and> term j = tm \<and> isJoin j} = {j \<in> messages s. dest j = n \<and> term j = tm \<and> isJoin j}"
-        by auto
-      with hyp1 prem show ?thesis by simp
     qed auto
   }
   thus ?thesis by (auto simp add: TermWinningConfigurationHasQuorumBelow_def)
@@ -1834,9 +1806,11 @@ proof -
   thus ?thesis by (simp add: JoinRequestsUniquePerTerm_def)
 qed
 
-lemma messages_increasing:
-  "messages s \<subseteq> messages t"
-  using Next by (cases rule: square_Next_cases, auto)
+lemma messages_increasing: "messages s \<subseteq> messages t" using Next by (cases rule: square_Next_cases, auto) (* TODO not necessary? *)
+lemma sentJoins_increasing: "sentJoins s \<subseteq> sentJoins t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentPublishRequests_increasing: "sentPublishRequests s \<subseteq> sentPublishRequests t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentPublishResponses_increasing: "sentPublishResponses s \<subseteq> sentPublishResponses t" using Next by (cases rule: square_Next_cases, auto)
+lemma sentCommits_increasing: "sentCommits s \<subseteq> sentCommits t" using Next by (cases rule: square_Next_cases, auto)
 
 lemma terms_increasing:
   shows "currentTerm s n \<le> currentTerm t n"
@@ -1846,14 +1820,14 @@ lemma JoinVotesFaithful_step:
   assumes "s \<Turnstile> JoinVotesFaithful"
   shows "(s,t) \<Turnstile> JoinVotesFaithful$"
 proof -
-  from assms have hyp: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s"
+  from assms have hyp: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> sentJoins s"
     by (auto simp add: JoinVotesFaithful_def)
 
   {
     fix nm0 nf0
     assume prem: "nf0 \<in> joinVotes t nm0"
 
-    from Next hyp prem have "\<exists> joinPayload. \<lparr> source = nf0, dest = nm0, term = currentTerm t nm0, payload = Join joinPayload \<rparr> \<in> messages s"
+    from Next hyp prem have "\<exists> joinPayload. \<lparr> source = nf0, dest = nm0, term = currentTerm t nm0, payload = Join joinPayload \<rparr> \<in> sentJoins s"
     proof (cases rule: square_Next_cases)
       case (HandleStartJoin nf nm tm newJoinRequest)
       with hyp prem show ?thesis by (cases "nm0 = nf", auto)
@@ -1869,7 +1843,7 @@ proof -
         with hyp show ?thesis by (auto simp add: HandleJoinRequest)
       qed auto
     qed auto
-    with messages_increasing have "\<exists>joinPayload. \<lparr>source = nf0, dest = nm0, term = currentTerm t nm0, payload = Join joinPayload\<rparr> \<in> messages t" by auto
+    with sentJoins_increasing have "\<exists>joinPayload. \<lparr>source = nf0, dest = nm0, term = currentTerm t nm0, payload = Join joinPayload\<rparr> \<in> sentJoins t" by auto
   }
   thus ?thesis by (auto simp add: JoinVotesFaithful_def)
 qed
@@ -1927,7 +1901,7 @@ lemma MessagePositiveTerm_step:
 proof -
   from assms
   have  hyp1: "\<And>m. m \<in> messages s \<Longrightarrow> term m > 0"
-    and hyp2: "\<And> nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s"
+    and hyp2: "\<And> nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists> joinPayload. \<lparr> source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> sentJoins s"
     by (auto simp add: MessagePositiveTerm_def JoinVotesFaithful_def)
   {
     fix m
@@ -1942,7 +1916,7 @@ proof -
       hence "vs \<in> ValidConfigs" "IsQuorum (joinVotes s nm) vs" by simp_all
       then obtain voter where "voter \<in> joinVotes s nm"
         by (cases "joinVotes s nm \<inter> vs = {}", auto simp add: ValidConfigs_def IsQuorum_def)
-      with hyp2 obtain joinPayload where "\<lparr> source = voter, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s" by auto
+      with hyp2 obtain joinPayload where "\<lparr> source = voter, dest = nm, term = currentTerm s nm, payload = Join joinPayload \<rparr> \<in> messages s" by (auto simp add: sentJoins_def)
       from hyp1 [OF this] have "0 < currentTerm s nm" by simp
       with hyp1 prem show ?thesis by (auto simp add: ClientRequest)
     next
@@ -4081,7 +4055,7 @@ proof -
       fix nm nf
       assume nf: "nf \<in> joinVotes s nm"
 
-      with s obtain joinPayload where msg: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> messages s"
+      with s obtain joinPayload where msg: "\<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> sentJoins s"
         by (auto simp add: JoinVotesFaithful_def)
 
       define P where "P \<equiv> \<lambda>m. source m = nf \<and> dest m = nm \<and> term m = currentTerm s nm \<and> m \<in> sentJoins s"
@@ -4101,7 +4075,7 @@ proof -
       qed
       thus "source (TheJoin nf nm s) = nf \<and> dest (TheJoin nf nm s) = nm
           \<and> term (TheJoin nf nm s) = currentTerm s nm \<and> TheJoin nf nm s \<in> sentJoins s"
-        by (auto simp add: P_def sentJoins_def)
+        by (auto simp add: P_def)
     qed
   qed
   finally show ?thesis .
