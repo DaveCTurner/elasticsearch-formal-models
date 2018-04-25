@@ -54,16 +54,8 @@ proof (intro notI)
   finally show False by simp
 qed
 
-definition isPublishRequest  :: "Message \<Rightarrow> bool" where "isPublishRequest  m \<equiv> case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isPublishResponse :: "Message \<Rightarrow> bool" where "isPublishResponse m \<equiv> case payload m of PublishResponse _ \<Rightarrow> True | _ \<Rightarrow> False"
 definition isCommit          :: "Message \<Rightarrow> bool" where "isCommit          m \<equiv> case payload m of Commit _ \<Rightarrow> True | _ \<Rightarrow> False"
-
-lemma isPublishRequest_simps[simp]:
-  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
-  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = PublishRequest  pl \<rparr> = True"
-  "\<And>pl. isPublishRequest \<lparr> source = nf, dest = nm, term = tm, payload = PublishResponse pl \<rparr> = False"
-  "\<And>pl. isPublishRequest \<lparr> source = nm, dest = nf, term = tm, payload = Commit          pl \<rparr> = False"
-  by (simp_all add: isPublishRequest_def)
 
 lemma isPublishResponse_simps[simp]:
   "\<And>pl. isPublishResponse \<lparr> source = nf, dest = nm, term = tm, payload = Join            pl \<rparr> = False"
@@ -80,7 +72,7 @@ lemma isCommit_simps[simp]:
   by (simp_all add: isCommit_def)
 
 definition sentJoins            :: "Message set stfun" where "sentJoins            s \<equiv> { m \<in> messages s. case payload m of Join _ \<Rightarrow> True | _ \<Rightarrow> False }"
-definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. isPublishRequest m }"
+definition sentPublishRequests  :: "Message set stfun" where "sentPublishRequests  s \<equiv> { m \<in> messages s. case payload m of PublishRequest _ \<Rightarrow> True | _ \<Rightarrow> False }"
 definition sentPublishResponses :: "Message set stfun" where "sentPublishResponses s \<equiv> { m \<in> messages s. isPublishResponse m }"
 definition sentCommits          :: "Message set stfun" where "sentCommits          s \<equiv> { m \<in> messages s. isCommit m }"
 
@@ -2091,7 +2083,7 @@ proof -
         case True
         have "lastAcceptedConfiguration t n = newConfig"
           by (simp add: HandlePublishRequest True)
-        also from HandlePublishRequest have "newConfig \<in> config ` {m \<in> messages s. isPublishRequest m}"
+        also from HandlePublishRequest have "newConfig \<in> config ` sentPublishRequests s"
         proof (intro image_eqI)
           show "newConfig = config \<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = PublishRequest \<lparr>prq_version = newVersion, prq_value = newValue, prq_config = newConfig, prq_commConf = commConfig\<rparr>\<rparr>"
             by simp
@@ -2144,14 +2136,14 @@ proof -
       next
         case True
         define prq where "\<And>nf. prq nf \<equiv> \<lparr>source = nm, dest = nf, term = currentTerm s nm, payload = PublishRequest \<lparr>prq_version = newPublishVersion, prq_value = v, prq_config = vs, prq_commConf = lastCommittedConfiguration s nm\<rparr>\<rparr>"
-        have "vs \<in> config ` {m \<in> messages t. isPublishRequest m}"
+        have "vs \<in> config ` sentPublishRequests t"
         proof (intro image_eqI)
           show "vs = config (prq nm)"
             by (auto simp add: prq_def)
           have "prq nm \<in> newPublishRequests" by (auto simp add: prq_def ClientRequest)
-          also have "... \<subseteq> {m \<in> messages t. isPublishRequest m}"
+          also have "... \<subseteq> sentPublishRequests t"
             by (auto simp add: ClientRequest)
-          finally show "prq nm \<in> {m \<in> messages t. isPublishRequest m}" .
+          finally show "prq nm \<in> sentPublishRequests t" .
         qed
         also have "... \<subseteq> PublishedConfigurations t"
           unfolding PublishedConfigurations_def by (auto simp add: sentPublishRequests_def)
@@ -2507,7 +2499,7 @@ proof -
         thus ?thesis unfolding ClientRequest by auto
       next
         case new
-        have "\<exists>m\<in>newPublishRequests. isPublishRequest m \<and> term m = tCurr \<and> version m = iCurr"
+        have "\<exists>m\<in>newPublishRequests. term m = tCurr \<and> version m = iCurr"
           by (auto simp add: ClientRequest new)
         thus ?thesis unfolding ClientRequest by (elim bexE, auto)
       qed
