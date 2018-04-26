@@ -770,9 +770,11 @@ lemma LastPublishedVersionImpliesLastCommittedConfigurationBelow_step:
   assumes "s \<Turnstile> LastPublishedVersionImpliesLastCommittedConfigurationBelow termBound"
   assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
   assumes "s \<Turnstile> PublishRequestImpliesElectionWonBelow termBound"
-  assumes "s \<Turnstile> PublishRequestVersionAtMostSenderBelow termBound"
   assumes "s \<Turnstile> ElectionWonImpliesStartedJoin"
   assumes "s \<Turnstile> PublishRequestsUniquePerTermVersionBelow termBound"
+  assumes "s \<Turnstile> LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound"
+  assumes "s \<Turnstile> PublishRequestSentByMasterBelow termBound"
+  assumes "s \<Turnstile> NewLeaderCanOnlySendOneMessageBelow termBound"
   shows "(s,t) \<Turnstile> LastPublishedVersionImpliesLastCommittedConfigurationBelow termBound$"
 proof -
   from assms
@@ -781,22 +783,27 @@ proof -
     msgTermVersion m \<notin> msgTermVersion ` sentCommits s \<rbrakk> \<Longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     and hyp3: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; currentTerm s (source m) = term m; startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
-    and hyp4: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     unfolding LastPublishedVersionImpliesLastCommittedConfigurationBelow_def
       PublishRequestVersionAtMostSenderBelow_def
-      PublishRequestImpliesElectionWonBelow_def PublishRequestVersionAtMostSenderBelow_def
+      PublishRequestImpliesElectionWonBelow_def
     by auto
 
   from assms 
   have  hyp5: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp6: "\<And>m1 m2. \<lbrakk> m1 \<in> sentPublishRequests s; m2 \<in> sentPublishRequests s; term m1 < termBound; term m1 = term m2; version m1 = version m2 \<rbrakk> \<Longrightarrow> payload m1 = payload m2"
+    and hyp7: "\<And>n. \<lbrakk> electionWon s n; currentTerm s n < termBound \<rbrakk> \<Longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}"
+    and hyp8: "\<And>m n. \<lbrakk> m \<in> sentPublishRequests s; term m = currentTerm s n; term m < termBound; electionWon s n \<rbrakk> \<Longrightarrow> n = source m"
+    and hyp9: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; term m = currentTerm s (source m); electionWon s (source m); currentTerm s (source m) \<noteq> lastAcceptedTerm s (source m) \<rbrakk> \<Longrightarrow> version m = lastPublishedVersion s (source m)"
     unfolding ElectionWonImpliesStartedJoin_def PublishRequestsUniquePerTermVersionBelow_def
+      LeaderCannotPublishWithoutAcceptingPreviousRequestBelow_def
+      PublishRequestSentByMasterBelow_def
+      NewLeaderCanOnlySendOneMessageBelow_def
     by metis+
 
   {
     fix mprq
-    assume prem: "mprq \<in> sentPublishRequests t" "electionWon t (source mprq)" "term mprq = currentTerm t (source mprq)"
-      "version mprq = lastPublishedVersion t (source mprq)"
+    assume prem: "mprq \<in> sentPublishRequests t" "electionWon t (source mprq)"
+      "term mprq = currentTerm t (source mprq)" "version mprq = lastPublishedVersion t (source mprq)"
       "term mprq < termBound" "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits t"
     from Next hyp1 prem
     have "commConf mprq = lastCommittedConfiguration t (source mprq)"
@@ -840,7 +847,7 @@ proof -
             by auto
 
           from flags prem have "termVersion (source mprq) t = msgTermVersion mprq" by (simp add: msgTermVersion_def termVersion_def)
-          also from oldRequest prem have "msgTermVersion mprq \<le> termVersion (source mprq) s" by (intro hyp4)
+          also from oldRequest prem have "msgTermVersion mprq \<le> termVersion (source mprq) s" by (intro hyp2)
           also from flags source_eq_nm have "termVersion (source mprq) s < termVersion (source mprq) t"
             by (simp add: termVersion_def ClientRequest)
           finally show False by simp
@@ -864,7 +871,39 @@ proof -
         proof (intro hyp6)
           from prem show "mprq \<in> sentPublishRequests s" "term mprq < termBound" "term mprq = term ?mprq'" by (auto simp add: HandlePublishRequest True)
           from HandlePublishRequest show "?mprq' \<in> sentPublishRequests s" by simp
-          show "version mprq = version ?mprq'" sorry
+
+          from prem HandlePublishRequest True
+          have "nf = source ?mprq'"
+            by (intro hyp8, auto)
+          hence nm_nf: "nm = nf" by simp
+
+          from prem True HandlePublishRequest hyp5 have flags: "electionWon s nf" "startedJoinSinceLastReboot s nf" by auto
+
+          from prem have lastPublishedVersion_options: "lastPublishedVersion s nf \<in> {lastAcceptedVersion s nf, Suc (lastAcceptedVersion s nf)}"
+            by (intro hyp7, auto simp add: True HandlePublishRequest)
+
+          show "version mprq = version ?mprq'"
+          proof (cases "currentTerm s nf = lastAcceptedTerm s nf")
+            case newLeader: False
+            with prem HandlePublishRequest True
+            have "version ?mprq' = lastPublishedVersion s (source ?mprq')" by (intro hyp9, auto simp add: nm_nf)
+            with prem show ?thesis by (simp add: True nm_nf HandlePublishRequest)
+          next
+            case oldLeader: True
+            show ?thesis
+            proof (intro order_antisym)
+              from oldLeader HandlePublishRequest have "lastAcceptedVersion s nf < newVersion" by auto
+              with lastPublishedVersion_options have "lastPublishedVersion s nf \<le> newVersion" by auto
+              with prem True show "version mprq \<le> version ?mprq'" by (auto simp add: HandlePublishRequest)
+            next
+              from prem HandlePublishRequest True
+              have "msgTermVersion ?mprq' \<le> termVersion (source ?mprq') s"
+                by (intro hyp2, auto)
+              also have "... = TermVersion (currentTerm s nf) (lastPublishedVersion s nf)"
+                using flags by (auto simp add: nm_nf termVersion_def)
+              finally show "version ?mprq' \<le> version mprq" using prem by (auto simp add: HandlePublishRequest msgTermVersion_def less_eq_TermVersion_def True)
+            qed
+          qed
         qed
 
         hence "commConf mprq = commConfig" by (simp add: commConf_def)
@@ -887,19 +926,32 @@ proof -
         with hyp1 prem show ?thesis unfolding termVersion_def HandleCommitRequest by auto
       next
         case True
-          (* committing last-accepted on the master. But the preconditions say that the master's current termversion is uncommitted.
-             Wrinkle: current termversion is the last-published version; what if the master hasn't accepted it?
-             Think this is impossible: increment last-published, then last-accepted:
 
-LeaderCannotPublishWithoutAcceptingPreviousRequestBelow termBound s \<equiv>
-  \<forall> n. electionWon s n \<longrightarrow> currentTerm s n < termBound \<longrightarrow> lastPublishedVersion s n \<in> {lastAcceptedVersion s n, Suc (lastAcceptedVersion s n)}
+        let ?mc = "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = Commit \<lparr>c_version = lastAcceptedVersion s nf\<rparr>\<rparr>"
 
-PublishRequestVersionAtMostSenderBelow termBound s \<equiv>
-  \<forall> m \<in> sentPublishRequests s. term m < termBound \<longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
+        from prem True HandleCommitRequest hyp5 have flags: "electionWon s nf" "startedJoinSinceLastReboot s nf" "currentTerm s nf < termBound" by auto
 
+        from flags have lastPublishedVersion_options: "lastPublishedVersion s nf \<in> {lastAcceptedVersion s nf, Suc (lastAcceptedVersion s nf)}"
+          by (intro hyp7, auto simp add: True)
+        then consider (accepted) "lastPublishedVersion s nf = lastAcceptedVersion s nf"
+          | (notAccepted) "lastPublishedVersion s nf = Suc (lastAcceptedVersion s nf)"
+          by auto
+        thus ?thesis
+        proof cases
+          case accepted
+          from HandleCommitRequest prem
+          have "msgTermVersion mprq \<in> msgTermVersion ` sentCommits s"
+            by (intro image_eqI [where x = ?mc], auto simp add: msgTermVersion_def True accepted)
+          with prem show ?thesis by (auto simp add: HandleCommitRequest)
+        next
+          case notAccepted
+            (* committing the last-accepted state on the master, but the master has already published
+a new state. This means that the last-committed state in this publication becomes stale.
 
-*)
-        show ?thesis sorry
+However, note that the configuration can't change _too_ quickly: can only publish a reconfiguration
+if there isn't already one in progress. *)
+          then show ?thesis sorry
+        qed
       qed
     next
       case (RestartNode nr)
