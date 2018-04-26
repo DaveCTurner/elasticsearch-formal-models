@@ -117,7 +117,7 @@ locale ZenWithTerms =
           \<and> #lastAcceptedTerm_n     = id<$lastAcceptedTerm,#n>
           \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
 
-          \<and> #newPublishVersion  = id<$lastPublishedVersion,#n> + #1
+          \<and> #newPublishVersion  = id<$lastPublishedVersion,#n> + #1 (* NB deviation from TLA+ model in which an arbitrarily large newPublishVersion can be chosen *)
           \<and> #publishRequests = #(\<Union> ns \<in> UNIV. {
                 \<lparr> source = n, dest = ns, term = currentTerm_n
                 , payload = PublishRequest \<lparr> prq_version  = newPublishVersion
