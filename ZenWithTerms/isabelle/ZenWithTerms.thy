@@ -712,7 +712,6 @@ definition LastPublishedVersionImpliesLastCommittedConfigurationBelow :: "nat \<
     \<longrightarrow> electionWon s (source m)
     \<longrightarrow> version m = lastPublishedVersion s (source m)
     \<longrightarrow> msgTermVersion m \<notin> msgTermVersion ` sentCommits s
-    \<longrightarrow> config m \<noteq> commConf m
     \<longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
 
 definition LastAcceptedConfigurationEitherCommittedOrPublishedBelow :: "nat \<Rightarrow> stpred" where "LastAcceptedConfigurationEitherCommittedOrPublishedBelow termBound s \<equiv>
@@ -782,7 +781,7 @@ proof -
   from assms
   have  hyp1: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; term m = currentTerm s (source m);
     electionWon s (source m); version m = lastPublishedVersion s (source m);
-    msgTermVersion m \<notin> msgTermVersion ` sentCommits s; config m \<noteq> commConf m \<rbrakk> \<Longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
+    msgTermVersion m \<notin> msgTermVersion ` sentCommits s \<rbrakk> \<Longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
     and hyp2: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound \<rbrakk> \<Longrightarrow> msgTermVersion m \<le> termVersion (source m) s"
     and hyp3: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; currentTerm s (source m) = term m; startedJoinSinceLastReboot s (source m) \<rbrakk> \<Longrightarrow> electionWon s (source m)"
     unfolding LastPublishedVersionImpliesLastCommittedConfigurationBelow_def
@@ -808,7 +807,6 @@ proof -
       "term mprq = currentTerm t (source mprq)" "version mprq = lastPublishedVersion t (source mprq)"
       "term mprq < termBound"
       "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits t"
-      "config mprq \<noteq> commConf mprq"
     from Next hyp1 prem
     have "commConf mprq = lastCommittedConfiguration t (source mprq)"
     proof (cases rule: square_Next_cases)
@@ -930,13 +928,9 @@ proof -
         with hyp1 prem show ?thesis unfolding termVersion_def HandleCommitRequest by auto
       next
         case True
-
         let ?mc = "\<lparr>source = nm, dest = nf, term = currentTerm s nf, payload = Commit \<lparr>c_version = lastAcceptedVersion s nf\<rparr>\<rparr>"
-
         from prem True HandleCommitRequest hyp5 have flags: "electionWon s nf" "startedJoinSinceLastReboot s nf" "currentTerm s nf < termBound" by auto
-
         with HandleCommitRequest have accepted: "lastPublishedVersion s nf = lastAcceptedVersion s nf" by auto
-
         from HandleCommitRequest prem
         have "msgTermVersion mprq \<in> msgTermVersion ` sentCommits s"
           by (intro image_eqI [where x = ?mc], auto simp add: msgTermVersion_def True accepted)
@@ -1161,7 +1155,7 @@ proof -
     and hyp4: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. msgTermVersion mprs = msgTermVersion mprq \<and> dest mprs = source mprq"
     and hyp5: "\<And>n. electionWon s n \<Longrightarrow> startedJoinSinceLastReboot s n"
     and hyp6: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; term m = currentTerm s (source m); electionWon s (source m); version m = lastPublishedVersion s (source m) \<rbrakk> \<Longrightarrow> config m = lastPublishedConfiguration s (source m)"
-    and hyp7: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; term m = currentTerm s (source m); electionWon s (source m); version m = lastPublishedVersion s (source m); msgTermVersion m \<notin> msgTermVersion ` sentCommits s; config m \<noteq> commConf m \<rbrakk> \<Longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
+    and hyp7: "\<And>m. \<lbrakk> m \<in> sentPublishRequests s; term m < termBound; term m = currentTerm s (source m); electionWon s (source m); version m = lastPublishedVersion s (source m); msgTermVersion m \<notin> msgTermVersion ` sentCommits s \<rbrakk> \<Longrightarrow> commConf m = lastCommittedConfiguration s (source m)"
     unfolding CommitMeansQuorumBelow_def FinitePublishResponses_def PublishVotesAreResponsesBelow_def
       PublishResponseMeansPublishRequest_def ElectionWonImpliesStartedJoin_def
       LastPublishedVersionImpliesLastPublishedConfigurationBelow_def
@@ -1266,26 +1260,17 @@ proof -
           show IsQuorum1: "IsQuorum (publishVotes t nm) (config mprq)" 
             unfolding nm_source by simp
 
-          show "IsQuorum (publishVotes t nm) (commConf mprq)"
-          proof (cases "config mprq = commConf mprq")
-            case True
-            with IsQuorum1 show ?thesis by simp
-          next
-            case False
-            have commConfig_eq: "commConf mprq = lastCommittedConfiguration s nm"
-              unfolding nm_source
-            proof (intro hyp7 config_prems False)
-              have "msgTermVersion mprq = msgTermVersion mc"
-                by (auto simp add: mc_eq msgTermVersion_def mprq)
-              with isUncommitted
-              show "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits s" by simp
-            qed
-
-(* sufficient that commConf \<in> { lastCommittedConfiguration s nm, lastPublishedConfiguration s nm } *)
-
-            from config_eq commConfig_eq HandlePublishResponse_Quorum
-            show "IsQuorum (publishVotes t nm) (commConf mprq)" by simp_all
+          have commConfig_eq: "commConf mprq = lastCommittedConfiguration s nm"
+            unfolding nm_source
+          proof (intro hyp7 config_prems)
+            have "msgTermVersion mprq = msgTermVersion mc"
+              by (auto simp add: mc_eq msgTermVersion_def mprq)
+            with isUncommitted
+            show "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits s" by simp
           qed
+
+          from config_eq commConfig_eq HandlePublishResponse_Quorum
+          show "IsQuorum (publishVotes t nm) (commConf mprq)" by simp_all
         qed
       qed auto
     qed
