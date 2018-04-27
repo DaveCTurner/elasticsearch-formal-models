@@ -187,6 +187,7 @@ locale ZenWithTerms =
     \<and> #(term     m) = id<$currentTerm,#n>
     \<and> #(term     m) = id<$lastAcceptedTerm,#n>
     \<and> #(version  m) = id<$lastAcceptedVersion,#n>
+    \<and> (id<$electionWon,#n> \<longrightarrow> id<$lastAcceptedVersion,#n> = id<$lastPublishedVersion,#n>)
     \<and> (\<exists> lastAcceptedConfiguration_n. #lastAcceptedConfiguration_n = id<$lastAcceptedConfiguration,#n>
           \<and> updated lastCommittedConfiguration n lastAcceptedConfiguration_n)
     \<and> unchanged (currentTerm, joinVotes, messages, lastAcceptedTerm, lastAcceptedValue, startedJoinSinceLastReboot,

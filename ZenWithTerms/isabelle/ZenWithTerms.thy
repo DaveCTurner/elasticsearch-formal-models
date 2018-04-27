@@ -279,6 +279,7 @@ lemma square_Next_cases [consumes 1, case_names unchanged HandleStartJoin Handle
     \<lbrakk> \<lparr> source = nm, dest = nf, term = currentTerm s nf
       , payload = Commit \<lparr> c_version = lastAcceptedVersion s nf \<rparr> \<rparr> \<in> sentCommits s
     ; lastAcceptedTerm s nf = currentTerm s nf
+    ; electionWon s nf \<longrightarrow> lastPublishedVersion s nf = lastAcceptedVersion s nf
     ; messages                   t          = messages                   s
     ; sentJoins                  t          = sentJoins                  s
     ; sentPublishRequests        t          = sentPublishRequests        s
@@ -934,27 +935,12 @@ proof -
 
         from prem True HandleCommitRequest hyp5 have flags: "electionWon s nf" "startedJoinSinceLastReboot s nf" "currentTerm s nf < termBound" by auto
 
-        from flags have lastPublishedVersion_options: "lastPublishedVersion s nf \<in> {lastAcceptedVersion s nf, Suc (lastAcceptedVersion s nf)}"
-          by (intro hyp7, auto simp add: True)
-        then consider (accepted) "lastPublishedVersion s nf = lastAcceptedVersion s nf"
-          | (notAccepted) "lastPublishedVersion s nf = Suc (lastAcceptedVersion s nf)"
-          by auto
-        thus ?thesis
-        proof cases
-          case accepted
-          from HandleCommitRequest prem
-          have "msgTermVersion mprq \<in> msgTermVersion ` sentCommits s"
-            by (intro image_eqI [where x = ?mc], auto simp add: msgTermVersion_def True accepted)
-          with prem show ?thesis by (auto simp add: HandleCommitRequest)
-        next
-          case notAccepted
-            (* committing the last-accepted state on the master, but the master has already published
-a new state. This means that the last-committed state in this publication becomes stale.
+        with HandleCommitRequest have accepted: "lastPublishedVersion s nf = lastAcceptedVersion s nf" by auto
 
-However, note that the configuration can't change _too_ quickly: can only publish a reconfiguration
-if there isn't already one in progress. *)
-          then show ?thesis sorry
-        qed
+        from HandleCommitRequest prem
+        have "msgTermVersion mprq \<in> msgTermVersion ` sentCommits s"
+          by (intro image_eqI [where x = ?mc], auto simp add: msgTermVersion_def True accepted)
+        with prem show ?thesis by (auto simp add: HandleCommitRequest)
       qed
     next
       case (RestartNode nr)
@@ -1294,6 +1280,8 @@ proof -
               with isUncommitted
               show "msgTermVersion mprq \<notin> msgTermVersion ` sentCommits s" by simp
             qed
+
+(* sufficient that commConf \<in> { lastCommittedConfiguration s nm, lastPublishedConfiguration s nm } *)
 
             from config_eq commConfig_eq HandlePublishResponse_Quorum
             show "IsQuorum (publishVotes t nm) (commConf mprq)" by simp_all
