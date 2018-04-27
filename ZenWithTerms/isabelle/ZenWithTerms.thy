@@ -646,7 +646,7 @@ definition PublishRequestImpliesElectionWonBelow :: "nat \<Rightarrow> stpred" w
   \<forall> m \<in> sentPublishRequests s. term m < termBound \<longrightarrow> currentTerm s (source m) = term m
     \<longrightarrow> startedJoinSinceLastReboot s (source m) \<longrightarrow> electionWon s (source m)"
 
-definition PublishRequestImpliesQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesQuorumBelow termBound s \<equiv>
+definition PublishRequestImpliesQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesQuorumBelow termBound s \<equiv> (* TODO rename this to distinguish from PublishRequestMeansQuorumBelow *)
   \<forall> m \<in> sentPublishRequests s. term m < termBound \<longrightarrow> currentTerm s (source m) = term m \<longrightarrow> electionWon s (source m)
                \<longrightarrow> IsQuorum (joinVotes s (source m)) (config m)
                  \<and> IsQuorum (joinVotes s (source m)) (commConf m)"
@@ -752,6 +752,11 @@ definition CommitMeansQuorumBelow :: "nat \<Rightarrow> stpred" where "CommitMea
     \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (config mprq)
     \<and> IsQuorum (source ` { mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc }) (commConf mprq))"
 
+definition PublishRequestMeansQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestMeansQuorumBelow termBound s \<equiv>
+  \<forall> mprq \<in> sentPublishRequests s. term mprq < termBound
+      \<longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (config mprq)
+        \<and> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (commConf mprq)"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def sentPublishRequests_def) 
@@ -766,6 +771,78 @@ lemma sentPublishRequests_increasing: "sentPublishRequests s \<subseteq> sentPub
 lemma sentPublishResponses_increasing: "sentPublishResponses s \<subseteq> sentPublishResponses t" using Next by (cases rule: square_Next_cases, auto)
 lemma sentCommits_increasing: "sentCommits s \<subseteq> sentCommits t" using Next by (cases rule: square_Next_cases, auto)
 lemma terms_increasing: shows "currentTerm s n \<le> currentTerm t n" using Next by (cases rule: square_Next_cases, auto)
+
+lemma PublishRequestMeansQuorumBelow_step:
+  assumes "s \<Turnstile> PublishRequestMeansQuorumBelow termBound"
+  assumes "s \<Turnstile> FiniteJoins"
+  assumes "s \<Turnstile> JoinVotesFaithful"
+  assumes "s \<Turnstile> ElectionWonQuorumBelow termBound"
+  shows "(s,t) \<Turnstile> PublishRequestMeansQuorumBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>mprq. \<lbrakk> mprq \<in> sentPublishRequests s; term mprq < termBound \<rbrakk> \<Longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (config mprq)"
+    and hyp2: "\<And>mprq. \<lbrakk> mprq \<in> sentPublishRequests s; term mprq < termBound \<rbrakk> \<Longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (commConf mprq)"
+    and hyp3: "\<And>n. finite (sentJoins s)"
+    and hyp4: "\<And>nm nf. nf \<in> joinVotes s nm \<Longrightarrow> \<exists>joinPayload. \<lparr>source = nf, dest = nm, term = currentTerm s nm, payload = Join joinPayload\<rparr> \<in> sentJoins s"
+    and hyp5: "\<And>n. \<lbrakk> currentTerm s n < termBound; electionWon s n \<rbrakk> \<Longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)"
+    unfolding PublishRequestMeansQuorumBelow_def FiniteJoins_def JoinVotesFaithful_def
+      ElectionWonQuorumBelow_def
+    by auto
+
+  from Next hyp3 have hyp3': "\<And>n. finite (sentJoins t)"
+    by (cases rule: square_Next_cases, auto)
+
+  {
+    fix mprq
+    assume prem: "mprq \<in> sentPublishRequests t" "term mprq < termBound"
+
+    {
+      fix c
+      assume s: "IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) c"
+      from sentJoins_increasing have "IsQuorum (source ` { j \<in> sentJoins t. dest j = source mprq \<and> term j = term mprq }) c"
+        by (intro IsQuorum_mono [OF s] finite_imageI finite_subset [OF _ hyp3'] image_mono, auto)
+    }
+    note IsQuorum_stable = this
+
+    from Next hyp1 hyp2 prem
+    have "(IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (config mprq)
+         \<and> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (commConf mprq))"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      from prem consider (old) "mprq \<in> sentPublishRequests s" | (new) "mprq \<in> newPublishRequests" by (auto simp add: ClientRequest)
+      thus ?thesis
+      proof cases
+        case old with ClientRequest hyp1 hyp2 prem show ?thesis by simp
+      next
+        case new
+        hence config_eqs: "config mprq = vs" "commConf mprq = lastCommittedConfiguration s nm"
+          by (auto simp add: ClientRequest)
+
+        {
+          fix c
+          assume receivedQuorum: "IsQuorum (joinVotes s nm) c"
+          have "IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) c"
+            using sentJoins_increasing
+          proof (intro IsQuorum_mono [OF receivedQuorum] finite_imageI finite_subset [OF _ hyp3] subsetI)
+            fix nf assume "nf \<in> joinVotes s nm"
+            from hyp4 [OF this] new
+            show "nf \<in> source ` {j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq}"
+              by (elim exE, intro image_eqI, auto simp add: ClientRequest)
+          qed auto
+        }
+        note IsQuorumI = this
+
+        from new prem ClientRequest have "currentTerm s nm < termBound" by auto
+        thus ?thesis unfolding config_eqs by (intro conjI IsQuorumI hyp5 ClientRequest)
+      qed
+    qed auto
+    with IsQuorum_stable
+    have "IsQuorum (source ` { j \<in> sentJoins t. dest j = source mprq \<and> term j = term mprq }) (config mprq)
+        \<and> IsQuorum (source ` { j \<in> sentJoins t. dest j = source mprq \<and> term j = term mprq }) (commConf mprq)"
+      by auto
+  }
+  thus ?thesis by (auto simp add: PublishRequestMeansQuorumBelow_def)
+qed
 
 lemma LastPublishedVersionImpliesLastCommittedConfigurationBelow_step:
   assumes "s \<Turnstile> LastPublishedVersionImpliesLastCommittedConfigurationBelow termBound"
