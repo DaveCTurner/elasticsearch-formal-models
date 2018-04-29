@@ -2202,6 +2202,16 @@ proof -
         next
           case le (* lastAcceptedTerm s nm \<le> term mc < term mp = currentTerm s nm *)
 
+          note termWinningConfiguration_def
+
+(* idea: look at last-accepted term/version vs last-committed. last-committed _was_ committed, and last-accepted is \<ge>,
+so must have \<ge> version: either == term (so \<ge> termversion \<Rightarrow> \<ge> version) or else > term (so induction) *)
+
+(* if mc \<le> last-committed-on-nm then either equal term (hence versions OK) or lesser term (hence induction works) *)
+
+(* if mc > last-committed-on-nm then ... nm couldn't have become master? why? *)
+
+
 
 
           show ?thesis sorry
@@ -2224,6 +2234,8 @@ Any intervening commit would need to get a quorum of votes vs the last committed
 
 Any intervening commit comes from a PublishRequest and therefore has a yet-higher version.
 Therefore "wlog" may assume that mc is the TermVersion-last commit before mp.
+
+Also have  (source ` { j \<in> sentJoins s. dest j = n \<and> term j = tm }) (termWinningConfiguration tm s)
 
 
 *)
