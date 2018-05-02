@@ -2306,11 +2306,16 @@ proof -
   thus ?thesis by (simp add: CommitMeansPublishResponse_def)
 qed
 
+lemma psubset_element_I: "\<And>x A B. \<lbrakk> A \<subseteq> B; x \<in> B; x \<notin> A \<rbrakk> \<Longrightarrow> A \<subset> B" by auto
+
 lemma CommitMeansLaterPublicationsBelow_TODO:
   assumes "s \<Turnstile> TermWinningConfigurationHasQuorumBelow termBound"
   assumes "s \<Turnstile> PublishRequestFromHistoricalLeader"
   assumes "s \<Turnstile> CommitMeansQuorumBelow termBound"
   assumes "s \<Turnstile> OneMasterPerTermBelow termBound"
+  assumes "s \<Turnstile> FiniteTermVersions"
+  assumes "s \<Turnstile> CommitMeansPublishResponse"
+  assumes "s \<Turnstile> PublishResponseMeansPublishRequest"
   shows "s \<Turnstile> CommitMeansLaterPublicationsBelow termBound"
 proof -
   from assms
@@ -2318,7 +2323,11 @@ proof -
     and hyp3: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> (term m, source m) \<in> leaderHistory s"
     and hyp4: "\<And>mc. \<lbrakk> mc \<in> sentCommits s; term mc < termBound \<rbrakk> \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. msgTermVersion mprq = msgTermVersion mc \<and> IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc}) (config mprq) \<and> IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc}) (commConf mprq)"
     and hyp5: "\<And>n1 n2 tm. \<lbrakk> tm < termBound; (tm, n1) \<in> leaderHistory s; (tm, n2) \<in> leaderHistory s \<rbrakk> \<Longrightarrow> n1 = n2"
+    and hyp6: "finite (msgTermVersion ` messages s)"
+    and hyp7: "\<And>mc. mc\<in>sentCommits s \<Longrightarrow> \<exists>mprs\<in>sentPublishResponses s. msgTermVersion mc = msgTermVersion mprs \<and> source mc = dest mprs"
+    and hyp8: "\<And>mprs. mprs \<in> sentPublishResponses s \<Longrightarrow> \<exists>mprq\<in>sentPublishRequests s. msgTermVersion mprs = msgTermVersion mprq \<and> dest mprs = source mprq"
     unfolding TermWinningConfigurationHasQuorumBelow_def PublishRequestFromHistoricalLeader_def CommitMeansQuorumBelow_def OneMasterPerTermBelow_def
+      FiniteTermVersions_def CommitMeansPublishResponse_def PublishResponseMeansPublishRequest_def
     by auto
 
   have wf_termVersion: "wf {(tv1, tv2). tv1 < (tv2 :: TermVersion)}" (is "wf ?r")
@@ -2331,28 +2340,73 @@ proof -
   {
     fix mc mprq
     assume prem: "mc \<in> sentCommits s" "mprq \<in> sentPublishRequests s" "term mc < term mprq" "term mprq < termBound"
-    define tvprq where "tvprq = msgTermVersion mprq"
-    from wf_termVersion tvprq_def prem have "version mc < version mprq"
-    proof (induct tvprq arbitrary: mprq rule: wf_induct_rule)
-      case (less tvprq)
 
-      show ?case
-      proof (cases "\<exists> mprq' \<in> sentPublishRequests s. term mprq' = term mprq \<and> version mprq' < version mprq")
-        case True
+    define inductor where "inductor = (msgTermVersion mprq, msgTermVersion ` {mc' \<in> sentCommits s. msgTermVersion mc < msgTermVersion mc' \<and> term mc' < term mprq})"
+    from wf_lex_prod [OF wf_termVersion wf_finite_psubset] inductor_def prem have "version mc < version mprq"
+    proof (induct inductor arbitrary: mc mprq rule: wf_induct_rule)
+      case (less inductor)
+
+      consider (notFirstInTerm) "\<exists> mprq' \<in> sentPublishRequests s. term mprq' = term mprq \<and> version mprq' < version mprq"
+        | (laterCommit) "\<exists> mc' \<in> sentCommits s. msgTermVersion mc < msgTermVersion mc' \<and> term mc' < term mprq"
+        | (hardCase) "\<not> (\<exists> mprq' \<in> sentPublishRequests s. term mprq' = term mprq \<and> version mprq' < version mprq)"
+          "\<not> (\<exists> mc' \<in> sentCommits s. msgTermVersion mc < msgTermVersion mc' \<and> term mc' < term mprq)" by auto
+
+      thus ?case
+      proof cases
+        case notFirstInTerm
         then obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "term mprq' = term mprq" "version mprq' < version mprq" by auto
         have "version mc < version mprq'"
         proof (intro less mprq')
-          from less mprq'
-          show "(msgTermVersion mprq', tvprq) \<in> {(tv1, tv2). tv1 < tv2}"
-            by (auto simp add: msgTermVersion_def)
+          from mprq' have "msgTermVersion mprq' < msgTermVersion mprq" by (simp add: msgTermVersion_def)
+
+          with less
+          show "((msgTermVersion mprq', msgTermVersion ` {mc' \<in> sentCommits s. msgTermVersion mc < msgTermVersion mc' \<and> term mc' < term mprq'}), inductor) \<in> {(tv1, tv2). tv1 < tv2} <*lex*> finite_psubset" by simp
           from less mprq' show "term mc < term mprq'" "term mprq' < termBound" by auto
         qed simp
         also from mprq' have "... < version mprq" by simp
         finally show ?thesis .
       next
-        case False
+        case laterCommit
+        then obtain mc' where mc': "mc' \<in> sentCommits s" "msgTermVersion mc < msgTermVersion mc'" "term mc' < term mprq" by auto
 
-(* mprq is first publication in this term *)
+        have "version mc < version mc'"
+        proof (cases "term mc = term mc'")
+          case True
+          with mc' show ?thesis by (auto simp add: msgTermVersion_def)
+        next
+          case False
+
+          from mc' hyp7 [of mc'] obtain mprs' where mprs': "mprs' \<in> sentPublishResponses s" "msgTermVersion mc' = msgTermVersion mprs'" by auto
+          from this hyp8 [of mprs'] obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprs' = msgTermVersion mprq'" by auto
+
+          have "version mc < version mprq'"
+          proof (intro less(1) [OF _ refl] less mprq')
+            from mc' False mprs' mprq' show "term mc < term mprq'" by (auto simp add: msgTermVersion_def)
+
+            from mprq' mprs' have "term mprq' = term mc'" by (auto simp add: msgTermVersion_def)
+            also from mc' have "... < term mprq" by simp
+            finally have term_mprq'_mprq: "term mprq' < term mprq" .
+            also from less have "... < termBound" by simp
+            finally show "term mprq' < termBound" .
+
+            show "((msgTermVersion mprq', msgTermVersion ` {mc' \<in> sentCommits s. msgTermVersion mc < msgTermVersion mc' \<and> term mc' < term mprq'}), inductor) \<in> {(tv1, tv2). tv1 < tv2} <*lex*> finite_psubset"
+              unfolding less using term_mprq'_mprq by (auto simp add: msgTermVersion_def)
+          qed
+          also from mprs' mprq' have "... = version mc'" by (auto simp add: msgTermVersion_def)
+          finally show ?thesis by simp
+        qed
+
+        also have "version mc' < version mprq"
+        proof (intro less(1) [OF _ refl] less mc')
+          from mc' show "((msgTermVersion mprq, msgTermVersion ` {mc'' \<in> sentCommits s. msgTermVersion mc' < msgTermVersion mc'' \<and> term mc'' < term mprq}), inductor) \<in> {(tv1, tv2). tv1 < tv2} <*lex*> finite_psubset"
+            unfolding less in_lex_prod
+            by (intro disjI2 conjI refl iffD2 [OF in_finite_psubset] psubset_element_I [where x = "msgTermVersion mc'"] image_mono imageI finite_subset [OF _ hyp6], auto simp add: sentCommits_def)
+        qed
+
+        finally show ?thesis .
+      next
+        case hardCase
+          (* mprq is first publication in this term, and mc is the latest commit in any earlier term *)
 
         have leaderHistory: "(term mprq, source mprq) \<in> leaderHistory s" by (intro hyp3 less)
 
@@ -2363,8 +2417,6 @@ proof -
         have leader_simp: "(SOME n. (term mprq, n) \<in> leaderHistory s) = source mprq" by (intro some_equality less hyp5)
 
         note termWinningConfiguration_def [where tm = "term mprq" and s = s]
-
-
 
         from less have "mc \<in> sentCommits s" "term mc < termBound" by auto
         from hyp4 [OF this]
