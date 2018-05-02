@@ -169,11 +169,10 @@ locale ZenWithTerms =
     \<and> modified publishVotes n (insert (source m))
     \<and> (if IsQuorum<id<publishVotes$,#n>,id<$lastCommittedConfiguration,#n>>
         \<and> IsQuorum<id<publishVotes$,#n>,id<$lastPublishedConfiguration,#n>>
-        then (\<exists> commitRequests currentTerm_n lastPublishedVersion_n.
-                  #lastPublishedVersion_n = id<$lastPublishedVersion,#n>
-                \<and> #commitRequests = #(\<Union> ns \<in> UNIV. {
+        then (\<exists> commitRequests currentTerm_n.
+                  #commitRequests = #(\<Union> ns \<in> UNIV. {
                         \<lparr> source = n, dest = ns, term = term m
-                        , payload = Commit \<lparr> c_version  = version  m \<rparr> \<rparr>})
+                        , payload = Commit \<lparr> c_version  = version m \<rparr> \<rparr>})
                 \<and> messages$ = ($messages \<union> #commitRequests))
         else unchanged messages)
     \<and> unchanged (startedJoinSinceLastReboot, lastCommittedConfiguration, currentTerm, electionWon, descendant,
