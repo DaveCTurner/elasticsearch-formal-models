@@ -172,7 +172,7 @@ locale ZenWithTerms =
         then (\<exists> commitRequests currentTerm_n.
                   #commitRequests = #(\<Union> ns \<in> UNIV. {
                         \<lparr> source = n, dest = ns, term = term m
-                        , payload = Commit \<lparr> c_version  = version m \<rparr> \<rparr>})
+                        , payload = Commit \<lparr> c_version = version m \<rparr> \<rparr>})
                 \<and> messages$ = ($messages \<union> #commitRequests))
         else unchanged messages)
     \<and> unchanged (startedJoinSinceLastReboot, lastCommittedConfiguration, currentTerm, electionWon, descendant,
