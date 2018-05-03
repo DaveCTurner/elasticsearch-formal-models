@@ -1006,6 +1006,15 @@ proof -
         have "IsQuorum (source ` {j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq \<and> TermVersion (laTerm j) (laVersion j) \<le> lastAcceptedTermVersionBelow (source mprq) (term mprq) s}) (termWinningConfiguration (term mprq) s)"
           by (intro hyp2 leaderHistory less)
 
+(* working with basedOn relationship: `mprq` is basedOn some earlier proposal mprq'. If mprq' \<ge> mc then the result follows. Remains to show the case when mprq' < mc. *)
+
+(* the idea is that we couldn't possibly have got a quorum of joins for mprq, because all of those joins would
+have to have a laTermVersion \<le> mprq'; but if you go back to where the basedOn paths to mprq' and mc diverged
+then there can't have been any commits going along to mprq' (by induction??) so the lastCommittedConfiguration
+at mprq' matches that at the divergence. Then there were some commits leading along the path to mc (at least one, because
+mc is one) and the first one of these involves a lastCommittedConfiguration-quorum.  *)
+
+
         from `term mprq < termBound` leaderHistory
         have leader_simp: "(SOME n. (term mprq, n) \<in> leaderHistory s) = source mprq" by (intro some_equality less hyp5)
 
