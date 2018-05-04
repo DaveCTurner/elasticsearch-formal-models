@@ -636,6 +636,9 @@ definition BasedOnBasedOn :: stpred where "BasedOnBasedOn s \<equiv>
   \<forall> tiCurr tPrev iPrev. (tiCurr, TermVersion  tPrev iPrev) \<in> basedOn s \<longrightarrow> 0 < iPrev
     \<longrightarrow> (\<exists> tiPrevPrev. (TermVersion  tPrev iPrev, tiPrevPrev) \<in> basedOn s)"
 
+definition BasedOnOrigin :: stpred where "BasedOnOrigin s \<equiv>
+  \<forall> m \<in> sentPublishRequests s. (msgTermVersion m, TermVersion 0 0) \<in> trancl (basedOn s)"
+
 definition ElectionWonQuorumBelow :: "nat \<Rightarrow> stpred" where "ElectionWonQuorumBelow termBound s \<equiv>
   \<forall> n. currentTerm s n < termBound \<longrightarrow> electionWon s n
     \<longrightarrow> IsQuorum (joinVotes s n) (lastCommittedConfiguration s n)
@@ -894,6 +897,9 @@ lemma CommitMeansLaterPublicationsBelow_TODO:
   assumes "s \<Turnstile> PublishRequestsContiguousWithinTermBelow termBound"
   assumes "s \<Turnstile> BasedOnBasedOn"
   assumes "s \<Turnstile> BasedOnPublishRequest"
+  assumes "s \<Turnstile> PublishRequestBasedOn"
+  assumes "s \<Turnstile> BasedOnIncreasing"
+  assumes "s \<Turnstile> BasedOnOrigin"
   shows "s \<Turnstile> CommitMeansLaterPublicationsBelow termBound"
 proof -
   from assms
@@ -907,11 +913,14 @@ proof -
     and hyp9: "\<And>m1 m2. \<lbrakk> m1 \<in> sentPublishRequests s; m2 \<in> sentPublishRequests s; term m1 = term m2; term m1 < termBound; version m1 < version m2 \<rbrakk> \<Longrightarrow> (TermVersion (term m2) (version m2), TermVersion (term m2) (version m2 - 1)) \<in> basedOn s"
     and hyp10: "\<And>tiCurr tPrev iPrev. \<lbrakk> (tiCurr, TermVersion tPrev iPrev) \<in> basedOn s; 0 < iPrev \<rbrakk> \<Longrightarrow> \<exists>tiPrevPrev. (TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn s"
     and hyp11: "\<And>tiPrev tCurr iCurr. \<lbrakk> (TermVersion tCurr iCurr, tiPrev) \<in> basedOn s \<rbrakk> \<Longrightarrow> \<exists>m\<in>sentPublishRequests s. term m = tCurr \<and> version m = iCurr"
+    and hyp12: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> \<exists>tiPrev. (TermVersion (term m) (version m), tiPrev) \<in> basedOn s"
+    and hyp13: "\<And>tPrev iPrev tCurr iCurr. (TermVersion tCurr iCurr, TermVersion tPrev iPrev) \<in> basedOn s \<Longrightarrow> iCurr = Suc iPrev \<and> tPrev \<le> tCurr"
+    and hyp14: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> (msgTermVersion m, TermVersion 0 0) \<in> trancl (basedOn s)"
     unfolding TermWinningConfigurationHasQuorumBelow_def PublishRequestFromHistoricalLeader_def CommitMeansQuorumBelow_def OneMasterPerTermBelow_def
       FiniteTermVersions_def CommitMeansPublishResponse_def PublishResponseMeansPublishRequest_def
       PublishRequestsContiguousWithinTermBelow_def BasedOnBasedOn_def BasedOnPublishRequest_def
+      PublishRequestBasedOn_def BasedOnIncreasing_def BasedOnOrigin_def
     by auto
-
 
   {
     fix m1 m2
@@ -921,6 +930,26 @@ proof -
       by (intro basedOn_within_term) 
   }
   note basedOn_within_term = this
+
+  {
+    fix t1 v1 t2 v2
+    define tv2 where "tv2 = TermVersion t2 v2"
+    assume "(TermVersion t1 v1, TermVersion t2 v2) \<in> trancl (basedOn s)"
+    hence "(TermVersion t1 v1, tv2) \<in> trancl (basedOn s)" by (simp add: tv2_def)
+    from this tv2_def
+    have "t2 \<le> t1 \<and> v2 < v1"
+    proof (induct tv2 arbitrary: t2 v2 rule: trancl_induct)
+      case (base tv2 t2 v2)
+      with hyp13 [of t1 v1 t2 v2] show ?case by (auto simp add: msgTermVersion_def)
+    next
+      case (step tv2 tv3 t3 v3)
+      obtain t2 v2 where tv2_def: "tv2 = TermVersion t2 v2" by (cases tv2, auto)
+      with step have hyp: "t2 \<le> t1" "v2 < v1" by simp_all
+      with step hyp13 [of t2 v2 t3 v3] show ?case by (auto simp add: tv2_def)
+    qed
+    hence "t2 \<le> t1" "v2 < v1" by simp_all
+  }
+  note basedOn_increasing_term = this(1) and basedOn_increasing_version = this(2)
 
   {
     fix mc mprq
@@ -1026,7 +1055,139 @@ mc is one) and the first one of these involves a lastCommittedConfiguration-quor
           "IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc}) (config mprqc)"
           "IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc}) (commConf mprqc)" by auto
 
-        show ?thesis sorry
+        define commonTermVersions where "commonTermVersions \<equiv> { tv. (msgTermVersion mprq, tv) \<in> trancl (basedOn s) \<and> (msgTermVersion mprqc, tv) \<in> rtrancl (basedOn s) }"
+
+        show ?thesis
+        proof (cases "msgTermVersion mc \<in> commonTermVersions")
+          case True
+          thus ?thesis by (auto simp add: commonTermVersions_def)
+        next
+          case False
+
+          have finite_commonTermVersions: "finite commonTermVersions"
+          proof (rule finite_subset)
+            let ?UB = "(\<lambda>(t,v). TermVersion t v) ` ({t. t \<le> term mprq} \<times> {v. v < version mprq})"
+            show "finite ?UB" by (intro finite_imageI finite_cartesian_product, auto)
+
+            show "commonTermVersions \<subseteq> ?UB"
+            proof (intro subsetI)
+              fix tv assume "tv \<in> commonTermVersions" hence tv: "(msgTermVersion mprq, tv) \<in> trancl (basedOn s)" by (simp add: commonTermVersions_def)
+              then obtain t v where tv_def: "tv = TermVersion t v" by (cases tv, auto simp add: msgTermVersion_def)
+              with tv basedOn_increasing_term basedOn_increasing_version
+              show "tv \<in> ?UB"
+                by (intro image_eqI [where x = "(t,v)"] iffD2 [OF mem_Times_iff] conjI CollectI, auto simp add: tv_def msgTermVersion_def)
+            qed
+          qed
+
+          have "TermVersion 0 0 \<in> { tv. (msgTermVersion mprq, tv) \<in> trancl (basedOn s) \<and> (msgTermVersion mprqc, tv) \<in> trancl (basedOn s) }"
+            by (intro CollectI conjI hyp14 less mprqc)
+          hence origin_commonTermVersions: "TermVersion 0 0 \<in> commonTermVersions" unfolding commonTermVersions_def by auto
+
+          define tvCommon where "tvCommon \<equiv> Max commonTermVersions"
+          obtain tCommon vCommon where tvCommon_eq: "tvCommon = TermVersion tCommon vCommon" using TermVersion.exhaust by blast
+
+          have tvCommon_common: "tvCommon \<in> commonTermVersions"
+            unfolding tvCommon_def
+            using origin_commonTermVersions
+            by (intro Max_in finite_commonTermVersions, auto)
+
+          {
+            fix tv mc'
+            assume tv: "(msgTermVersion mprq, tv) \<in> trancl (basedOn s)" "(tv, tvCommon) \<in> trancl (basedOn s)"
+            assume mc': "mc' \<in> sentCommits s"
+
+            have "msgTermVersion mc' \<noteq> tv"
+            proof (intro notI)
+              assume "msgTermVersion mc' = tv"
+              with tv have mc'_basedOn: "(msgTermVersion mprq, msgTermVersion mc') \<in> trancl (basedOn s)" "(msgTermVersion mc', tvCommon) \<in> trancl (basedOn s)" by auto
+
+              from mc'_basedOn
+              have "term mc' \<le> term mprq"
+                by (intro basedOn_increasing_term, auto simp add: msgTermVersion_def)
+              also from less have "term mprq < termBound" by simp
+              finally have mc'_termBound: "term mc' < termBound" .
+
+              from less have "term mc < term mprq" by simp
+              also from less have "term mprq < termBound" by simp
+              finally have mc_termBound: "term mc < termBound" .
+
+              from hyp4 [OF mc' mc'_termBound]
+              obtain mprqc' where mprqc': "mprqc' \<in> sentPublishRequests s" "msgTermVersion mprqc' = msgTermVersion mc'"
+                "IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc'}) (config mprqc')"
+                "IsQuorum (source ` {mprs \<in> sentPublishResponses s. msgTermVersion mprs = msgTermVersion mc'}) (commConf mprqc')" by auto
+
+              have "(msgTermVersion mc', msgTermVersion mc) \<in> rtrancl (basedOn s) \<Longrightarrow> False"
+              proof -
+                note mc'_basedOn(1)
+                also assume "(msgTermVersion mc', msgTermVersion mc) \<in> rtrancl (basedOn s)"
+                finally have "msgTermVersion mc \<in> commonTermVersions" unfolding commonTermVersions_def by (intro CollectI conjI, auto simp add: mprqc)
+                with False show False by simp
+              qed
+              hence lt_impossible: "(msgTermVersion mc', msgTermVersion mc) \<in> trancl (basedOn s) \<Longrightarrow> False"
+                and eq_impossible: "msgTermVersion mc' = msgTermVersion mc \<Longrightarrow> False" by (auto simp add: trancl_into_rtrancl)
+
+              have gt_impossible: "(msgTermVersion mc, msgTermVersion mc') \<in> trancl (basedOn s) \<Longrightarrow> False"
+              proof -
+                assume "(msgTermVersion mc, msgTermVersion mc') \<in> trancl (basedOn s)"
+                with mc'_basedOn have "msgTermVersion mc' \<in> commonTermVersions" unfolding commonTermVersions_def by (intro CollectI conjI, auto simp add: trancl_into_rtrancl mprqc)
+
+                hence "msgTermVersion mc' \<le> tvCommon" unfolding tvCommon_def by (intro Max_ge finite_commonTermVersions)
+                also from basedOn_increasing_term basedOn_increasing_version `(msgTermVersion mc', tvCommon) \<in> trancl (basedOn s)`
+                have "tvCommon < msgTermVersion mc'"
+                  by (cases "msgTermVersion mc'", cases tvCommon, auto simp add: less_eq_TermVersion_def nat_less_le)
+                finally show False by simp
+              qed
+
+              consider (term_lt) "term mc' < term mc"
+                | (version_lt) "version mc' < version mc" "term mc' = term mc"
+                | (eq) "version mc' = version mc" "term mc' = term mc"
+                | (version_gt) "version mc < version mc'" "term mc' = term mc"
+                | (term_gt) "term mc < term mc'"
+                using nat_neq_iff by blast
+
+              thus False
+              proof cases
+                case term_lt
+                from term_lt mprqc have "term mc' < term mprqc" by (simp add: msgTermVersion_def)
+                moreover from mprqc mc_termBound have "term mprqc < termBound" by (simp add: msgTermVersion_def)
+                moreover from less mprqc have "msgTermVersion mprqc < msgTermVersion mprq" by (auto simp add: msgTermVersion_def)
+                ultimately have "(msgTermVersion mprqc, msgTermVersion mc') \<in> trancl (basedOn s)"
+                  by (intro less.hyps [OF _ refl] mc' mprqc, auto simp add: less)
+                thus False by (intro gt_impossible, simp add: mprqc)
+              next
+                case version_gt
+                with mprqc mprqc' mc_termBound
+                have "(msgTermVersion mprqc', msgTermVersion mprqc) \<in> trancl (basedOn s)"
+                  by (intro basedOn_within_term, auto simp add: msgTermVersion_def)
+                with mprqc mprqc' show False by (intro lt_impossible, simp)
+              next
+                case eq with eq_impossible show False by (auto simp add: msgTermVersion_def)
+              next
+                case version_lt
+                with mprqc mprqc' mc_termBound
+                have "(msgTermVersion mprqc, msgTermVersion mprqc') \<in> trancl (basedOn s)"
+                  by (intro basedOn_within_term, auto simp add: msgTermVersion_def)
+                with mprqc mprqc' show False by (intro gt_impossible, simp)
+              next
+                case term_gt
+                from term_gt mprqc' have "term mc < term mprqc'" by (simp add: msgTermVersion_def)
+                moreover from mprqc' mc'_termBound have "term mprqc' < termBound" by (simp add: msgTermVersion_def)
+                moreover have "msgTermVersion mprqc' < msgTermVersion mprq"
+                proof -
+                  from basedOn_increasing_term basedOn_increasing_version `(msgTermVersion mprq, msgTermVersion mc') \<in> trancl (basedOn s)`
+                  have "term mc' \<le> term mprq" "version mc' < version mprq" by (auto simp add: msgTermVersion_def)
+                  with mprqc' show ?thesis by (auto simp add: msgTermVersion_def less_eq_TermVersion_def)
+                qed
+                ultimately have "(msgTermVersion mprqc', msgTermVersion mc) \<in> trancl (basedOn s)"
+                  by (intro less.hyps [OF _ refl] less mprqc', auto simp add: less)
+                thus False by (intro lt_impossible, simp add: mprqc')
+              qed
+            qed
+          }
+          note no_commits_after_divergence = this
+
+          show ?thesis sorry
+        qed
       qed
     qed
   }
@@ -1114,6 +1275,62 @@ proof -
       by auto
   }
   thus ?thesis by (auto simp add: PublishRequestMeansQuorumBelow_def)
+qed
+
+lemma BasedOnOrigin_step:
+  assumes "s \<Turnstile> BasedOnOrigin"
+  assumes "s \<Turnstile> LastAcceptedDataSource"
+  shows "(s,t) \<Turnstile> BasedOnOrigin$"
+proof -
+  from assms
+  have  hyp1: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> (msgTermVersion m, TermVersion 0 0) \<in> trancl (basedOn s)"
+    and hyp2: "\<And>n. if lastAcceptedTerm s n = 0 then lastAcceptedVersion s n = 0 \<and> lastAcceptedValue s n = initialValue s \<and> lastAcceptedConfiguration s n = initialConfiguration s
+        else \<exists>m\<in>sentPublishRequests s. lastAcceptedTerm s n = term m \<and> lastAcceptedVersion s n = version m \<and> lastAcceptedValue s n = value m \<and> lastAcceptedConfiguration s n = config m"
+    unfolding BasedOnOrigin_def LastAcceptedDataSource_def
+    by auto
+
+  {
+    fix mprq
+    assume prem: "mprq \<in> sentPublishRequests t"
+
+    from Next hyp1 prem
+    have "(msgTermVersion mprq, TermVersion 0 0) \<in> trancl (basedOn t)"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+      with prem consider (old) "mprq \<in> sentPublishRequests s"
+        | (new) "mprq \<in> newPublishRequests" "0 < lastAcceptedTerm s nm"
+        | (first) "mprq \<in> newPublishRequests" "lastAcceptedTerm s nm = 0" by auto
+      thus ?thesis
+      proof cases
+        case old 
+        show ?thesis
+        proof (rule trancl_mono)
+          from old hyp1 prem ClientRequest show "(msgTermVersion mprq, TermVersion 0 0) \<in> trancl (basedOn s)" by auto
+          from ClientRequest show "basedOn s \<subseteq> basedOn t" by auto
+        qed
+      next
+        case first
+        with hyp2 have "lastAcceptedVersion s nm = 0" by simp
+        with first show ?thesis by (auto simp add: ClientRequest msgTermVersion_def)
+      next
+        case new
+        with hyp2 [of nm]
+        obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprq' = laTermVersion s nm"
+          by (auto simp add: laTermVersion_def msgTermVersion_def)
+
+        from new have "msgTermVersion mprq = TermVersion (currentTerm s nm) newPublishVersion"
+          by (auto simp add: ClientRequest msgTermVersion_def)
+        also have "(TermVersion (currentTerm s nm) newPublishVersion, TermVersion (lastAcceptedTerm s nm) (lastAcceptedVersion s nm)) \<in> basedOn t"
+          by (simp add: ClientRequest)
+        also have "TermVersion (lastAcceptedTerm s nm) (lastAcceptedVersion s nm) = msgTermVersion mprq'"
+          by (simp add: mprq' laTermVersion_def)
+        also have "(msgTermVersion mprq', TermVersion 0 0) \<in> trancl (basedOn t)"
+          by (intro trancl_mono [OF hyp1] mprq', auto simp add: ClientRequest)
+        finally show ?thesis .
+      qed
+    qed auto
+  }
+  thus ?thesis by (auto simp add: BasedOnOrigin_def)
 qed
 
 lemma LastPublishedVersionImpliesLastCommittedConfigurationBelow_step:
