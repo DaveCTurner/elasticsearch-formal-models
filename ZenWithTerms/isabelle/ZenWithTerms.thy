@@ -1092,13 +1092,12 @@ mc is one) and the first one of these involves a lastCommittedConfiguration-quor
             by (intro Max_in finite_commonTermVersions, auto)
 
           {
-            fix tv mc'
+            fix tv
             assume tv: "(msgTermVersion mprq, tv) \<in> trancl (basedOn s)" "(tv, tvCommon) \<in> trancl (basedOn s)"
-            assume mc': "mc' \<in> sentCommits s"
-
-            have "msgTermVersion mc' \<noteq> tv"
+            have "tv \<notin> msgTermVersion ` sentCommits s"
             proof (intro notI)
-              assume "msgTermVersion mc' = tv"
+              assume "tv \<in> msgTermVersion ` sentCommits s"
+              then obtain mc' where mc': "mc' \<in> sentCommits s" and "msgTermVersion mc' = tv" by auto
               with tv have mc'_basedOn: "(msgTermVersion mprq, msgTermVersion mc') \<in> trancl (basedOn s)" "(msgTermVersion mc', tvCommon) \<in> trancl (basedOn s)" by auto
 
               from mc'_basedOn
