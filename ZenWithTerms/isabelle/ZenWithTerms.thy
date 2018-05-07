@@ -763,10 +763,23 @@ definition PublishRequestMeansQuorumBelow :: "nat \<Rightarrow> stpred" where "P
       \<longrightarrow> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (config mprq)
         \<and> IsQuorum (source ` { j \<in> sentJoins s. dest j = source mprq \<and> term j = term mprq }) (commConf mprq)"
 
+definition committedConfigurationAt :: "TermVersion \<Rightarrow> Node set stfun" where "committedConfigurationAt tv s \<equiv>
+  if (tv, TermVersion 0 0) \<in> basedOn s
+    then initialConfiguration s
+    else commConf (SOME mprq. mprq \<in> sentPublishRequests s \<and> (tv, msgTermVersion mprq) \<in> basedOn s)"
+
+definition CommittedConfigurationUnchangedIfNotCommittedBelow :: "nat \<Rightarrow> stpred" where "CommittedConfigurationUnchangedIfNotCommittedBelow termBound s \<equiv>
+  \<forall> tv tv'. (tv, tv') \<in> basedOn s \<longrightarrow> (case tv of TermVersion t _ \<Rightarrow> t < termBound)
+       \<longrightarrow> tv' \<notin> msgTermVersion ` sentCommits s
+       \<longrightarrow> committedConfigurationAt tv s = committedConfigurationAt tv' s"
+
+definition CommittedConfigurationEqualWithCommonAncestorBelow :: "nat \<Rightarrow> stpred" where "CommittedConfigurationEqualWithCommonAncestorBelow termBound s \<equiv>
+  \<forall> tv0 tv1 tv2. (tv1, tv0) \<in> basedOn s \<longrightarrow> (tv2, tv0) \<in> basedOn s \<longrightarrow> (case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound)
+       \<longrightarrow> committedConfigurationAt tv1 s = committedConfigurationAt tv2 s"
+
 lemma CommittedConfigurations_subset_PublishedConfigurations:
   "CommittedConfigurationsPublished s"
   by (auto simp add: CommittedConfigurationsPublished_def CommittedConfigurations_def PublishedConfigurations_def sentPublishRequests_def) 
-
 
 lemma wf_termVersion: "wf {(tv1, tv2). tv1 < (tv2 :: TermVersion)}" (is "wf ?r")
 proof -
@@ -950,6 +963,17 @@ proof -
     hence "t2 \<le> t1" "v2 < v1" by simp_all
   }
   note basedOn_increasing_term = this(1) and basedOn_increasing_version = this(2)
+
+  {
+    fix t1 v1 t2 v2
+    assume "(TermVersion t1 v1, TermVersion t2 v2) \<in> rtrancl (basedOn s)"
+    hence "t2 \<le> t1 \<and> v2 \<le> v1"
+      unfolding rtrancl_eq_or_trancl
+      using basedOn_increasing_term basedOn_increasing_version nat_less_le
+      by auto
+    hence "t2 \<le> t1" "v2 \<le> v1" by simp_all
+  }
+  note basedOn_nondecreasing_term = this(1) and basedOn_nondecreasing_version = this(2)
 
   {
     fix mc mprq
@@ -1202,7 +1226,296 @@ lemma sentJoins_increasing: "sentJoins s \<subseteq> sentJoins t" using Next by 
 lemma sentPublishRequests_increasing: "sentPublishRequests s \<subseteq> sentPublishRequests t" using Next by (cases rule: square_Next_cases, auto)
 lemma sentPublishResponses_increasing: "sentPublishResponses s \<subseteq> sentPublishResponses t" using Next by (cases rule: square_Next_cases, auto)
 lemma sentCommits_increasing: "sentCommits s \<subseteq> sentCommits t" using Next by (cases rule: square_Next_cases, auto)
-lemma terms_increasing: shows "currentTerm s n \<le> currentTerm t n" using Next by (cases rule: square_Next_cases, auto)
+lemma terms_increasing: "currentTerm s n \<le> currentTerm t n" using Next by (cases rule: square_Next_cases, auto)
+lemma basedOn_increasing: "basedOn s \<subseteq> basedOn t" using Next by (cases rule: square_Next_cases, auto)
+lemma initialConfiguration_constant: "initialConfiguration t = initialConfiguration s" using Next by (cases rule: square_Next_cases, auto)
+
+lemma CommittedConfigurationEqualWithCommonAncestorBelow_step:
+  assumes "s \<Turnstile> CommittedConfigurationEqualWithCommonAncestorBelow termBound"
+  assumes "t \<Turnstile> BasedOnUniqueBelow termBound" (* DANGER prove this first *)
+  assumes "s \<Turnstile> BasedOnBasedOn"
+  assumes "s \<Turnstile> BasedOnPublishRequest"
+  assumes "s \<Turnstile> BasedOnIncreasing"
+  assumes "s \<Turnstile> BasedOnOrigin"
+  assumes "t \<Turnstile> PublishRequestsUniquePerTermVersionBelow termBound" (* DANGER prove this first *)
+  shows "(s,t) \<Turnstile> CommittedConfigurationEqualWithCommonAncestorBelow termBound$"
+proof -
+  from assms
+  have  hyp1: "\<And>tv0 tv1 tv2. \<lbrakk> (tv1, tv0) \<in> basedOn s; (tv2, tv0) \<in> basedOn s; (case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound) \<rbrakk>
+      \<Longrightarrow> committedConfigurationAt tv1 s = committedConfigurationAt tv2 s"
+    and hyp2: "\<And>tiPrev1 tiPrev2 tCurr iCurr. \<lbrakk> tCurr < termBound; (TermVersion tCurr iCurr, tiPrev1) \<in> basedOn t; (TermVersion tCurr iCurr, tiPrev2) \<in> basedOn t \<rbrakk> \<Longrightarrow> tiPrev1 = tiPrev2"
+    and hyp3: "\<And>tiCurr tPrev iPrev. \<lbrakk> (tiCurr, TermVersion tPrev iPrev) \<in> basedOn s; 0 < iPrev \<rbrakk> \<Longrightarrow> \<exists>tiPrevPrev. (TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn s"
+    and hyp4: "\<And>tiPrev tCurr iCurr. \<lbrakk> (TermVersion tCurr iCurr, tiPrev) \<in> basedOn s \<rbrakk> \<Longrightarrow> \<exists> m \<in> sentPublishRequests s. term m = tCurr \<and> version m = iCurr"
+    and hyp5: "\<And>tPrev iPrev tCurr iCurr. (TermVersion tCurr iCurr, TermVersion tPrev iPrev) \<in> basedOn s \<Longrightarrow> iCurr = Suc iPrev \<and> tPrev \<le> tCurr"
+    and hyp6: "\<And>m. m \<in> sentPublishRequests s \<Longrightarrow> (msgTermVersion m, TermVersion 0 0) \<in> trancl (basedOn s)"
+    and hyp7: "\<And>m1 m2. \<lbrakk> m1 \<in> sentPublishRequests t; m2 \<in> sentPublishRequests t; term m1 < termBound; term m1 = term m2; version m1 = version m2 \<rbrakk> \<Longrightarrow> payload m1 = payload m2"
+    unfolding CommittedConfigurationEqualWithCommonAncestorBelow_def BasedOnUniqueBelow_def
+      BasedOnBasedOn_def BasedOnPublishRequest_def BasedOnIncreasing_def BasedOnOrigin_def
+      PublishRequestsUniquePerTermVersionBelow_def
+    by metis+
+
+  {
+    fix tv0 tv1 tv2
+    assume prem: "(tv1, tv0) \<in> basedOn t" "(tv2, tv0) \<in> basedOn t" "(case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound)"
+
+    from prem have tv1_termBound: "case tv1 of TermVersion t _ \<Rightarrow> t < termBound"
+      apply (cases tv1, cases tv2, auto simp add: max_def less_eq_TermVersion_def)
+      by (smt TermVersion.case less_trans_Suc not_less_eq not_less_iff_gr_or_eq)
+
+    from prem have tv2_termBound: "case tv2 of TermVersion t _ \<Rightarrow> t < termBound"
+      apply (cases tv1, cases tv2, auto simp add: max_def less_eq_TermVersion_def)
+      by (smt TermVersion.case less_trans_Suc not_less_eq not_less_iff_gr_or_eq)
+
+    {
+      fix tv tv'
+      assume tv: "(tv, tv') \<in> basedOn s"
+      
+      obtain tm  v  where tv_def:  "tv  = TermVersion tm  v"  by (cases tv)
+      obtain tm' v' where tv'_def: "tv' = TermVersion tm' v'" by (cases tv')
+
+      from tv hyp5 have tm_le: "tm' \<le> tm" and v_eq: "v = Suc v'" by (auto simp add: tv_def tv'_def)
+
+      assume "case tv of TermVersion t _ \<Rightarrow> t < termBound" hence termBound: "tm < termBound" by (simp add: tv_def)
+      with tm_le have termBound': "tm' < termBound" by auto
+
+      have tv_basedOn_unique: "\<And>tv''. (tv, tv'') \<in> basedOn t \<Longrightarrow> tv'' = tv'"
+        using tv termBound basedOn_increasing
+        by (intro hyp2 [of tm v], auto simp add: tv_def)
+
+      have "committedConfigurationAt tv t = committedConfigurationAt tv s"
+      proof (cases "tv' = TermVersion 0 0")
+        case True
+        from tv have "(tv, TermVersion 0 0) \<in> basedOn s" by (simp add: True)
+        moreover from basedOn_increasing this have "(tv, TermVersion 0 0) \<in> basedOn t" by auto
+        moreover note initialConfiguration_constant
+        ultimately show ?thesis by (auto simp add: committedConfigurationAt_def)
+      next
+        case False
+
+        have not0_t: "(tv, TermVersion 0 0) \<notin> basedOn t"
+        proof (intro notI)
+          assume tv0: "(tv, TermVersion 0 0) \<in> basedOn t"
+          hence "TermVersion 0 0 = tv'" by (intro tv_basedOn_unique)
+          with False show False by simp
+        qed
+        with basedOn_increasing have not0_s: "(tv, TermVersion 0 0) \<notin> basedOn s" by auto
+
+        define P where "\<And>u mprq. P \<equiv> \<lambda>u mprq. mprq \<in> sentPublishRequests u \<and> (tv, msgTermVersion mprq) \<in> basedOn u"
+
+        from tv have "\<exists>m\<in>sentPublishRequests s. term m = tm \<and> version m = v" by (intro hyp4, auto simp add: tv_def)
+        then obtain mprq where mprq: "mprq \<in> sentPublishRequests s" "msgTermVersion mprq = tv" by (auto simp add: msgTermVersion_def tv_def)
+
+        obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprq' = tv'"
+        proof -
+          have "(msgTermVersion mprq, TermVersion 0 0) \<in> trancl (basedOn s)" by (intro hyp6 mprq)
+          from tranclD [OF this] obtain tv'' where tv'': "(msgTermVersion mprq, tv'') \<in> basedOn s" "(tv'', TermVersion 0 0) \<in> rtrancl (basedOn s)" by auto
+
+          from tv tv'' mprq termBound basedOn_increasing have "tv'' = tv'"
+            by (intro hyp2 [of tm v], auto simp add: tv'_def tv_def)
+          with tv'' False have tv'_origin: "(tv', TermVersion 0 0) \<in> trancl (basedOn s)" by (auto simp add: rtrancl_eq_or_trancl)
+          from tranclD [OF this] obtain tv''' where tv''': "(tv', tv''') \<in> basedOn s" by auto
+          with hyp5 have v'_positive: "0 < v'" by (cases tv''', auto simp add: tv'_def)
+
+          from tv v'_positive have "\<exists>tiPrevPrev. (TermVersion tm' v', tiPrevPrev) \<in> basedOn s" by (intro hyp3, auto simp add: tv'_def)
+          then obtain tv'''' where "(TermVersion tm' v', tv'''') \<in> basedOn s" by auto
+          from hyp4 [OF this] obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprq' = tv'" by (auto simp add: tv'_def msgTermVersion_def)
+          thus ?thesis by (intro that)
+        qed
+
+        from mprq' tv sentPublishRequests_increasing basedOn_increasing have "P t mprq'" by (auto simp add: P_def)
+        hence "P t (Eps (P t))" by (intro someI)
+        hence "Eps (P t) \<in> sentPublishRequests t \<and> (tv, msgTermVersion (Eps (P t))) \<in> basedOn t" by (simp add: P_def)
+        with tv_basedOn_unique have "Eps (P t) \<in> sentPublishRequests t" "msgTermVersion (Eps (P t)) = tv'" by auto
+
+        moreover from mprq' tv have "P s mprq'" by (auto simp add: P_def)
+        hence "P s (Eps (P s))" by (intro someI)
+        hence "Eps (P s) \<in> sentPublishRequests s \<and> (tv, msgTermVersion (Eps (P s))) \<in> basedOn s" by (simp add: P_def)
+        with tv_basedOn_unique sentPublishRequests_increasing basedOn_increasing
+        have "Eps (P s) \<in> sentPublishRequests t" "msgTermVersion (Eps (P s)) = tv'" by auto
+
+        ultimately have "payload (Eps (P t)) = payload (Eps (P s))"
+          using termBound' by (intro hyp7, auto simp add: msgTermVersion_def tv'_def)
+
+        thus ?thesis by (auto simp add: committedConfigurationAt_def P_def not0_s not0_t commConf_def)
+      qed
+    }
+    note helpers = this [OF _ tv1_termBound] this [OF _ tv2_termBound]
+
+    from Next hyp1 prem helpers
+    have "committedConfigurationAt tv1 t = committedConfigurationAt tv2 t"
+    proof (cases rule: square_Next_cases)
+      case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
+
+      obtain t0 v0 where tv0_def: "tv0 = TermVersion t0 v0" by (cases tv0)
+      obtain t1 v1 where tv1_def: "tv1 = TermVersion t1 v1" by (cases tv1)
+      obtain t2 v2 where tv2_def: "tv2 = TermVersion t2 v2" by (cases tv2)
+
+      from prem
+      consider (oldold) "(tv1, tv0) \<in> basedOn s" "(tv2, tv0) \<in> basedOn s"
+        | (initial) "tv0 = TermVersion 0 0"
+        | (oldnew) "(tv1, tv0) \<in> basedOn s" "tv0 \<noteq> TermVersion 0 0"
+          "tv0 = TermVersion (lastAcceptedTerm s nm) (lastAcceptedVersion s nm)"
+          "tv2 = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
+        | (newold) "(tv2, tv0) \<in> basedOn s" "tv0 \<noteq> TermVersion 0 0"
+          "tv0 = TermVersion (lastAcceptedTerm s nm) (lastAcceptedVersion s nm)"
+          "tv1 = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
+        | (newnew)
+          "tv0 = TermVersion (lastAcceptedTerm s nm) (lastAcceptedVersion s nm)"
+          "tv1 = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
+          "tv2 = TermVersion (currentTerm s nm) (Suc (lastAcceptedVersion s nm))"
+        apply (cases "tv0 = TermVersion 0 0", auto simp add: ClientRequest)
+         using newold oldnew by blast+
+
+      then show ?thesis
+      proof cases
+        case newnew thus ?thesis by simp
+      next
+        case oldold with hyp1 prem helpers show ?thesis by simp
+      next
+        case initial
+        with prem show ?thesis by (auto simp add: committedConfigurationAt_def)
+      next
+        case oldnew
+
+        from hyp5 [of t1 v1 t0 v0] oldnew tv1_termBound
+        have t0_termBound: "t0 < termBound" by (auto simp add: tv1_def tv0_def)
+
+        obtain mprq0 where mprq0: "mprq0 \<in> sentPublishRequests s" "msgTermVersion mprq0 = tv0"
+        proof -
+          from oldnew have "\<exists>m\<in>sentPublishRequests s. term m = t1 \<and> version m = v1" by (intro hyp4, auto simp add: tv1_def)
+          then obtain mprq where mprq: "mprq \<in> sentPublishRequests s" "msgTermVersion mprq = tv1" by (auto simp add: msgTermVersion_def tv1_def)
+
+          have "(msgTermVersion mprq, TermVersion 0 0) \<in> trancl (basedOn s)" by (intro hyp6 mprq)
+          from tranclD [OF this] obtain tv'' where tv'': "(msgTermVersion mprq, tv'') \<in> basedOn s" "(tv'', TermVersion 0 0) \<in> rtrancl (basedOn s)" by auto
+
+          from oldnew tv'' mprq tv1_termBound basedOn_increasing have "tv'' = tv0"
+            by (intro hyp2 [of t1 v1], auto simp add: tv1_def)
+          with tv'' oldnew have tv'_origin: "(tv0, TermVersion 0 0) \<in> trancl (basedOn s)" by (auto simp add: rtrancl_eq_or_trancl)
+          from tranclD [OF this] obtain tv''' where tv''': "(tv0, tv''') \<in> basedOn s" by auto
+          with hyp5 have v'_positive: "0 < v0" by (cases tv''', auto simp add: tv0_def)
+
+          from oldnew v'_positive have "\<exists>tiPrevPrev. (TermVersion t0 v0, tiPrevPrev) \<in> basedOn s" by (intro hyp3, auto simp add: tv0_def)
+          then obtain tv'''' where "(TermVersion t0 v0, tv'''') \<in> basedOn s" by auto
+          from hyp4 [OF this] obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprq' = tv0" by (auto simp add: tv0_def msgTermVersion_def)
+          thus ?thesis by (intro that)
+        qed
+
+        define P where "P \<equiv> \<lambda>tv mprq. mprq \<in> sentPublishRequests t \<and> (tv, msgTermVersion mprq) \<in> basedOn t"
+
+        from mprq0 oldnew sentPublishRequests_increasing basedOn_increasing
+        have "mprq0 \<in> sentPublishRequests t \<and> (tv1, msgTermVersion mprq0) \<in> basedOn t" by auto
+        hence "P tv1 (Eps (P tv1))" by (intro someI, simp add: P_def)
+        hence Eps_tv1: "Eps (P tv1) \<in> sentPublishRequests t" "(tv1, msgTermVersion (Eps (P tv1))) \<in> basedOn t" by (simp_all add: P_def)
+        with tv1_termBound prem have Eps_tv1_tv0: "msgTermVersion (Eps (P tv1)) = tv0"
+          by (intro hyp2 [of t1 v1], auto simp add: tv1_def)
+
+        from mprq0 oldnew sentPublishRequests_increasing basedOn_increasing ClientRequest
+        have "mprq0 \<in> sentPublishRequests t \<and> (tv2, msgTermVersion mprq0) \<in> basedOn t" by auto
+        hence "P tv2 (Eps (P tv2))" by (intro someI, simp add: P_def)
+        hence Eps_tv2: "Eps (P tv2) \<in> sentPublishRequests t" "(tv2, msgTermVersion (Eps (P tv2))) \<in> basedOn t" by (simp_all add: P_def)
+        with tv2_termBound prem have Eps_tv2_tv0: "msgTermVersion (Eps (P tv2)) = tv0"
+          by (intro hyp2 [of t2 v2], auto simp add: tv2_def)
+
+        from Eps_tv1 Eps_tv2 Eps_tv1_tv0 Eps_tv2_tv0 t0_termBound
+        have payload_eq: "payload (Eps (P tv1)) = payload (Eps (P tv2))"
+          by (intro hyp7, auto simp add: tv0_def msgTermVersion_def)
+
+        have not0_1: "(tv1, TermVersion 0 0) \<notin> basedOn t"
+        proof (intro notI)
+          assume "(tv1, TermVersion 0 0) \<in> basedOn t"
+          with prem tv1_termBound have "tv0 = TermVersion 0 0"
+            by (intro hyp2 [of t1 v1], auto simp add: tv1_def)
+          with oldnew show False by simp
+        qed     
+        
+        have not0_2: "(tv2, TermVersion 0 0) \<notin> basedOn t"
+        proof (intro notI)
+          assume "(tv2, TermVersion 0 0) \<in> basedOn t"
+          with prem tv2_termBound have "tv0 = TermVersion 0 0"
+            by (intro hyp2 [of t2 v2], auto simp add: tv2_def)
+          with oldnew show False by simp
+        qed
+
+        from payload_eq show ?thesis
+          by (simp add: committedConfigurationAt_def not0_1 not0_2 commConf_def P_def)
+
+      next
+        case newold
+
+        from hyp5 [of t2 v2 t0 v0] newold tv2_termBound
+        have t0_termBound: "t0 < termBound" by (auto simp add: tv2_def tv0_def)
+
+        obtain mprq0 where mprq0: "mprq0 \<in> sentPublishRequests s" "msgTermVersion mprq0 = tv0"
+        proof -
+          from newold have "\<exists>m\<in>sentPublishRequests s. term m = t2 \<and> version m = v2" by (intro hyp4, auto simp add: tv2_def)
+          then obtain mprq where mprq: "mprq \<in> sentPublishRequests s" "msgTermVersion mprq = tv2" by (auto simp add: msgTermVersion_def tv2_def)
+
+          have "(msgTermVersion mprq, TermVersion 0 0) \<in> trancl (basedOn s)" by (intro hyp6 mprq)
+          from tranclD [OF this] obtain tv'' where tv'': "(msgTermVersion mprq, tv'') \<in> basedOn s" "(tv'', TermVersion 0 0) \<in> rtrancl (basedOn s)" by auto
+
+          from newold tv'' mprq tv2_termBound basedOn_increasing have "tv'' = tv0"
+            by (intro hyp2 [of t2 v2], auto simp add: tv2_def)
+          with tv'' newold have tv'_origin: "(tv0, TermVersion 0 0) \<in> trancl (basedOn s)" by (auto simp add: rtrancl_eq_or_trancl)
+          from tranclD [OF this] obtain tv''' where tv''': "(tv0, tv''') \<in> basedOn s" by auto
+          with hyp5 have v'_positive: "0 < v0" by (cases tv''', auto simp add: tv0_def)
+
+          from newold v'_positive have "\<exists>tiPrevPrev. (TermVersion t0 v0, tiPrevPrev) \<in> basedOn s" by (intro hyp3, auto simp add: tv0_def)
+          then obtain tv'''' where "(TermVersion t0 v0, tv'''') \<in> basedOn s" by auto
+          from hyp4 [OF this] obtain mprq' where mprq': "mprq' \<in> sentPublishRequests s" "msgTermVersion mprq' = tv0" by (auto simp add: tv0_def msgTermVersion_def)
+          thus ?thesis by (intro that)
+        qed
+
+        define P where "P \<equiv> \<lambda>tv mprq. mprq \<in> sentPublishRequests t \<and> (tv, msgTermVersion mprq) \<in> basedOn t"
+
+        from mprq0 newold sentPublishRequests_increasing basedOn_increasing ClientRequest
+        have "mprq0 \<in> sentPublishRequests t \<and> (tv1, msgTermVersion mprq0) \<in> basedOn t" by auto
+        hence "P tv1 (Eps (P tv1))" by (intro someI, simp add: P_def)
+        hence Eps_tv1: "Eps (P tv1) \<in> sentPublishRequests t" "(tv1, msgTermVersion (Eps (P tv1))) \<in> basedOn t" by (simp_all add: P_def)
+        with tv1_termBound prem have Eps_tv1_tv0: "msgTermVersion (Eps (P tv1)) = tv0"
+          by (intro hyp2 [of t1 v1], auto simp add: tv1_def)
+
+        from mprq0 newold sentPublishRequests_increasing basedOn_increasing
+        have "mprq0 \<in> sentPublishRequests t \<and> (tv2, msgTermVersion mprq0) \<in> basedOn t" by auto
+        hence "P tv2 (Eps (P tv2))" by (intro someI, simp add: P_def)
+        hence Eps_tv2: "Eps (P tv2) \<in> sentPublishRequests t" "(tv2, msgTermVersion (Eps (P tv2))) \<in> basedOn t" by (simp_all add: P_def)
+        with tv2_termBound prem have Eps_tv2_tv0: "msgTermVersion (Eps (P tv2)) = tv0"
+          by (intro hyp2 [of t2 v2], auto simp add: tv2_def)
+
+        from Eps_tv1 Eps_tv2 Eps_tv1_tv0 Eps_tv2_tv0 t0_termBound
+        have payload_eq: "payload (Eps (P tv1)) = payload (Eps (P tv2))"
+          by (intro hyp7, auto simp add: tv0_def msgTermVersion_def)
+
+        have not0_1: "(tv1, TermVersion 0 0) \<notin> basedOn t"
+        proof (intro notI)
+          assume "(tv1, TermVersion 0 0) \<in> basedOn t"
+          with prem tv1_termBound have "tv0 = TermVersion 0 0"
+            by (intro hyp2 [of t1 v1], auto simp add: tv1_def)
+          with newold show False by simp
+        qed     
+        
+        have not0_2: "(tv2, TermVersion 0 0) \<notin> basedOn t"
+        proof (intro notI)
+          assume "(tv2, TermVersion 0 0) \<in> basedOn t"
+          with prem tv2_termBound have "tv0 = TermVersion 0 0"
+            by (intro hyp2 [of t2 v2], auto simp add: tv2_def)
+          with newold show False by simp
+        qed
+
+        from payload_eq show ?thesis
+          by (simp add: committedConfigurationAt_def not0_1 not0_2 commConf_def P_def)
+      qed
+    qed auto
+  }
+  thus ?thesis by (auto simp add: CommittedConfigurationEqualWithCommonAncestorBelow_def)
+qed
+
+lemma CommittedConfigurationUnchangedIfNotCommittedBelow_step:
+  assumes "s \<Turnstile> CommittedConfigurationUnchangedIfNotCommittedBelow termBound"
+  shows "(s,t) \<Turnstile> CommittedConfigurationUnchangedIfNotCommittedBelow termBound$"
+proof -
+  show ?thesis
+    sorry
+qed
 
 lemma PublishRequestMeansQuorumBelow_step:
   assumes "s \<Turnstile> PublishRequestMeansQuorumBelow termBound"
