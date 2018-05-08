@@ -769,12 +769,12 @@ definition committedConfigurationAt :: "TermVersion \<Rightarrow> Node set stfun
     else commConf (SOME mprq. mprq \<in> sentPublishRequests s \<and> (tv, msgTermVersion mprq) \<in> basedOn s)"
 
 definition CommittedConfigurationUnchangedIfNotCommittedBelow :: "nat \<Rightarrow> stpred" where "CommittedConfigurationUnchangedIfNotCommittedBelow termBound s \<equiv>
-  \<forall> tv tv'. (tv, tv') \<in> basedOn s \<longrightarrow> (case tv of TermVersion t _ \<Rightarrow> t < termBound)
+  \<forall> tv tv'. (tv, tv') \<in> basedOn s \<longrightarrow> tv < TermVersion termBound 0
        \<longrightarrow> tv' \<notin> msgTermVersion ` sentCommits s
        \<longrightarrow> committedConfigurationAt tv s = committedConfigurationAt tv' s"
 
 definition CommittedConfigurationEqualWithCommonAncestorBelow :: "nat \<Rightarrow> stpred" where "CommittedConfigurationEqualWithCommonAncestorBelow termBound s \<equiv>
-  \<forall> tv0 tv1 tv2. (tv1, tv0) \<in> basedOn s \<longrightarrow> (tv2, tv0) \<in> basedOn s \<longrightarrow> (case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound)
+  \<forall> tv0 tv1 tv2. (tv1, tv0) \<in> basedOn s \<longrightarrow> (tv2, tv0) \<in> basedOn s \<longrightarrow> max tv1 tv2 < TermVersion termBound 0
        \<longrightarrow> committedConfigurationAt tv1 s = committedConfigurationAt tv2 s"
 
 lemma CommittedConfigurations_subset_PublishedConfigurations:
@@ -1241,7 +1241,7 @@ lemma CommittedConfigurationEqualWithCommonAncestorBelow_step:
   shows "(s,t) \<Turnstile> CommittedConfigurationEqualWithCommonAncestorBelow termBound$"
 proof -
   from assms
-  have  hyp1: "\<And>tv0 tv1 tv2. \<lbrakk> (tv1, tv0) \<in> basedOn s; (tv2, tv0) \<in> basedOn s; (case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound) \<rbrakk>
+  have  hyp1: "\<And>tv0 tv1 tv2. \<lbrakk> (tv1, tv0) \<in> basedOn s; (tv2, tv0) \<in> basedOn s; max tv1 tv2 < TermVersion termBound 0 \<rbrakk>
       \<Longrightarrow> committedConfigurationAt tv1 s = committedConfigurationAt tv2 s"
     and hyp2: "\<And>tiPrev1 tiPrev2 tCurr iCurr. \<lbrakk> tCurr < termBound; (TermVersion tCurr iCurr, tiPrev1) \<in> basedOn t; (TermVersion tCurr iCurr, tiPrev2) \<in> basedOn t \<rbrakk> \<Longrightarrow> tiPrev1 = tiPrev2"
     and hyp3: "\<And>tiCurr tPrev iPrev. \<lbrakk> (tiCurr, TermVersion tPrev iPrev) \<in> basedOn s; 0 < iPrev \<rbrakk> \<Longrightarrow> \<exists>tiPrevPrev. (TermVersion tPrev iPrev, tiPrevPrev) \<in> basedOn s"
@@ -1256,15 +1256,10 @@ proof -
 
   {
     fix tv0 tv1 tv2
-    assume prem: "(tv1, tv0) \<in> basedOn t" "(tv2, tv0) \<in> basedOn t" "(case max tv1 tv2 of TermVersion t _ \<Rightarrow> t < termBound)"
+    assume prem: "(tv1, tv0) \<in> basedOn t" "(tv2, tv0) \<in> basedOn t" "max tv1 tv2 < TermVersion termBound 0"
 
-    from prem have tv1_termBound: "case tv1 of TermVersion t _ \<Rightarrow> t < termBound"
-      apply (cases tv1, cases tv2, auto simp add: max_def less_eq_TermVersion_def)
-      by (smt TermVersion.case less_trans_Suc not_less_eq not_less_iff_gr_or_eq)
-
-    from prem have tv2_termBound: "case tv2 of TermVersion t _ \<Rightarrow> t < termBound"
-      apply (cases tv1, cases tv2, auto simp add: max_def less_eq_TermVersion_def)
-      by (smt TermVersion.case less_trans_Suc not_less_eq not_less_iff_gr_or_eq)
+    from prem have tv1_termBound: "tv1 < TermVersion termBound 0" by auto
+    from prem have tv2_termBound: "tv2 < TermVersion termBound 0" by auto
 
     {
       fix tv tv'
@@ -1275,7 +1270,7 @@ proof -
 
       from tv hyp5 have tm_le: "tm' \<le> tm" and v_eq: "v = Suc v'" by (auto simp add: tv_def tv'_def)
 
-      assume "case tv of TermVersion t _ \<Rightarrow> t < termBound" hence termBound: "tm < termBound" by (simp add: tv_def)
+      assume "tv < TermVersion termBound 0" hence termBound: "tm < termBound" by (simp add: tv_def)
       with tm_le have termBound': "tm' < termBound" by auto
 
       have tv_basedOn_unique: "\<And>tv''. (tv, tv'') \<in> basedOn t \<Longrightarrow> tv'' = tv'"
@@ -1341,7 +1336,7 @@ proof -
     }
     note helpers = this [OF _ tv1_termBound] this [OF _ tv2_termBound]
 
-    from Next hyp1 prem helpers
+    from Next hyp1 [of tv1 tv0 tv2] prem helpers
     have "committedConfigurationAt tv1 t = committedConfigurationAt tv2 t"
     proof (cases rule: square_Next_cases)
       case (ClientRequest nm v vs newPublishVersion newPublishRequests newEntry matchingElems newTransitiveElems)
@@ -1370,7 +1365,7 @@ proof -
       proof cases
         case newnew thus ?thesis by simp
       next
-        case oldold with hyp1 prem helpers show ?thesis by simp
+        case oldold with hyp1 [of tv1 tv0 tv2] prem helpers show ?thesis by auto
       next
         case initial
         with prem show ?thesis by (auto simp add: committedConfigurationAt_def)
@@ -1506,13 +1501,14 @@ proof -
       qed
     qed auto
   }
-  thus ?thesis by (auto simp add: CommittedConfigurationEqualWithCommonAncestorBelow_def)
+  thus ?thesis unfolding CommittedConfigurationEqualWithCommonAncestorBelow_def unl_after by metis
 qed
 
 lemma CommittedConfigurationUnchangedIfNotCommittedBelow_step:
   assumes "s \<Turnstile> CommittedConfigurationUnchangedIfNotCommittedBelow termBound"
   shows "(s,t) \<Turnstile> CommittedConfigurationUnchangedIfNotCommittedBelow termBound$"
 proof -
+  note CommittedConfigurationUnchangedIfNotCommittedBelow_def
   show ?thesis
     sorry
 qed
