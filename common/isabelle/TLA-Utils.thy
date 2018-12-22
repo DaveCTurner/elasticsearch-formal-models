@@ -8,9 +8,9 @@ syntax
   "_liftUn"     :: "[lift, lift] \<Rightarrow> lift"                ("(_/ \<union> _)" [50, 51] 50)
 
 translations
-  "_liftSubset"   == "_lift2 (op \<subseteq>)"
-  "_liftInter"    == "_lift2 (op \<inter>)"
-  "_liftUn"       == "_lift2 (op \<union>)"
+  "_liftSubset"   == "_lift2 (\<subseteq>)"
+  "_liftInter"    == "_lift2 (\<inter>)"
+  "_liftUn"       == "_lift2 (\<union>)"
 
 lemma imp_imp_leadsto:
   fixes S :: temporal
@@ -171,10 +171,22 @@ proof (intro tempI temp_impI)
 qed
 
 lemma imp_disj_leadstoI:
-  assumes 1: "\<turnstile> S \<longrightarrow> (A \<leadsto> C)"
-  assumes 2: "\<turnstile> S \<longrightarrow> (B \<leadsto> C)"
+  assumes "\<turnstile> S \<longrightarrow> (A \<leadsto> C)"
+  assumes "\<turnstile> S \<longrightarrow> (B \<leadsto> C)"
   shows "\<turnstile> S \<longrightarrow> (A \<or> B \<leadsto> C)"
   by (intro imp_leadsto_diamond [OF imp_leadsto_reflexive] assms)
+
+lemma imp_disj_excl_leadstoI:
+  assumes "\<turnstile> S \<longrightarrow> (A \<leadsto> C)"
+  assumes "\<turnstile> S \<longrightarrow> ((\<not>A \<and> B) \<leadsto> C)"
+  shows "\<turnstile> S \<longrightarrow> (A \<or> B \<leadsto> C)"
+proof -
+  have "\<turnstile> S \<longrightarrow> (A \<or> B \<leadsto> (A \<or> (\<not>A \<and> B)))"
+    by (intro imp_imp_leadsto, auto)
+  also have "\<turnstile> S \<longrightarrow> ((A \<or> (\<not>A \<and> B)) \<leadsto> C)"
+    using assms by (intro imp_disj_leadstoI)
+  finally show ?thesis .
+qed
 
 lemma temp_conj_eq_imp:
   assumes "\<turnstile> P \<longrightarrow> (Q = R)"
@@ -258,10 +270,15 @@ proof -
 qed
 
 lemma imp_infinitely_often_implies_eventually:
-  fixes P :: stpred
   assumes "\<turnstile> S \<longrightarrow> \<box>\<diamond>P"
   shows "\<turnstile> S \<longrightarrow> \<diamond>P"
   using assms reflT temp_imp_trans by blast
+
+lemma imp_eventually_forever_implies_infinitely_often:
+  fixes P :: stpred
+  assumes "\<turnstile> S \<longrightarrow> \<diamond>\<box>P"
+  shows "\<turnstile> S \<longrightarrow> \<box>\<diamond>P"
+  using assms DBImplBD temp_imp_trans by blast
 
 lemma imp_leadsto_add_precondition:
   assumes "\<turnstile> S \<longrightarrow> \<box>R"
@@ -395,5 +412,37 @@ lemma imp_box_before_afterI:
   assumes "\<turnstile> S \<longrightarrow> \<box>P"
   shows "\<turnstile> S \<longrightarrow> \<box>($P \<and> P$)"
   using assms using BoxPrime temp_imp_trans by blast
+
+lemma imp_box_afterI:
+  assumes "\<turnstile> S \<longrightarrow> \<box>P"
+  shows "\<turnstile> S \<longrightarrow> \<box>(P$)"
+proof -
+  from assms have "\<turnstile> S \<longrightarrow> \<box>($P \<and> P$)" by (intro imp_box_before_afterI)
+  also have "\<turnstile> \<box>($P \<and> P$) \<longrightarrow> \<box>(P$)" by auto
+  finally show ?thesis .
+qed
+
+lemma imp_dmd_conj_invariant:
+  assumes "\<turnstile> S \<longrightarrow> \<box>P"
+  assumes "\<turnstile> S \<longrightarrow> \<diamond>Q"
+  shows "\<turnstile> S \<longrightarrow> \<diamond>(P \<and> Q)"
+  using assms BoxDmd_simple by fastforce
+
+lemma invariantI:
+  fixes A :: action
+  assumes "\<turnstile> S \<longrightarrow> Init P"
+  assumes "\<turnstile> S \<longrightarrow> \<box>A"
+  assumes "\<And>s t. \<lbrakk> s \<Turnstile> P; (s,t) \<Turnstile> A \<rbrakk>  \<Longrightarrow> t \<Turnstile> P"
+  shows "\<turnstile> S \<longrightarrow> \<box>P"
+proof invariant
+  fix sigma assume sigma: "sigma \<Turnstile> S"
+  with assms show "sigma \<Turnstile> Init P" by auto
+  show "sigma \<Turnstile> stable P"
+  proof (intro Stable actionI temp_impI)
+    from sigma assms show "sigma \<Turnstile> \<box>A" by auto
+    fix s t assume "(s,t) \<Turnstile> $P \<and> A" with assms show "(s,t) \<Turnstile> P$" by auto
+  qed
+qed
+
 
 end

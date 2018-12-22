@@ -652,10 +652,10 @@ definition PublishRequestImpliesElectionWonBelow :: "nat \<Rightarrow> stpred" w
   \<forall> m \<in> sentPublishRequests s. term m < termBound \<longrightarrow> currentTerm s (source m) = term m
     \<longrightarrow> startedJoinSinceLastReboot s (source m) \<longrightarrow> electionWon s (source m)"
 
-definition PublishRequestImpliesQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesQuorumBelow termBound s \<equiv> (* TODO rename this to distinguish from PublishRequestMeansQuorumBelow *)
+definition PublishRequestImpliesQuorumBelow :: "nat \<Rightarrow> stpred" where "PublishRequestImpliesQuorumBelow termBound s \<equiv>
   \<forall> m \<in> sentPublishRequests s. term m < termBound \<longrightarrow> currentTerm s (source m) = term m \<longrightarrow> electionWon s (source m)
                \<longrightarrow> IsQuorum (joinVotes s (source m)) (config m)
-                 \<and> IsQuorum (joinVotes s (source m)) (commConf m)"
+                 \<and> IsQuorum (joinVotes s (source m)) (commConf m)" (* TODO rename this to distinguish from PublishRequestMeansQuorumBelow *)
 
 definition PublishRequestSentByMasterBelow :: "nat \<Rightarrow> stpred" where "PublishRequestSentByMasterBelow termBound s \<equiv>
   \<forall> m n. m \<in> sentPublishRequests s \<longrightarrow> term m = currentTerm s n \<longrightarrow> term m < termBound \<longrightarrow> electionWon s n

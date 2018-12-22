@@ -42,7 +42,7 @@ locale ZenWithTerms =
   fixes Initial :: stpred
   defines "Initial \<equiv> PRED
       (\<forall>n. id<currentTerm,#n> = #0)
-    \<and> (\<forall>n. id<lastCommittedConfiguration,#n> = initialConfiguration) (* agreement on initial configuration *)
+    \<and> (\<forall>n. id<lastCommittedConfiguration,#n> = initialConfiguration) \<comment> \<open>agreement on initial configuration\<close>
     \<and> (\<forall>n. id<lastAcceptedTerm,#n> = #0)
     \<and> (\<forall>n. id<lastAcceptedVersion,#n> = #0)
     \<and> (\<forall>n. id<lastAcceptedValue,#n> = initialValue)
@@ -50,8 +50,8 @@ locale ZenWithTerms =
     \<and> (\<forall>n. id<joinVotes,#n> = #{})
     \<and> (\<forall>n. id<startedJoinSinceLastReboot,#n> = #False)
     \<and> (\<forall>n. id<electionWon,#n> = #False)
-    (*\<and> (\<forall>n. id<lastPublishedConfiguration,#n> = initialConfiguration) NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-    (*\<and> (\<forall>n. id<lastPublishedVersion,#n> = #0)                         NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+    \<comment> \<open> \<and> (\<forall>n. id<lastPublishedConfiguration,#n> = initialConfiguration) NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
+    \<comment> \<open> \<and> (\<forall>n. id<lastPublishedVersion,#n> = #0)                         NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
     \<and> (\<forall>n. id<publishVotes,#n> = #{})
     \<and> messages = #{}
     \<and> descendant = #{}
@@ -68,8 +68,8 @@ locale ZenWithTerms =
                             \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
                             \<and> #(joinRequest = \<lparr> source = n, dest = nm, term = t, payload = Join \<lparr> jp_laTerm = lastAcceptedTerm_n, jp_laVersion  = lastAcceptedVersion_n \<rparr> \<rparr>))
           \<and> updated     currentTerm                n t
-          \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-          \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+          \<and> unspecified lastPublishedVersion       n \<comment> \<open> NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
+          \<and> unspecified lastPublishedConfiguration n \<comment> \<open> NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
           \<and> updated     startedJoinSinceLastReboot n True
           \<and> updated     electionWon                n False
           \<and> updated     joinVotes                  n {}
@@ -87,7 +87,7 @@ locale ZenWithTerms =
     \<and> id<$startedJoinSinceLastReboot,#n>
     \<and> ( #(laTerm m) < id<$lastAcceptedTerm,#n>
       \<or> ( #(laTerm     m) = id<$lastAcceptedTerm,#n>
-        \<and> #(laVersion  m) \<le> id<$lastAcceptedVersion,#n>)) (* TODO is this needed? *)
+        \<and> #(laVersion  m) \<le> id<$lastAcceptedVersion,#n>)) \<comment> \<open> TODO is this needed? \<close>
     \<and> modified joinVotes   n (insert (source m))
     \<and> (\<exists> joinVotes_n electionNowWon. #joinVotes_n = id<joinVotes$,#n>
                                    \<and> #electionNowWon = $(ElectionWon n joinVotes_n)
@@ -96,7 +96,7 @@ locale ZenWithTerms =
         then (\<exists> lav. #lav = id<$lastAcceptedVersion,#n>
                   \<and> updated lastPublishedVersion n lav)
            \<and> (\<exists> lac. #lac = id<$lastAcceptedConfiguration,#n>
-                  \<and> updated lastPublishedConfiguration n lac) (* NB deviation from TLA+ model in which lastPublishedConfiguration := lastAcceptedConfiguration occurs during HandleStartJoin *)
+                  \<and> updated lastPublishedConfiguration n lac) \<comment> \<open> NB deviation from TLA+ model in which lastPublishedConfiguration := lastAcceptedConfiguration occurs during HandleStartJoin \<close>
         else unchanged (lastPublishedVersion, lastPublishedConfiguration))
     \<and> (if id<electionWon$,#n> then leaderHistory$ = (insert (term m, n))<$leaderHistory> else unchanged leaderHistory)
     \<and> unchanged (lastCommittedConfiguration, currentTerm, publishVotes, messages, descendant,
@@ -107,9 +107,9 @@ locale ZenWithTerms =
   fixes ClientRequest :: "Node \<Rightarrow> Value \<Rightarrow> Node set \<Rightarrow> action"
   defines "ClientRequest n v vs \<equiv> ACT
     ( id<$electionWon,#n>
-    \<and> id<$lastPublishedVersion,#n> = id<$lastAcceptedVersion,#n> (* means we have the last published value / config (useful for CAS operations, where we need to read the previous value first) *)
-    \<and> (#vs \<noteq> id<$lastAcceptedConfiguration,#n> \<longrightarrow> id<$lastCommittedConfiguration,#n> = id<$lastAcceptedConfiguration,#n>) (* only allow reconfiguration if there is not already a reconfiguration in progress *)
-    \<and> (IsQuorum<id<$joinVotes,#n>,#vs>) (* only allow reconfiguration if we have a quorum of (join) votes for the new config *)
+    \<and> id<$lastPublishedVersion,#n> = id<$lastAcceptedVersion,#n> \<comment> \<open> means we have the last published value / config (useful for CAS operations, where we need to read the previous value first) \<close>
+    \<and> (#vs \<noteq> id<$lastAcceptedConfiguration,#n> \<longrightarrow> id<$lastCommittedConfiguration,#n> = id<$lastAcceptedConfiguration,#n>) \<comment> \<open> only allow reconfiguration if there is not already a reconfiguration in progress \<close>
+    \<and> (IsQuorum<id<$joinVotes,#n>,#vs>) \<comment> \<open> only allow reconfiguration if we have a quorum of (join) votes for the new config \<close>
     \<and> (\<exists> newPublishVersion  publishRequests newEntry matchingElems newTransitiveElems
           currentTerm_n lastCommittedConfiguration_n lastAcceptedTerm_n lastAcceptedVersion_n.
             #currentTerm_n          = id<$currentTerm,#n>
@@ -117,7 +117,7 @@ locale ZenWithTerms =
           \<and> #lastAcceptedTerm_n     = id<$lastAcceptedTerm,#n>
           \<and> #lastAcceptedVersion_n = id<$lastAcceptedVersion,#n>
 
-          \<and> #newPublishVersion  = id<$lastPublishedVersion,#n> + #1 (* NB deviation from TLA+ model in which an arbitrarily large newPublishVersion can be chosen *)
+          \<and> #newPublishVersion  = id<$lastPublishedVersion,#n> + #1 \<comment> \<open> NB deviation from TLA+ model in which an arbitrarily large newPublishVersion can be chosen \<close>
           \<and> #publishRequests = #(\<Union> ns \<in> UNIV. {
                 \<lparr> source = n, dest = ns, term = currentTerm_n
                 , payload = PublishRequest \<lparr> prq_version  = newPublishVersion
@@ -199,8 +199,8 @@ locale ZenWithTerms =
     ( updated     electionWon                n False
     \<and> updated     startedJoinSinceLastReboot n False
     \<and> updated     joinVotes                  n {}
-    \<and> unspecified lastPublishedVersion       n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
-    \<and> unspecified lastPublishedConfiguration n (* NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. *)
+    \<and> unspecified lastPublishedVersion       n \<comment> \<open> NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
+    \<and> unspecified lastPublishedConfiguration n \<comment> \<open> NB deviation from TLA+ model - this is irrelevant until electionWon, so can leave it unspecified. \<close>
     \<and> updated     publishVotes               n {}
     \<and> unchanged (messages, lastAcceptedVersion, currentTerm, lastCommittedConfiguration, descendant,
                  lastAcceptedTerm, lastAcceptedValue, lastAcceptedConfiguration, initialConfiguration,
@@ -209,7 +209,7 @@ locale ZenWithTerms =
     (* next-step relation *)
   fixes Next :: action
   defines "Next \<equiv> ACT
-    ( (\<exists> n nm tm. HandleStartJoin n nm tm) (* NB deviation from TLA+ model: here we try arbitrary terms *)
+    ( (\<exists> n nm tm. HandleStartJoin n nm tm) \<comment> \<open> NB deviation from TLA+ model: here we try arbitrary terms \<close>
     \<or> (\<exists> m. #m \<in> $messages \<and> HandleJoinRequest (dest m) m)
     \<or> (\<exists> n v vs. #vs \<in> #ValidConfigs \<and> ClientRequest n v vs)
     \<or> (\<exists> m. #m \<in> $messages \<and> HandlePublishRequest  (dest m) m)
