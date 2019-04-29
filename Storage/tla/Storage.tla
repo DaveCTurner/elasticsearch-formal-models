@@ -1,15 +1,12 @@
 ------------------------------ MODULE Storage ------------------------------
 EXTENDS Integers, FiniteSets, TLC
 
-CONSTANTS MaxNumberOfSteps \* maximum number of execution steps of FSM
-
 VARIABLES
   metadata,      \* metaData[i] = 1 if metadata of generation i is present
   manifest,      \* manifest[j] is generation of metadata j-th manifest is referencing
   newMeta,       \* generation of newly created metadata file
   newManifest,   \* generation of newly created manifest file
   state,         \* current state, describes what to do next
-  steps,         \* number of execution steps of state machine capped by MaxNumberOfSteps
   possibleStates \* set of generations of metadata that limits what can be read from disk
 
 --------------------------------------------------------------------------
@@ -151,16 +148,14 @@ Init ==
    /\ newMeta = -1 \* no latest metadata file
    /\ newManifest = -1 \* no latest manifest file
    /\ state = "writeMeta" \* we start with writing metadata file
-   /\ steps = 0 \* no steps are taken by FSM yet
    /\ possibleStates = {} \* no metadata can be read from disk
     
 Next == 
-    /\ \/ (state = "writeMeta"     /\ WriteMeta)
+       \/ (state = "writeMeta"     /\ WriteMeta)
        \/ (state = "deleteMeta"    /\ DeleteMeta)
        \/ (state = "writeManifest" /\ WriteManifest)
        \/ (state = "deleteOld"     /\ DeleteOld)
        \/ (state = "deleteNew"     /\ DeleteNewEasy) \* try DeleteNewEasy and DeleteNewHard
-    /\ steps' = steps + 1
 
 --------------------------------------------------------------------------
 (*************************************************************************)
