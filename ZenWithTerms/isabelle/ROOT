@@ -1,0 +1,49 @@
+session Zen_With_Terms = HOL +
+  sessions "HOL-Library"
+  theories Quorum_Basics Fixed_Configuration Failover_Example Dynamic_Configuration Reconfiguration_Example
+    Zen_With_Terms_Translation Zen_With_Terms_Refinement
+    Coordination_State_Java Coordination_State_Refinement
+    Coordination_State_Example
+    Coordinator_Lifecycle
+    Coordination_Transport
+    Coordination_Persistence
+    Mixed_Role_Durability
+    Bootstrap_Agreement
+    Publication_Ancestry
+    Master_Service_Executors
+    Stock_Coordination_Execution
+    Stateless_Persistence
+    Stateless_Storage
+    Stateless_Manifest_Retention
+    Stateless_Paginated_Recovery
+    Stateless_Listing_Providers
+    Stateless_Single_Page_Recovery
+    Commit_Application
+    Default_Application
+    Stateless_Execution
+    Task_Acknowledgements
+    Bounded_Service
+    Fixed_Window_Liveness
+    Recovery_Liveness
+    Scheduler_Liveness
+    Bootstrap_Liveness
+    Bootstrap_Placeholder_Liveness
+    Bootstrap_First_Commit
+    Dynamic_Window_Liveness
+    Stateless_Window_Liveness
+    Stateless_Slot_Liveness
+    Publication_Callback_Identity
+    Stateless_Next_Publication
+    Production_Window_Service
+    Production_Recovery_Retries
+    Production_Quorum_Failover
+    Production_Timer_Liveness
+    Stateless_Changing_View_Liveness
+    Task_Ack_Liveness
+    Master_Service_Queue_Liveness
+    Stateless_Recovery_Handoff
+    Production_Timer_Cut_Recurrence
+    Concurrent_Bootstrap_Handoff Open_Scheduler_Recurrence Publication_Exceptional_Callbacks
+    Stalled_Operation_Isolation Stateful_Failover_Handoff Stateless_Failover_Authority
+    Stateless_Failover_Recovery Worker_Listener_Handoff
+    Liveness_Composition
