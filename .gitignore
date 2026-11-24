@@ -12,3 +12,4 @@
 **/tla/*.old
 **/*~
 cluster/isabelle/output
+**/__pycache__/*

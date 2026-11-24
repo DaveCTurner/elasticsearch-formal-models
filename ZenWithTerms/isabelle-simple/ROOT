@@ -1,0 +1,6 @@
+session Zen_With_Terms = HOL +
+  sessions "HOL-Library"
+  theories Quorum_Basics Position_Basics Publication_Basics Abstract_Model
+    Coordination_State_Base
+    Zen_With_Terms_Translation Zen_With_Terms_Refinement
+    Coordination_State_Java Coordination_State_Refinement
