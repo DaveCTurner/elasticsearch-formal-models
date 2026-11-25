@@ -61,6 +61,7 @@ record election =
 
 record abstract_state =
   current_term_of :: "node \<Rightarrow> nat"
+  (* TODO started_join_since_reboot matches the Java impl but abstractly it'd be nicer to track the current leaders :: "node set"  *)
   started_join_since_reboot :: "node set"
   joins_sent :: "(node \<times> node \<times> nat \<times> position) set"
   elections_won :: "(node \<times> nat) \<Rightarrow> election option"
@@ -1170,6 +1171,17 @@ proof -
   from this receipts show thesis by (rule that)
 qed
 
+text \<open>
+  \<open>unique_leader s term\<close>: at most one node has won an election in \<open>term\<close>. Elections need a quorum of
+  joins and a node only joins one candidate per term (\<open>messages_ok\<close>), so two winners in one term would need
+  an overlapping voter to have joined both; this is proved from that (\<open>reachable_term_safe\<close>).
+
+  \<open>safe_term s term\<close>: \<open>term\<close> cannot lose anything that has been committed in an earlier term. It has a
+  unique leader, and every history published in \<open>term\<close> extends every history committed in an earlier term.
+  This is the property that the main safety argument establishes for every term by strong induction on
+  the term (\<open>reachable_term_safe\<close>), and it is what \<open>earlier_prefix\<close> assumes for all lower terms.
+\<close>
+
 definition unique_leader :: "abstract_state \<Rightarrow> nat \<Rightarrow> bool" where
   "unique_leader abstract_state term \<longleftrightarrow>
     (\<forall>candidate candidate' election election'.
@@ -1179,8 +1191,9 @@ definition unique_leader :: "abstract_state \<Rightarrow> nat \<Rightarrow> bool
 definition safe_term :: "abstract_state \<Rightarrow> nat \<Rightarrow> bool" where
   "safe_term abstract_state term \<longleftrightarrow> unique_leader abstract_state term
                                    \<and> (\<forall>committed\<in>publications_committed abstract_state. \<forall>published\<in>publications_sent abstract_state.
-                                       term_of_tip_of committed < term
-                                       \<and> term_of_tip_of published = term \<longrightarrow> prefix committed published)"
+                                       (term_of_tip_of committed < term
+                                        \<and> term_of_tip_of published = term)
+                                           \<longrightarrow> prefix committed published)"
 
 lemma same_term_prefix:
   assumes ok: "leadership_ok abstract_state"

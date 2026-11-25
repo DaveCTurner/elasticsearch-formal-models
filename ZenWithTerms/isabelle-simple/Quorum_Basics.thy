@@ -10,6 +10,17 @@ text \<open>
 
 typedecl node
 
+text \<open>
+  Every value of type \<open>node\<close> is a legal node ID. The number of nodes is bounded: Java's
+  \<open>VotingConfiguration.hasQuorum\<close> counts in 32-bit signed integers, which cannot overflow while there
+  are fewer than 2^30 nodes. This bound is an axiom about the type, as the cluster size is not
+  something that the models can establish.
+\<close>
+
+axiomatization where
+  finite_nodes: "finite (UNIV :: node set)" and
+  node_bound: "card (UNIV :: node set) < 1073741824"
+
 definition majority :: "node set \<Rightarrow> node set \<Rightarrow> bool" where
   "majority V Q \<longleftrightarrow> finite V \<and> Q \<subseteq> V \<and> card V < 2 * card Q"
 
@@ -32,6 +43,9 @@ datatype configuration_element
   | StaleConfigurationMarker
 
 type_synonym config = "configuration_element set"
+
+lemma finite_config_nodes: "finite (range ConfigNode)"
+  by (simp add: finite_nodes finite_range_imageI)
 
 text \<open>
   A configuration is the set of nodes whose votes count. A set of votes is a quorum of a

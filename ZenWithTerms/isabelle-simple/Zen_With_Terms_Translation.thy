@@ -7,7 +7,8 @@ section \<open>The Init and Next actions of ZenWithTerms.tla\<close>
 text \<open>
   A translation of the \<open>Init\<close> and \<open>Next\<close> actions of ZenWithTerms.tla, extended with the roles of
   the nodes. The node record and the messages are in \<open>Coordination_State_Base\<close>. The TLA+
-  constants are parameters: \<open>N\<close> is \<open>Nodes\<close>, \<open>V\<close> the permitted values, \<open>initial_configuration\<close>
+  constants are parameters, except that \<open>Nodes\<close> and the permitted values are the whole of the types
+  \<open>node\<close> and \<open>'v\<close>: \<open>initial_configuration\<close>
   the initial configuration and \<open>initial_value\<close> the initial value. The initial
   accepted version of each node is \<open>versions\<close>. Natural numbers represent the
   node IDs, and the opaque TLA+ values have an arbitrary Isabelle type. The
@@ -216,11 +217,10 @@ text \<open>
   ignored by its receiver, which is why a vote carries its sender's role.
 \<close>
 
-fun enabled :: "node set \<Rightarrow> 'v set \<Rightarrow> 'v tla_state \<Rightarrow> 'v tla_action \<Rightarrow> bool" where
-  "enabled N V state (Set_Initial_State node) =
+fun enabled :: "'v tla_state \<Rightarrow> 'v tla_action \<Rightarrow> bool" where
+  "enabled state (Set_Initial_State node) =
     (let node_memory_state = nodes_at state node
-     in node \<in> N
-        \<and> node_role node_memory_state = Master_Eligible
+     in node_role node_memory_state = Master_Eligible
         \<and> last_accepted_configuration node_memory_state = {}
         \<and> position_term (last_accepted_position node_memory_state) = 0
         \<and> last_committed_configuration node_memory_state = {}
@@ -229,9 +229,9 @@ fun enabled :: "node set \<Rightarrow> 'v set \<Rightarrow> 'v tla_state \<Right
         \<and> \<not> election_won node_memory_state
         \<and> join_votes node_memory_state = {}
         \<and> publish_votes node_memory_state = {})"
-| "enabled N V state (Handle_Start_Join voter candidate new_term) =
-    (voter \<in> N \<and> candidate \<in> N \<and> current_term (memory_state state voter) < new_term)"
-| "enabled N V state (Handle_Join voter voter_role candidate join_term voter_position) =
+| "enabled state (Handle_Start_Join voter candidate new_term) =
+    (current_term (memory_state state voter) < new_term)"
+| "enabled state (Handle_Join voter voter_role candidate join_term voter_position) =
     (let candidate_state = nodes_at state candidate
      in node_role candidate_state = Master_Eligible
         \<and> Join_Msg voter voter_role candidate join_term voter_position \<in> messages state
@@ -239,12 +239,10 @@ fun enabled :: "node set \<Rightarrow> 'v set \<Rightarrow> 'v tla_state \<Right
         \<and> started_join_since_last_reboot candidate_state
         \<and> voter_position \<le> last_accepted_position candidate_state
         \<and> last_accepted_configuration candidate_state \<noteq> {})"
-| "enabled N V state (Handle_Client_Value leader new_term version new_value new_configuration) =
+| "enabled state (Handle_Client_Value leader new_term version new_value new_configuration) =
     (let leader_state = nodes_at state leader
-     in leader \<in> N
-        \<and> node_role leader_state = Master_Eligible
-        \<and> new_value \<in> V
-        \<and> new_configuration \<subseteq> ConfigNode`N
+     in node_role leader_state = Master_Eligible
+        \<and> new_configuration \<subseteq> range ConfigNode
         \<and> new_configuration \<noteq> {}
         \<and> election_won leader_state
         \<and> last_published_version leader_state = position_version (last_accepted_position leader_state)
@@ -253,40 +251,40 @@ fun enabled :: "node set \<Rightarrow> 'v set \<Rightarrow> 'v tla_state \<Right
         \<and> (new_configuration \<noteq> last_accepted_configuration leader_state \<longrightarrow>
             last_committed_configuration leader_state = last_accepted_configuration leader_state)
         \<and> quorum new_configuration (join_votes leader_state))"
-| "enabled N V state (Handle_Publish_Request node request new_value) =
+| "enabled state (Handle_Publish_Request node request new_value) =
     (let node_memory_state = memory_state state node
      in Publish_Msg node request new_value \<in> messages state
         \<and> position_term (publication_position request) = current_term node_memory_state
         \<and> (position_term (publication_position request) = position_term (last_accepted_position node_memory_state) \<longrightarrow>
             position_version (last_accepted_position node_memory_state) < position_version (publication_position request)))"
-| "enabled N V state (Handle_Publish_Response voter voter_role leader position) =
+| "enabled state (Handle_Publish_Response voter voter_role leader position) =
     (let leader_state = nodes_at state leader
      in node_role leader_state = Master_Eligible
         \<and> Response_Msg voter voter_role leader position \<in> messages state
         \<and> election_won leader_state
         \<and> position = last_published_position leader_state)"
-| "enabled N V state (Handle_Commit leader node position) =
+| "enabled state (Handle_Commit leader node position) =
     (let node_memory_state = memory_state state node
      in Commit_Msg leader node position \<in> messages state
         \<and> position_term position = current_term node_memory_state
         \<and> position = last_accepted_position node_memory_state
         \<and> (election_won node_memory_state \<longrightarrow> position_version position = last_published_version node_memory_state))"
-| "enabled N V state (Restart_Node node new_role) = (node \<in> N)"
-| "enabled N V state (Persist_Term node) =
+| "enabled state (Restart_Node node new_role) = True"
+| "enabled state (Persist_Term node) =
     (let node_disk_state = nodes_at state node;
          node_memory_state = memory_at state node
      in node_role node_disk_state = Data_Only
         \<and> term_queued node_memory_state
         \<and> current_term node_disk_state < current_term node_memory_state)"
-| "enabled N V state (Persist_State node) =
+| "enabled state (Persist_State node) =
     (let node_disk_state = nodes_at state node;
          node_memory_state = memory_at state node
      in node_role node_disk_state = Data_Only
         \<and> state_queued node_memory_state
         \<and> current_term node_disk_state = position_term (last_accepted_position node_memory_state))"
 
-fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v tla_state \<Rightarrow> 'v tla_action \<Rightarrow> 'v tla_state" where
-  "execute N initial_configuration initial_value state (Set_Initial_State node) =
+fun execute :: "config \<Rightarrow> 'v \<Rightarrow> 'v tla_state \<Rightarrow> 'v tla_action \<Rightarrow> 'v tla_state" where
+  "execute initial_configuration initial_value state (Set_Initial_State node) =
     put_node
         state
         node
@@ -295,7 +293,7 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
           last_committed_configuration := initial_configuration,
           last_accepted_value          := initial_value
         \<rparr>)"
-| "execute N initial_configuration initial_value state (Handle_Start_Join voter candidate new_term) =
+| "execute initial_configuration initial_value state (Handle_Start_Join voter candidate new_term) =
     (let voter_state = memory_state state voter
      in (put_memory_state
              state
@@ -311,7 +309,6 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
                                    new_term
                                    (last_accepted_position voter_state)) (messages state)\<rparr>)"
 | "execute
-       N
        initial_configuration
        initial_value
        state
@@ -333,7 +330,6 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
                 else last_published_version candidate_state)
             \<rparr>))"
 | "execute
-       N
        initial_configuration
        initial_value
        state
@@ -355,18 +351,13 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
                publish_votes                := {}
              \<rparr>))
        \<lparr>
-         messages   := messages state \<union> {Publish_Msg destination request new_value | destination. destination \<in> N},
+         messages   := messages state \<union> {Publish_Msg destination request new_value | destination. True},
          descendant := extend_descendant
                            (descendant state)
                            (last_accepted_position leader_state)
                            \<lparr>position_term = new_term, position_version = version\<rparr>
        \<rparr>)"
-| "execute
-       N
-       initial_configuration
-       initial_value
-       state
-       (Handle_Publish_Request node request new_value)
+| "execute initial_configuration initial_value state (Handle_Publish_Request node request new_value)
    =
     (let node_memory_state = memory_state state node
      in (put_memory_state
@@ -384,7 +375,6 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
                                    (publication_owner request)
                                    (publication_position request)) (messages state)\<rparr>)"
 | "execute
-       N
        initial_configuration
        initial_value
        state
@@ -396,26 +386,26 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
                       else publish_votes leader_state)
      in (put_node state leader (leader_state\<lparr>publish_votes := new_votes\<rparr>))
        \<lparr>messages := (if is_publish_quorum leader_state new_votes
-         then messages state \<union> {Commit_Msg leader destination position | destination. destination \<in> N}
+         then messages state \<union> {Commit_Msg leader destination position | destination. True}
          else messages state)\<rparr>)"
-| "execute N initial_configuration initial_value state (Handle_Commit leader node position) =
+| "execute initial_configuration initial_value state (Handle_Commit leader node position) =
     (let node_memory_state = memory_state state node
      in put_memory_state
             state
             node
             (queue_state (node_memory_state\<lparr>last_committed_configuration := last_accepted_configuration node_memory_state\<rparr>)))"
-| "execute N initial_configuration initial_value state (Restart_Node node new_role) =
+| "execute initial_configuration initial_value state (Restart_Node node new_role) =
     (put_node state node (restarted_disk initial_value new_role (nodes_at state node)))
       \<lparr>memory_at := (memory_at state)
           (node := restarted_memory initial_value new_role (nodes_at state node))\<rparr>"
-| "execute N initial_configuration initial_value state (Persist_Term node) =
+| "execute initial_configuration initial_value state (Persist_Term node) =
     (put_node
          state
          node
          ((nodes_at state node)\<lparr>current_term := current_term (memory_at state node)\<rparr>))
       \<lparr>memory_at := (memory_at state)
           (node := (memory_at state node)\<lparr>term_queued := False\<rparr>)\<rparr>"
-| "execute N initial_configuration initial_value state (Persist_State node) =
+| "execute initial_configuration initial_value state (Persist_State node) =
     (put_node
          state
          node
@@ -428,28 +418,20 @@ fun execute :: "node set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v 
       \<lparr>memory_at := (memory_at state)(node := (memory_at state node)\<lparr>state_queued := False\<rparr>)\<rparr>"
 
 inductive tla_reachable ::
-  "node set \<Rightarrow> 'v set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> (node \<Rightarrow> nat) \<Rightarrow> 'v tla_state \<Rightarrow> bool"
-  for N V initial_configuration initial_value versions where
-  init: "finite N \<Longrightarrow> initial_configuration \<subseteq> ConfigNode`N \<Longrightarrow> initial_configuration \<noteq> {} \<Longrightarrow> initial_value \<in> V \<Longrightarrow>
+  "config \<Rightarrow> 'v \<Rightarrow> (node \<Rightarrow> nat) \<Rightarrow> 'v tla_state \<Rightarrow> bool"
+  for initial_configuration initial_value versions where
+  init: "initial_configuration \<subseteq> range ConfigNode \<Longrightarrow> initial_configuration \<noteq> {} \<Longrightarrow>
+    tla_reachable initial_configuration initial_value versions (tla_initial initial_value versions)"
+| advance: "tla_reachable initial_configuration initial_value versions s \<Longrightarrow> enabled s a \<Longrightarrow>
     tla_reachable
-        N
-        V
         initial_configuration
         initial_value
         versions
-        (tla_initial initial_value versions)"
-| advance: "tla_reachable N V initial_configuration initial_value versions s \<Longrightarrow> enabled N V s a \<Longrightarrow>
-    tla_reachable
-        N
-        V
-        initial_configuration
-        initial_value
-        versions
-        (execute N initial_configuration initial_value s a)"
+        (execute initial_configuration initial_value s a)"
 
-definition tla_next :: "node set \<Rightarrow> 'v set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v tla_state \<Rightarrow> 'v tla_state \<Rightarrow> bool" where
-  "tla_next N V initial_configuration initial_value state next_state \<longleftrightarrow>
-    (\<exists>action. enabled N V state action
-              \<and> next_state = execute N initial_configuration initial_value state action)"
+definition tla_next :: "config \<Rightarrow> 'v \<Rightarrow> 'v tla_state \<Rightarrow> 'v tla_state \<Rightarrow> bool" where
+  "tla_next initial_configuration initial_value state next_state \<longleftrightarrow>
+    (\<exists>action. enabled state action
+              \<and> next_state = execute initial_configuration initial_value state action)"
 
 end

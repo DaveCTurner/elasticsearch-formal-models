@@ -115,23 +115,23 @@ definition empty_disk :: "'v \<Rightarrow> 'v node_disk_state" where
       disk_committed_configuration = {}
     \<rparr>"
 
-definition memory_of_disk :: "role \<Rightarrow> 'v node_disk_state \<Rightarrow> 'v node_memory_state \<Rightarrow> 'v node_memory_state" where
-  "memory_of_disk new_role node_disk_state old_node_memory_state =
-    old_node_memory_state\<lparr>
-      current_term                   := disk_term node_disk_state,
-      last_accepted_position         := disk_position node_disk_state,
-      last_accepted_value            := disk_value node_disk_state,
-      last_accepted_configuration    := disk_accepted_configuration node_disk_state,
-      last_committed_configuration   := disk_committed_configuration node_disk_state,
-      join_votes                     := {},
-      started_join_since_last_reboot := False,
-      election_won                   := False,
-      last_published_version         := 0,
-      last_published_configuration   := disk_accepted_configuration node_disk_state,
-      publish_votes                  := {},
-      node_role                      := new_role,
-      term_queued                    := False,
-      state_queued                   := False
+definition memory_of_disk :: "role \<Rightarrow> 'v node_disk_state \<Rightarrow> 'v node_memory_state" where
+  "memory_of_disk new_role node_disk_state =
+    \<lparr>
+      current_term                   = disk_term node_disk_state,
+      last_accepted_position         = disk_position node_disk_state,
+      last_accepted_value            = disk_value node_disk_state,
+      last_accepted_configuration    = disk_accepted_configuration node_disk_state,
+      last_committed_configuration   = disk_committed_configuration node_disk_state,
+      join_votes                     = {},
+      started_join_since_last_reboot = False,
+      election_won                   = False,
+      last_published_version         = 0,
+      last_published_configuration   = disk_accepted_configuration node_disk_state,
+      publish_votes                  = {},
+      node_role                      = new_role,
+      term_queued                    = False,
+      state_queued                   = False
     \<rparr>"
 
 text \<open>
@@ -214,9 +214,8 @@ text \<open>
   \<open>VoteCollection.addVote\<close>.
 \<close>
 
-fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_action \<Rightarrow> 'v java_state" where
+fun java_call :: "'v java_state \<Rightarrow> 'v java_action \<Rightarrow> 'v java_state" where
   "java_call
-       N
        state
        (Java_Set_Initial_State
             node
@@ -236,7 +235,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
           last_committed_configuration := initial_committed_config
         \<rparr>)
         {}"
-| "java_call N state (Java_Handle_Start_Join voter candidate new_term) =
+| "java_call state (Java_Handle_Start_Join voter candidate new_term) =
     (let voter_state = java_memory state voter
      in java_put
             state
@@ -258,7 +257,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
                  new_term
                  (last_accepted_position voter_state)})"
 
-| "java_call N state (Java_Handle_Join voter voter_role candidate join_term voter_position) =
+| "java_call state (Java_Handle_Join voter voter_role candidate join_term voter_position) =
     (let candidate_state = java_memory state candidate;
          new_votes = (if voter_role = Master_Eligible
                       then insert voter (join_votes candidate_state)
@@ -280,7 +279,6 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
             \<rparr>)
             {})"
 | "java_call
-       N
        state
        (Java_Handle_Client_Value leader new_term version new_value new_config previous_config)
    =
@@ -306,8 +304,8 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
               last_published_configuration := new_config,
               publish_votes                := {}
             \<rparr>)
-            {Publish_Msg destination request new_value | destination. destination \<in> N})"
-| "java_call N state (Java_Handle_Publish_Request node request new_value) =
+            {Publish_Msg destination request new_value | destination. True})"
+| "java_call state (Java_Handle_Publish_Request node request new_value) =
     (let node_memory_state = java_memory state node
      in java_put
             state
@@ -326,7 +324,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
                  (node_role node_memory_state)
                  (publication_owner request)
                  (publication_position request)})"
-| "java_call N state (Java_Handle_Publish_Response voter voter_role leader position) =
+| "java_call state (Java_Handle_Publish_Response voter voter_role leader position) =
     (let leader_state = java_memory state leader;
          new_votes = (if voter_role = Master_Eligible
                       then insert voter (publish_votes leader_state)
@@ -337,9 +335,9 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
             (election_won leader_state \<and> position = last_published_position leader_state)
             (leader_state\<lparr>publish_votes := new_votes\<rparr>)
             (if java_is_publish_quorum leader_state new_votes
-             then {Commit_Msg leader destination position | destination. destination \<in> N}
+             then {Commit_Msg leader destination position | destination. True}
              else {}))"
-| "java_call N state (Java_Handle_Commit node leader position) =
+| "java_call state (Java_Handle_Commit node leader position) =
     (let node_memory_state = java_memory state node
      in java_put
             state
@@ -348,7 +346,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
              \<and> position = last_accepted_position node_memory_state)
             (queue_state (node_memory_state\<lparr>last_committed_configuration := last_accepted_configuration node_memory_state\<rparr>))
             {})"
-| "java_call N state (Java_Restart node new_role new_value) =
+| "java_call state (Java_Restart node new_role new_value) =
     (let new_node_disk_state = (if disk_term (java_disk state node) = 0
                                    \<and> new_role = Coordinating_Only
                      then empty_disk new_value
@@ -357,8 +355,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
        java_memory := (java_memory state)
          (node := memory_of_disk
                       new_role
-                      (if new_role = Coordinating_Only then empty_disk new_value else new_node_disk_state)
-                      (java_memory state node)),
+                      (if new_role = Coordinating_Only then empty_disk new_value else new_node_disk_state)),
        java_disk   := (java_disk state)(node := new_node_disk_state)
      \<rparr>)"
 (* TODO This doesn't quite capture AsyncPersistedState's worker, which claims both queued
@@ -366,7 +363,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
    writes the term followed by the state. Here each write reads the in-memory value when it
    happens, so it can persist a newer value than the one the worker claimed. The
    term-before-state ordering is already enforced by the guard of Java_Persist_State. *)
-| "java_call N state (Java_Persist_Term node) =
+| "java_call state (Java_Persist_Term node) =
     (let node_memory_state = java_memory state node
      in java_persist
             state
@@ -376,7 +373,7 @@ fun java_call :: "node set \<Rightarrow> 'v java_state \<Rightarrow> 'v java_act
              \<and> disk_term (java_disk state node) < current_term node_memory_state)
             (node_memory_state\<lparr>term_queued := False\<rparr>)
             ((java_disk state node)\<lparr>disk_term := current_term node_memory_state\<rparr>))"
-| "java_call N state (Java_Persist_State node) =
+| "java_call state (Java_Persist_State node) =
     (let node_memory_state = java_memory state node
      in java_persist
             state
@@ -399,9 +396,8 @@ text \<open>
   ensure the following whenever a call changes the state. A call that changes nothing is always
   permitted, whether the class rejects it or not.
 
-  \<^item> Node IDs and configurations come from a fixed finite universe \<open>N\<close> that
-    includes every node that can participate and every configuration ID,
-    including inert bootstrap placeholders. A node can change its roles across
+  \<^item> Configurations are made of node IDs (the stale marker excepted, and only the
+    configurations that the caller supplies must be free of it). A node can change its roles across
     restarts (\<open>Java_Restart\<close>), so any ID may be master-eligible in some
     incarnation and there is no separate set of eligible IDs.
   \<^item> The \<open>Coordinator\<close> asserts that only a master-eligible node runs \<open>setInitialState\<close>,
@@ -411,7 +407,7 @@ text \<open>
   \<^item> Bootstrap data is shared: the initial state has term zero, the same value and
     configuration at every node, and is set on a node that has not otherwise
     been used (the assertions of \<open>setInitialState\<close>). The configurations in
-    published states are drawn from the universe, and a leader's published state
+    published states contain no stale marker, and a leader's published state
     has the leader's last committed configuration (an assertion of
     \<open>handleClientValue\<close>).
   \<^item> Inputs are authentic: a join, publish request, publish response or commit is
@@ -426,10 +422,8 @@ text \<open>
 \<close>
 
 fun caller_contract ::
-  "node set \<Rightarrow> 'v set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow> 'v java_state \<Rightarrow> 'v java_action \<Rightarrow> bool" where
+  "config \<Rightarrow> 'v \<Rightarrow> 'v java_state \<Rightarrow> 'v java_action \<Rightarrow> bool" where
   "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
@@ -441,8 +435,7 @@ fun caller_contract ::
             initial_committed_config)
    =
     (let node_memory_state = java_memory state node
-     in node \<in> N
-        \<and> node_role node_memory_state = Master_Eligible
+     in node_role node_memory_state = Master_Eligible
         \<and> initial_position = last_accepted_position node_memory_state
         \<and> position_term initial_position = 0
         \<and> initial_accepted_config = initial_configuration
@@ -455,17 +448,13 @@ fun caller_contract ::
         \<and> join_votes node_memory_state = {}
         \<and> publish_votes node_memory_state = {})"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
        (Java_Handle_Start_Join voter candidate new_term)
    =
-    (voter \<in> N \<and> candidate \<in> N)"
+    True"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
@@ -474,32 +463,24 @@ fun caller_contract ::
     (node_role (java_memory state candidate) = Master_Eligible
      \<and> Join_Msg voter voter_role candidate join_term voter_position \<in> java_messages state)"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
        (Java_Handle_Client_Value leader new_term version new_value new_config previous_config)
    =
-    (leader \<in> N
-     \<and> node_role (java_memory state leader) = Master_Eligible
-     \<and> new_value \<in> V
-     \<and> new_config \<subseteq> ConfigNode`N
+    (node_role (java_memory state leader) = Master_Eligible
+     \<and> new_config \<subseteq> range ConfigNode
      \<and> previous_config = last_committed_configuration (java_memory state leader))"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
        (Java_Handle_Publish_Request node request new_value)
    =
     (Publish_Msg node request new_value \<in> java_messages state
-     \<and> publication_config request \<subseteq> ConfigNode`N
-     \<and> publication_previous_config request \<subseteq> ConfigNode`N)"
+     \<and> publication_config request \<subseteq> range ConfigNode
+     \<and> publication_previous_config request \<subseteq> range ConfigNode)"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
@@ -508,8 +489,6 @@ fun caller_contract ::
     (node_role (java_memory state leader) = Master_Eligible
      \<and> Response_Msg voter voter_role leader position \<in> java_messages state)"
 | "caller_contract
-       N
-       V
        initial_configuration
        initial_value
        state
@@ -520,46 +499,34 @@ fun caller_contract ::
         \<and> (election_won node_memory_state
            \<and> position_version position \<noteq> last_published_version node_memory_state \<longrightarrow>
             last_committed_configuration node_memory_state = last_accepted_configuration node_memory_state))"
-| "caller_contract
-       N
-       V
-       initial_configuration
-       initial_value
-       state
-       (Java_Restart node new_role new_value)
+| "caller_contract initial_configuration initial_value state (Java_Restart node new_role new_value)
    =
-    (node \<in> N \<and> new_value = initial_value)"
-| "caller_contract N V initial_configuration initial_value state (Java_Persist_Term node) = True"
-| "caller_contract N V initial_configuration initial_value state (Java_Persist_State node) = True"
+    (new_value = initial_value)"
+| "caller_contract initial_configuration initial_value state (Java_Persist_Term node) = True"
+| "caller_contract initial_configuration initial_value state (Java_Persist_State node) = True"
 
 text \<open>
   The reachable states are those of a caller that respects the contract. A call that
-  changes nothing is always permitted. The universe has
-  fewer than 2^30 nodes, so that the 32-bit arithmetic of \<open>has_quorum\<close> cannot
-  overflow.
+  changes nothing is always permitted. There are fewer than 2^30 nodes (\<open>node_bound\<close>), so that the
+  32-bit arithmetic of \<open>has_quorum\<close> cannot overflow.
 \<close>
 
 inductive java_reachable ::
-  "node set \<Rightarrow> 'v set \<Rightarrow> config \<Rightarrow> 'v \<Rightarrow>
+  "config \<Rightarrow> 'v \<Rightarrow>
     (node \<Rightarrow> nat) \<Rightarrow> 'v java_state \<Rightarrow> bool"
-  for N V initial_configuration initial_value versions where
-  init: "finite N \<Longrightarrow> card N < 1073741824 \<Longrightarrow>
-    initial_configuration \<subseteq> ConfigNode`N \<Longrightarrow> initial_configuration \<noteq> {} \<Longrightarrow> initial_value \<in> V \<Longrightarrow>
+  for initial_configuration initial_value versions where
+  init: "initial_configuration \<subseteq> range ConfigNode \<Longrightarrow> initial_configuration \<noteq> {} \<Longrightarrow>
     java_reachable
-        N
-        V
         initial_configuration
         initial_value
         versions
         (java_initial initial_value versions)"
-| advance: "java_reachable N V initial_configuration initial_value versions state \<Longrightarrow>
-    (java_call N state action \<noteq> state \<longrightarrow> caller_contract
-                                            N
-                                            V
-                                            initial_configuration
-                                            initial_value
-                                            state
-                                            action) \<Longrightarrow>
-    java_reachable N V initial_configuration initial_value versions (java_call N state action)"
+| advance: "java_reachable initial_configuration initial_value versions state \<Longrightarrow>
+    (java_call state action \<noteq> state \<longrightarrow> caller_contract
+                                          initial_configuration
+                                          initial_value
+                                          state
+                                          action) \<Longrightarrow>
+    java_reachable initial_configuration initial_value versions (java_call state action)"
 
 end

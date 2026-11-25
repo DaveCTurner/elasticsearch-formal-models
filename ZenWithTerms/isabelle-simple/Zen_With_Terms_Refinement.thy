@@ -580,11 +580,11 @@ qed
 lemma no_wire_collision:
   assumes unique: "wire_unique M"
   assumes fresh: "\<And>d p v. Publish_Msg d p v \<in> M \<Longrightarrow> publication_position p \<noteq> publication_position q"
-  shows "wire_unique (M \<union> {Publish_Msg d q w | d. d \<in> N})"
+  shows "wire_unique (M \<union> {Publish_Msg d q w | d. True})"
   unfolding wire_unique_def
 proof (intro allI impI)
   fix d e p r v x
-  let ?M = "M \<union> {Publish_Msg d q w | d. d \<in> N}"
+  let ?M = "M \<union> {Publish_Msg d q w | d. True}"
   assume p: "Publish_Msg d p v \<in> ?M" and r: "Publish_Msg e r x \<in> ?M" and position: "publication_position p = publication_position r"
   from p have p': "Publish_Msg d p v \<in> M \<or> p = q \<and> v = w" by auto
   from r have r': "Publish_Msg e r x \<in> M \<or> r = q \<and> x = w" by auto
@@ -612,10 +612,10 @@ lemmas wire = linkedD(3)[OF link]
 lemmas sent_response = linkedD(2)[OF link]
 
 lemma simulate_set_initial_state:
-  assumes "enabled N V s (Set_Initial_State n)"
+  assumes "enabled s (Set_Initial_State n)"
   shows "linked
              initial_configuration
-             (execute N initial_configuration initial_value s (Set_Initial_State n))
+             (execute initial_configuration initial_value s (Set_Initial_State n))
              a"
 proof -
   let ?x = "nodes_at s n"
@@ -646,7 +646,7 @@ lemma simulate_restart_node:
   "\<exists>b. abstract_model.transition initial_configuration a b
        \<and> linked
              initial_configuration
-             (execute N initial_configuration initial_value s (Restart_Node n r))
+             (execute initial_configuration initial_value s (Restart_Node n r))
              b"
 proof -
   let ?x = "nodes_at s n"
@@ -751,11 +751,11 @@ text \<open>
 \<close>
 
 lemma simulate_handle_start_join:
-  assumes enable: "enabled N V s (Handle_Start_Join n c t)"
+  assumes enable: "enabled s (Handle_Start_Join n c t)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute N initial_configuration initial_value s (Handle_Start_Join n c t))
+                   (execute initial_configuration initial_value s (Handle_Start_Join n c t))
                    b"
 proof (cases "node_role (nodes_at s n) = Master_Eligible")
   case True
@@ -789,7 +789,6 @@ proof (cases "node_role (nodes_at s n) = Master_Eligible")
     by (rule ancestry_unchanged[OF link]) (simp_all add: put_node_def)
   from link_update[OF link transition_grows[OF step] nl frame master master' replies _ news unique anc]
   have "linked initial_configuration (execute
-                                          N
                                           initial_configuration
                                           initial_value
                                           s
@@ -839,11 +838,11 @@ next
 qed
 
 lemma simulate_handle_join:
-  assumes enable: "enabled N V s (Handle_Join n nr c t r)"
+  assumes enable: "enabled s (Handle_Join n nr c t r)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute N initial_configuration initial_value s (Handle_Join n nr c t r))
+                   (execute initial_configuration initial_value s (Handle_Join n nr c t r))
                    b"
 proof -
   let ?x = "nodes_at s c"
@@ -938,10 +937,10 @@ proof -
       unfolding abstract_model.published_by_def by fastforce
     have tip_b: "abstract_model.last_published_history_of ?b (c, current_term_of a c) = publications_accepted a c"
       using abstract_model.last_published_history_win_new[OF empty, of "\<lparr>
-            election_votes                   = ?Q,
-            election_last_accepted_history   = publications_accepted a c,
-            election_committed_configuration = last_committed_configuration_of a c
-          \<rparr>"] by simp
+        election_votes                   = ?Q,
+        election_last_accepted_history   = publications_accepted a c,
+        election_committed_configuration = last_committed_configuration_of a c
+      \<rparr>"] by simp
     have tips_other: "abstract_model.last_published_history_of ?b (i, current_term_of a i) = abstract_model.last_published_history_of a (i, current_term_of a i)" if "i \<noteq> c" for i
       using abstract_model.last_published_history_win_other[of "(i, current_term_of a i)" c "current_term_of a c" a] that by simp
     have nl: "node_link initial_configuration ?b c ?y" using c votes won base started role node_linkD(1)[OF c]
@@ -995,12 +994,11 @@ proof -
 qed
 
 lemma simulate_handle_client_value:
-  assumes enabled: "enabled N V s (Handle_Client_Value n t v payload_value D)"
+  assumes enabled: "enabled s (Handle_Client_Value n t v payload_value D)"
   shows "\<exists>b. abstract_model.transition initial_configuration a b
              \<and> linked
                    initial_configuration
                    (execute
-                        N
                         initial_configuration
                         initial_value
                         s
@@ -1024,7 +1022,7 @@ proof -
     last_published_configuration := D,
     publish_votes                := {}
   \<rparr>"
-  let ?M = "messages s \<union> {Publish_Msg d ?p payload_value | d. d \<in> N}"
+  let ?M = "messages s \<union> {Publish_Msg d ?p payload_value | d. True}"
   let ?G = "extend_descendant
                 (descendant s)
                 (last_accepted_position ?x)
@@ -1096,12 +1094,11 @@ proof -
 qed
 
 lemma simulate_handle_publish_request:
-  assumes enabled: "enabled N V s (Handle_Publish_Request n p payload_value)"
+  assumes enabled: "enabled s (Handle_Publish_Request n p payload_value)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
                    (execute
-                        N
                         initial_configuration
                         initial_value
                         s
@@ -1278,16 +1275,11 @@ lemma quorum_votes_nonempty:
   using assms unfolding quorum_def majority_def by auto
 
 lemma simulate_handle_publish_response:
-  assumes enabled: "enabled N V s (Handle_Publish_Response n nr c k)"
+  assumes enabled: "enabled s (Handle_Publish_Response n nr c k)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute
-                        N
-                        initial_configuration
-                        initial_value
-                        s
-                        (Handle_Publish_Response n nr c k))
+                   (execute initial_configuration initial_value s (Handle_Publish_Response n nr c k))
                    b"
 proof -
   let ?x = "nodes_at s c"
@@ -1337,7 +1329,7 @@ proof -
       with u(2) show "(p,?h) \<in> publish_responses_sent a" by simp
     qed
     let ?b = "a\<lparr>publications_committed := insert ?h (publications_committed a)\<rparr>"
-    let ?M = "messages s \<union> {Commit_Msg c d k | d. d \<in> N}"
+    let ?M = "messages s \<union> {Commit_Msg c d k | d. True}"
     have joint: "abstract_model.acknowledged_by_joint_quorum initial_configuration a ?h"
     proof (cases "?h \<in> publications_committed a")
       case True
@@ -1376,11 +1368,11 @@ proof -
 qed
 
 lemma simulate_handle_commit:
-  assumes enabled: "enabled N V s (Handle_Commit c n k)"
+  assumes enabled: "enabled s (Handle_Commit c n k)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute N initial_configuration initial_value s (Handle_Commit c n k))
+                   (execute initial_configuration initial_value s (Handle_Commit c n k))
                    b"
 proof (cases "node_role (nodes_at s n) = Master_Eligible")
   case True
@@ -1394,7 +1386,7 @@ proof (cases "node_role (nodes_at s n) = Master_Eligible")
   from enabled have sent: "Commit_Msg c n k \<in> messages s" and t: "position_term k = current_term_of a n"
     and k: "k = last_accepted_position ?x" and guard: "election_won ?x \<Longrightarrow> position_version k = last_published_version ?x"
     using node_linkD(1)[OF nl] True by (auto simp: Let_def memory_state_def)
-  have run: "execute N initial_configuration initial_value s (Handle_Commit c n k) = put_node s n ?y"
+  have run: "execute initial_configuration initial_value s (Handle_Commit c n k) = put_node s n ?y"
     using True by (simp add: Let_def memory_state_def put_memory_state_def queue_state_def)
   show ?thesis
   proof (cases "last_accepted_configuration ?x \<noteq> stale_config")
@@ -1487,11 +1479,11 @@ text \<open>
 \<close>
 
 lemma simulate_persist_term:
-  assumes enabled: "enabled N V s (Persist_Term n)"
+  assumes enabled: "enabled s (Persist_Term n)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute N initial_configuration initial_value s (Persist_Term n))
+                   (execute initial_configuration initial_value s (Persist_Term n))
                    b"
 proof -
   let ?x = "nodes_at s n"
@@ -1545,11 +1537,11 @@ lemma normalized_zero_least:
   using assms by (cases k) (auto simp: normalized_def position_le_iff)
 
 lemma simulate_persist_state:
-  assumes enabled: "enabled N V s (Persist_State n)"
+  assumes enabled: "enabled s (Persist_State n)"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
              \<and> linked
                    initial_configuration
-                   (execute N initial_configuration initial_value s (Persist_State n))
+                   (execute initial_configuration initial_value s (Persist_State n))
                    b"
 proof -
   let ?x = "nodes_at s n"
@@ -1655,59 +1647,56 @@ qed
 text \<open>Combining the cases: every enabled TLA+ action is simulated.\<close>
 
 theorem simulate_action:
-  assumes "enabled N V s action"
+  assumes "enabled s action"
   shows "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
-             \<and> linked
-                   initial_configuration
-                   (execute N initial_configuration initial_value s action)
-                   b"
+             \<and> linked initial_configuration (execute initial_configuration initial_value s action) b"
   using assms(1)
 proof (cases action)
   case (Set_Initial_State n)
-  then show ?thesis using simulate_set_initial_state[of N V n initial_value] assms by blast
+  then show ?thesis using simulate_set_initial_state[of n initial_value] assms by blast
 next
   case (Handle_Start_Join n c t)
-  then have "enabled N V s (Handle_Start_Join n c t)" using assms(1) by simp
+  then have "enabled s (Handle_Start_Join n c t)" using assms(1) by simp
   from simulate_handle_start_join[OF this, of initial_value] Handle_Start_Join
   show ?thesis by blast
 next
   case (Handle_Join n nr c t r)
-  then show ?thesis using simulate_handle_join[of N V n nr c t r initial_value] assms by simp
+  then show ?thesis using simulate_handle_join[of n nr c t r initial_value] assms by simp
 next
   case (Handle_Client_Value n t v payload_value D)
-  then show ?thesis using simulate_handle_client_value[of N V n t v payload_value D initial_value] assms by blast
+  then show ?thesis using simulate_handle_client_value[of n t v payload_value D initial_value] assms by blast
 next
   case (Handle_Publish_Request n p payload_value)
-  then show ?thesis using simulate_handle_publish_request[of N V n p payload_value initial_value] assms by blast
+  then show ?thesis using simulate_handle_publish_request[of n p payload_value initial_value] assms by blast
 next
   case (Handle_Publish_Response n nr c k)
-  then show ?thesis using simulate_handle_publish_response[of N V n nr c k initial_value] assms by simp
+  then show ?thesis using simulate_handle_publish_response[of n nr c k initial_value] assms by simp
 next
   case (Handle_Commit c n k)
-  then show ?thesis using simulate_handle_commit[of N V c n k initial_value] assms by blast
+  then show ?thesis using simulate_handle_commit[of c n k initial_value] assms by blast
 next
   case (Restart_Node n r)
-  then show ?thesis using simulate_restart_node[of N initial_value n r] by blast
+  then show ?thesis using simulate_restart_node[of initial_value n r] by blast
 next
   case (Persist_Term n)
-  then show ?thesis using simulate_persist_term[of N V n initial_value] assms by simp
+  then show ?thesis using simulate_persist_term[of n initial_value] assms by simp
 next
   case (Persist_State n)
-  then show ?thesis using simulate_persist_state[of N V n initial_value] assms by simp
+  then show ?thesis using simulate_persist_state[of n initial_value] assms by simp
 qed
 
 end
 
 theorem tla_dynamic_refinement:
-  assumes "tla_reachable N V initial_configuration initial_value versions s"
+  assumes "tla_reachable initial_configuration initial_value versions s"
   shows "\<exists>a. abstract_model.dynamic_reachable initial_configuration a
              \<and> linked initial_configuration s a"
   using assms
 proof (induction rule: tla_reachable.induct)
   case init
-  have fin: "finite initial_configuration" using init.hyps by (simp add: finite_subset)
+  have fin: "finite initial_configuration" using finite_subset[OF init.hyps(1) finite_config_nodes] .
   show ?case by (intro exI[of _ "abstract_model.bootstrapped initial_configuration"] conjI)
-      (rule abstract_model.dynamic_reachable.boot[OF fin init.hyps(3)], rule linked_initial)
+      (rule abstract_model.dynamic_reachable.boot[OF fin init.hyps(2)], rule linked_initial)
 next
   case (advance s action)
   then obtain a where a: "abstract_model.dynamic_reachable initial_configuration a" "linked
@@ -1719,7 +1708,6 @@ next
   obtain b where step: "b = a \<or> abstract_model.transition initial_configuration a b" and link: "linked
                                                                                                     initial_configuration
                                                                                                     (execute
-                                                                                                         N
                                                                                                          initial_configuration
                                                                                                          initial_value
                                                                                                          s
@@ -1734,7 +1722,7 @@ qed
 section \<open>Transfer to TLA+ messages and descendant edges\<close>
 
 lemma followed_by_simulation:
-  assumes run: "rtranclp (tla_next N V initial_configuration initial_value) s s'"
+  assumes run: "rtranclp (tla_next initial_configuration initial_value) s s'"
   assumes reach: "abstract_model.dynamic_reachable initial_configuration a"
   assumes link: "linked initial_configuration s a"
   shows "\<exists>b. rtranclp (abstract_model.transition initial_configuration) a b
@@ -1752,12 +1740,11 @@ next
                                                                                                                                                                      b" by blast
   have nonempty: "initial_configuration \<noteq> {}" using b(1) using b(1) abstract_model.dynamic_reachable_nonempty by blast
   interpret simulation initial_configuration u b by (unfold_locales; fact)
-  obtain action where enabled: "enabled N V u action" and v: "v = execute
-                                                                      N
-                                                                      initial_configuration
-                                                                      initial_value
-                                                                      u
-                                                                      action"
+  obtain action where enabled: "enabled u action" and v: "v = execute
+                                                                  initial_configuration
+                                                                  initial_value
+                                                                  u
+                                                                  action"
     using step.hyps(2) unfolding tla_next_def by blast
   obtain c where move: "c = b \<or> abstract_model.transition initial_configuration b c" and c: "linked
                                                                                                  initial_configuration
@@ -1783,8 +1770,8 @@ next
 qed
 
 theorem tla_one_election_candidate_per_term:
-  assumes reach: "tla_reachable N V initial_configuration initial_value versions s"
-  assumes run: "rtranclp (tla_next N V initial_configuration initial_value) s s'"
+  assumes reach: "tla_reachable initial_configuration initial_value versions s"
+  assumes run: "rtranclp (tla_next initial_configuration initial_value) s s'"
   assumes won: "election_won (nodes_at s c)" "election_won (nodes_at s' d)"
   assumes same: "current_term (nodes_at s c) = current_term (nodes_at s' d)"
   shows "c = d"
@@ -1814,7 +1801,7 @@ proof -
 qed
 
 theorem tla_one_publisher_per_term:
-  assumes reach: "tla_reachable N V initial_configuration initial_value versions s"
+  assumes reach: "tla_reachable initial_configuration initial_value versions s"
   assumes m: "Publish_Msg d p v \<in> messages s" "Publish_Msg e q w \<in> messages s"
   assumes t: "position_term (publication_position p) = position_term (publication_position q)"
   shows "publication_owner p = publication_owner q"
@@ -1834,7 +1821,7 @@ proof -
 qed
 
 theorem tla_log_matching:
-  assumes "tla_reachable N V initial_configuration initial_value versions s"
+  assumes "tla_reachable initial_configuration initial_value versions s"
     "Publish_Msg d p v \<in> messages s" "Publish_Msg e q w \<in> messages s"
     "publication_position p = publication_position q"
   shows "p = q \<and> v = w"
@@ -1867,7 +1854,7 @@ proof -
 qed
 
 theorem tla_committed_values_form_chain:
-  assumes reach: "tla_reachable N V initial_configuration initial_value versions s"
+  assumes reach: "tla_reachable initial_configuration initial_value versions s"
   assumes m: "Publish_Msg d p v \<in> messages s" "Publish_Msg e q w \<in> messages s"
   assumes commits: "commit_for s p" "commit_for s q"
   assumes distinct: "publication_position p \<noteq> publication_position q"
