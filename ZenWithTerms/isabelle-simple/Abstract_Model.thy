@@ -358,7 +358,7 @@ inductive transition :: "abstract_state \<Rightarrow> abstract_state \<Rightarro
                (abstract_state\<lparr>started_join_since_reboot := started_join_since_reboot abstract_state - {node}\<rparr>)"
 
 inductive dynamic_reachable :: "abstract_state \<Rightarrow> bool" where
-  boot: "finite initial_configuration \<Longrightarrow> initial_configuration \<noteq> {} \<Longrightarrow> dynamic_reachable bootstrapped"
+  boot: "initial_configuration \<noteq> {} \<Longrightarrow> dynamic_reachable bootstrapped"
 | advance: "dynamic_reachable abstract_state \<Longrightarrow> transition 
                                                                          abstract_state
                                                                          next_abstract \<Longrightarrow>

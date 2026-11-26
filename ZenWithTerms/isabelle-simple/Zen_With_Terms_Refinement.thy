@@ -1694,9 +1694,8 @@ theorem tla_dynamic_refinement:
   using assms
 proof (induction rule: tla_reachable.induct)
   case init
-  have fin: "finite initial_configuration" using finite_subset[OF init.hyps(1) finite_config_nodes] .
   show ?case by (intro exI[of _ "abstract_model.bootstrapped initial_configuration"] conjI)
-      (rule abstract_model.dynamic_reachable.boot[OF fin init.hyps(2)], rule linked_initial)
+      (rule abstract_model.dynamic_reachable.boot[OF init.hyps(2)], rule linked_initial)
 next
   case (advance s action)
   then obtain a where a: "abstract_model.dynamic_reachable initial_configuration a" "linked

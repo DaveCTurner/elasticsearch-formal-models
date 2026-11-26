@@ -73,18 +73,18 @@ datatype 'v java_action =
 
 text \<open>
   \<open>VotingConfiguration.hasQuorum\<close> counts the configuration's nodes that have
-  voted and compares twice that count with the size of the configuration, using
-  32-bit signed integers. The election and publish quorums are those of the
+  voted and checks that the count exceeds half the size of the configuration, rounded
+  down (\<open>votedNodesCount > nodeIds.size() >> 1\<close>). This cannot overflow. Java sets are finite; the
+  finiteness test only matters for an infinite configuration, which no finite set of votes
+  satisfies, as for \<open>quorum\<close>. The election and publish quorums are those of the
   default \<open>ElectionStrategy\<close>, which adds no further constraints
   (\<open>satisfiesAdditionalQuorumConstraints\<close> holds).
 \<close>
 
-definition signed_int :: "int \<Rightarrow> int" where
-  "signed_int number = (number + 2147483648) mod 4294967296 - 2147483648"
-
 definition has_quorum :: "config \<Rightarrow> node set \<Rightarrow> bool" where
   "has_quorum configuration votes \<longleftrightarrow>
-    signed_int (int (card (voting_nodes_of configuration))) < signed_int (2 * int (card (voting_nodes_of configuration \<inter> votes)))"
+    finite (voting_nodes_of configuration)
+    \<and> card (voting_nodes_of configuration) div 2 < card (voting_nodes_of configuration \<inter> votes)"
 
 definition java_is_election_quorum :: "'v node_memory_state \<Rightarrow> node set \<Rightarrow> bool" where
   "java_is_election_quorum node_memory_state votes \<longleftrightarrow>
@@ -507,8 +507,7 @@ fun caller_contract ::
 
 text \<open>
   The reachable states are those of a caller that respects the contract. A call that
-  changes nothing is always permitted. There are fewer than 2^30 nodes (\<open>node_bound\<close>), so that the
-  32-bit arithmetic of \<open>has_quorum\<close> cannot overflow.
+  changes nothing is always permitted.
 \<close>
 
 inductive java_reachable ::

@@ -57,35 +57,8 @@ lemma project_java_select[simp]:
   "java_messages (project_java s) = messages s"
   by (simp_all add: project_java_def)
 
-lemma signed_int_small:
-  assumes "0 \<le> x" "x < 2147483648"
-  shows "signed_int x = x"
-proof -
-  have "0 \<le> x + 2147483648" "x + 2147483648 < 4294967296" using assms by linarith+
-  then show ?thesis by (simp add: signed_int_def)
-qed
-
 lemma has_quorum_eq: "has_quorum D Q = quorum D Q"
-proof -
-  let ?V = "voting_nodes_of D"
-  have fv: "finite ?V" using finite_nodes by (rule finite_subset[OF subset_UNIV])
-  have size: "card ?V \<le> card (UNIV :: node set)" using finite_nodes subset_UNIV by (rule card_mono)
-  have votes: "card (?V \<inter> Q) \<le> card ?V" using fv by (simp add: card_mono)
-  have d: "int (card ?V) \<le> int (card (UNIV :: node set))" using size by simp
-  have q: "int (card (?V \<inter> Q)) \<le> int (card ?V)" using votes by simp
-  have n: "int (card (UNIV :: node set)) < 1073741824" using node_bound by simp
-  have fits: "int (card ?V) < 2147483648" "2 * int (card (?V \<inter> Q)) < 2147483648"
-    using d q n by linarith+
-  have nonnegative: "0 \<le> int (card ?V)" "0 \<le> 2 * int (card (?V \<inter> Q))" by simp_all
-  have normal: "signed_int (int (card ?V)) = int (card ?V)"
-    "signed_int (2 * int (card (?V \<inter> Q))) = 2 * int (card (?V \<inter> Q))"
-    by (rule signed_int_small[OF nonnegative(1) fits(1)], rule signed_int_small[OF nonnegative(2) fits(2)])
-  have cast: "2 * int (card (?V \<inter> Q)) = int (2 * card (?V \<inter> Q))" by simp
-  have comparison: "(int (card ?V) < 2 * int (card (?V \<inter> Q))) = (card ?V < 2 * card (?V \<inter> Q))"
-    by (subst cast) (rule of_nat_less_iff)
-  show ?thesis unfolding has_quorum_def quorum_def majority_def normal comparison
-    using fv by simp
-qed
+  unfolding has_quorum_def quorum_def majority_def by auto
 
 lemma empty_votes_before_bootstrap:
   assumes "tla_reachable initial_configuration initial_value versions s"
@@ -111,9 +84,7 @@ next
 qed
 
 text \<open>
-  The quorum checks of the default election strategy agree with the TLA+
-  definitions, because there are too few nodes (\<open>node_bound\<close>) for the 32-bit
-  arithmetic of \<open>has_quorum\<close> to overflow.
+  The quorum checks of the default election strategy agree with the TLA+ definitions.
 \<close>
 
 locale default_strategy =
@@ -245,7 +216,7 @@ proof -
     have "quorum D (join_votes (nodes_at s n))" using checks mm Java_Handle_Client_Value
       by (simp add: Let_def has_quorum_eq)
     then have "D \<noteq> {}" by (rule quorum_nonempty)
-    with checks caller mm master Java_Handle_Client_Value sub finite_nodes
+    with checks caller mm master Java_Handle_Client_Value sub
     have e: "enabled s (Handle_Client_Value n t v x D)"
       by (auto simp: Let_def has_quorum_eq)
     have commutes: "java_call (project_java s) a = project_java (execute
