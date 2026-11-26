@@ -47,7 +47,12 @@ text \<open>
   \<^item> \<open>start_join\<close>: \<open>voter\<close> raises its term to \<open>new_term\<close> and sends a join to \<open>candidate\<close>.
   \<^item> \<open>win_election\<close>: \<open>candidate\<close> wins its current term with a quorum of \<open>voters\<close>.
   \<^item> \<open>publish\<close>: \<open>leader\<close> publishes a new history at its current term and \<open>version\<close>, with configuration
-    \<open>new_config\<close>.
+    \<open>new_config\<close>. The cluster state that is published is not modelled, only its voting configuration. A
+    \<^emph>\<open>configuration change\<close> is a publication whose \<open>new_config\<close> differs from the configuration at the tip
+    of the leader's accepted history. It is allowed only if that configuration has been committed, so
+    there is never more than one uncommitted configuration change in a history. A publication that keeps
+    the configuration of the tip is not a configuration change, however much of the cluster state it
+    alters, and is allowed even while an earlier configuration change is still being committed.
   \<^item> \<open>receive\<close>: \<open>node\<close> accepts \<open>publication_history\<close> and sends a publish response for it.
   \<^item> \<open>commit\<close>: \<open>leader\<close> commits \<open>publication_history\<close> once a joint quorum has acknowledged it.
   \<^item> \<open>apply_commit\<close>: \<open>node\<close> applies a commit of its accepted history.
@@ -252,6 +257,10 @@ definition acknowledged_by_joint_quorum :: "abstract_state \<Rightarrow> publica
               \<and> (\<forall>voter\<in>voters. (voter, publication_history) \<in> publish_responses_sent abstract_state))"
 
 text \<open>
+  The guard of \<open>publish\<close> that mentions the last committed configuration only restricts configuration
+  changes (a \<open>new_config\<close> that differs from the configuration at the tip of the accepted history); a
+  publication that keeps the same configuration is not restricted by it.
+
   The carried configuration is the committed configuration in the publish request.
   A first quorum commit uses that configuration and the publication's new configuration.
   Once a commit is recorded, subsequent commit notifications can replay it.
