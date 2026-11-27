@@ -1,6 +1,17 @@
 session Zen_With_Terms = HOL +
   sessions "HOL-Library"
-  theories Quorum_Basics Position_Basics Publication_Basics Abstract_Model
-    Coordination_State_Base
-    Zen_With_Terms_Translation Zen_With_Terms_Refinement
-    Coordination_State_Java Coordination_State_Refinement
+  directories "Basics" "Java" "Java/Simulation"
+  theories
+    "Basics/Quorum"
+    "Basics/Position"
+    "Basics/Publication"
+    Abstract_Model
+    "Java/Base"
+    "Java/Model"
+    "Java/Link"
+    "Java/Simulation/Disk"
+    "Java/Simulation/Election"
+    "Java/Simulation/Client_Value"
+    "Java/Simulation/Publish_Request"
+    "Java/Simulation/Publish_Response_Commit"
+    "Java/Refinement"

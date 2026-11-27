@@ -1,4 +1,4 @@
-theory Quorum_Basics
+theory Quorum
   imports Main
 begin
 

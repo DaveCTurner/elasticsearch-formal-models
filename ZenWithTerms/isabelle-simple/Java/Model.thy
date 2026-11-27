@@ -1,5 +1,5 @@
-theory Coordination_State_Java
-  imports Coordination_State_Base
+theory Model
+  imports Base
 begin
 
 section \<open>Method-boundary model of CoordinationState.java\<close>
@@ -10,7 +10,7 @@ text \<open>
   states.
 
   \<^item> \<open>java_memory\<close> is its in-memory state: its \<open>CoordinationState\<close> and the \<open>PersistedState\<close> that
-    this state reads and writes (see \<open>Coordination_State_Base\<close>). A vote collection is
+    this state reads and writes (see \<open>Base\<close>). A vote collection is
     represented by the node IDs that it contains. The \<open>Join\<close> objects that it also stores, and the
     boolean results of \<open>addVote\<close> and \<open>handleJoin\<close>, do not affect the protocol state.
   \<^item> \<open>java_disk\<close> is what the node has written to disk. A master-eligible node uses a
@@ -20,7 +20,7 @@ text \<open>
     and writes nothing. A restart reads the state back from disk.
 
   The messages set contains the messages that calls have returned and that are therefore available for
-  delivery. A returned publication or commit is made available to every node, as in \<open>Next\<close>.
+  delivery. A returned publication or commit is addressed to every node.
 \<close>
 
 record 'v java_state =
@@ -418,7 +418,7 @@ text \<open>
     last committed configuration already equals its last accepted configuration.
     Otherwise the caller must deliver the leader's own commit before it starts
     another publication. Without this, \<open>handleCommit\<close> would make a configuration
-    committed that no step of the TLA+ translation commits.
+    committed that no transition of the abstract model commits.
 \<close>
 
 fun caller_contract ::

@@ -573,7 +573,8 @@ def main(argv):
     check = '--check' in argv
     files = [pathlib.Path(a) for a in argv if not a.startswith('--')]
     if not files:
-        files = sorted(pathlib.Path(__file__).resolve().parent.glob('*.thy'))
+        here = pathlib.Path(__file__).resolve().parent
+        files = sorted(here.rglob('*.thy'))
     changed = [format_file(f, check) for f in files]
     return 1 if check and any(changed) else 0
 

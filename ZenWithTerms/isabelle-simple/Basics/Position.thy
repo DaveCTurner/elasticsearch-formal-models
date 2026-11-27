@@ -1,5 +1,5 @@
-theory Position_Basics
-  imports Quorum_Basics "HOL-Library.Product_Lexorder"
+theory Position
+  imports Quorum "HOL-Library.Product_Lexorder"
 begin
 
 section \<open>Positions\<close>

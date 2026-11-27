@@ -1,8 +1,8 @@
-theory Coordination_State_Base
-  imports Publication_Basics Quorum_Basics
+theory Base
+  imports "../Basics/Publication" "../Basics/Quorum"
 begin
 
-section \<open>Definitions shared by the TLA+ translation and the Java transcription\<close>
+section \<open>Definitions for the Java transcription\<close>
 
 text \<open>
   The role with which a node is running. A master-eligible node can vote and lead, whether or not

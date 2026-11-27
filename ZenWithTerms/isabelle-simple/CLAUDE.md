@@ -5,6 +5,17 @@ Run every command from this directory (the repo is a Git worktree, so editing in
 Don't copy the theories to a scratch directory. `ROOT` defines the session `Zen_With_Terms`, and
 `process_theories -d .` finds it from here.
 
+## Naming conventions
+
+- **Names follow the Java.** A model type, function or field carries the Java
+  concept's name in Isabelle's `snake_case` (or `Camel_Case` for theories and
+  types) to the extent possible.
+- **New concepts** introduced as proof aids which have no equivalent in Java
+  should be named descriptively, with explanatory documentation alongside
+  their definitions.
+- **No single-character variables.** Name variables after their types, or use
+  some other descriptive name as appropriate.
+
 ## Iterating on a theory: `process_theories` with a timeout
 
 Some proof methods (notably `blast`, and `auto` on a large definition) can loop for minutes. A plain
@@ -18,7 +29,7 @@ Some proof methods (notably `blast`, and `auto` on a large definition) can loop 
   Zen_With_Terms.Abstract_Model
 ```
 
-- The theory is named with its session prefix, for example `Zen_With_Terms.Zen_With_Terms_Refinement`.
+- The theory is named with its session prefix, for example `Zen_With_Terms.Refinement`.
 - `-o timeout=5` stops any single command after 5 seconds, so a looping step fails with
   `*** Timeout` instead of blocking. A step that needs more than 5 seconds is slow enough to be
   worth rewriting (split it up, or give it more explicit facts) rather than giving it a longer timeout.

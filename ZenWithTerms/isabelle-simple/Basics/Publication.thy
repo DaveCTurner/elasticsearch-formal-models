@@ -1,5 +1,5 @@
-theory Publication_Basics
-  imports Position_Basics
+theory Publication
+  imports Position
 begin
 
 section \<open>Publications and publication histories\<close>

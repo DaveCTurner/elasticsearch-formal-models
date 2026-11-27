@@ -1,5 +1,5 @@
 theory Abstract_Model
-  imports Publication_Basics "HOL-Library.Sublist"
+  imports "Basics/Publication" "HOL-Library.Sublist"
 begin
 
 section \<open>Dynamic quorum certificates and publication ancestry\<close>
@@ -7,7 +7,7 @@ section \<open>Dynamic quorum certificates and publication ancestry\<close>
 text \<open>
   An abstract, history-based model of the coordination protocol, from which the
   safety properties are proved. It is not a transcription of any Java class: it
-  is the target that the TLA+ translation refines. Its state corresponds to the
+  is the target that the Java transcription of \<open>Model\<close> refines. Its state corresponds to the
   concrete protocol as follows.
 
   Conventions used throughout this theory:
