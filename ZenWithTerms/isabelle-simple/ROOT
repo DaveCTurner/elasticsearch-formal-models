@@ -15,3 +15,4 @@ session Zen_With_Terms = HOL +
     "Java/Simulation/Publish_Request"
     "Java/Simulation/Publish_Response_Commit"
     "Java/Refinement"
+    "Java/Safety"
