@@ -80,10 +80,14 @@ text \<open>
   be the stale marker, in which case the abstract committed configuration is unconstrained: such a
   node cannot win an election, because the marker's node never votes (\<open>quorum_stale\<close>).
 
-  For a master-eligible node, \<open>started_join_since_last_reboot\<close> and \<open>election_won\<close> are those of
-  the abstract node, its join votes were cast for it in this term, with positions no later than its
-  last accepted position, and a leader's election was won by a quorum of those votes. A node
-  that has won an election is master-eligible, and a node that is not has no votes.\<close>
+  For a master-eligible node that has started a join since its last restart, the term is positive and
+  \<open>election_won\<close> holds exactly when the abstract node is an active leader. The abstract model does
+  not record restarts, so after a restart \<open>election_won\<close> may be false for an active leader, and then
+  the node cannot win again in its term. Whenever \<open>election_won\<close> holds, the node has started a join, its
+  last committed configuration is effective for its current published history, and its election was won
+  by a quorum of its join votes. A master-eligible node's join votes were cast for it in this term, with
+  positions no later than its last accepted position. A node that has won an election is
+  master-eligible, and a node that is not has no votes.\<close>
 
 text \<open>
   The correspondence has two parts. \<open>persisted_link\<close> relates the node's state on disk to the
@@ -109,8 +113,14 @@ definition persisted_link :: "config \<Rightarrow> abstract_state \<Rightarrow> 
 definition transient_link :: "config \<Rightarrow> abstract_state \<Rightarrow> node \<Rightarrow> 'v node_memory_state \<Rightarrow> bool" where
   "transient_link initial_configuration abstract_state node node_memory_state \<longleftrightarrow>
     (node_role node_memory_state = Master_Eligible \<longrightarrow>
-      started_join_since_last_reboot node_memory_state = (node \<in> started_join_since_reboot abstract_state)
-      \<and> election_won node_memory_state = abstract_model.active_leader abstract_state node)
+      (started_join_since_last_reboot node_memory_state \<longrightarrow> 0 < current_term_of abstract_state node
+                                                          \<and> election_won node_memory_state = abstract_model.active_leader abstract_state node)
+      \<and> (election_won node_memory_state \<longrightarrow> started_join_since_last_reboot node_memory_state
+                                          \<and> abstract_model.effective_config
+                                                initial_configuration
+                                                (publications_committed abstract_state)
+                                                (abstract_model.current_published_history abstract_state node)
+                                                (last_committed_configuration_of abstract_state node)))
     \<and> abstract_model.fresh_votes
           abstract_state
           node
@@ -134,8 +144,8 @@ lemmas node_link_defs = node_link_def persisted_link_def transient_link_def
 lemma node_linkD:
   assumes "node_link initial_configuration a n x"
   shows "current_term x = current_term_of a n"
-    "node_role x = Master_Eligible \<Longrightarrow> started_join_since_last_reboot x = (n \<in> started_join_since_reboot a)"
-    "node_role x = Master_Eligible \<Longrightarrow> election_won x = abstract_model.active_leader a n"
+    "node_role x = Master_Eligible \<Longrightarrow> started_join_since_last_reboot x \<Longrightarrow> 0 < current_term_of a n"
+    "node_role x = Master_Eligible \<Longrightarrow> election_won x \<Longrightarrow> abstract_model.active_leader a n"
     "normalized (last_accepted_position x) = position_of_tip_of (publications_accepted a n)"
     "last_accepted_configuration x = {} \<Longrightarrow> publications_accepted a n = []
                                           \<and> last_committed_configuration x = {}"
@@ -149,6 +159,13 @@ lemma node_linkD:
     "election_won x \<Longrightarrow> node_role x = Master_Eligible"
     "node_role x \<noteq> Master_Eligible \<Longrightarrow> join_votes x = {}"
     "node_role x \<noteq> Master_Eligible \<Longrightarrow> publish_votes x = {}"
+    "node_role x = Master_Eligible \<Longrightarrow> election_won x \<Longrightarrow> abstract_model.effective_config
+                                                          initial_configuration
+                                                          (publications_committed a)
+                                                          (abstract_model.current_published_history a n)
+                                                          (last_committed_configuration_of a n)"
+    "node_role x = Master_Eligible \<Longrightarrow> started_join_since_last_reboot x \<Longrightarrow> election_won x = abstract_model.active_leader a n"
+    "node_role x = Master_Eligible \<Longrightarrow> election_won x \<Longrightarrow> started_join_since_last_reboot x"
   using assms unfolding node_link_defs by (auto split: if_splits)
 
 text \<open>A node that has won an election has real configurations: nobody votes as the stale marker.\<close>
@@ -180,14 +197,6 @@ lemma node_link_publish_votes[simp]:
                                                                                                      x"
   by (simp add: node_link_defs known_tip_def is_election_quorum_def)
 
-lemma node_link_quorum_commits[simp]:
-  "node_link initial_configuration (a\<lparr>publications_committed := K\<rparr>) n x \<longleftrightarrow> node_link
-                                                                              initial_configuration
-                                                                              a
-                                                                              n
-                                                                              x"
-  by (simp add: node_link_defs known_tip_def abstract_model.fresh_votes_def abstract_model.active_leader_def)
-
 lemma normalized_term[simp]: "position_term (normalized k) = position_term k"
   by (auto simp: normalized_def position_le_iff)
 
@@ -209,12 +218,11 @@ proof -
 qed
 
 lemma linked_position_equal:
-  assumes "node_link initial_configuration a n x" "node_role x = Master_Eligible" "abstract_model.active_leader a n"
+  assumes "node_link initial_configuration a n x" "election_won x"
     "last_published_version x = position_version (last_accepted_position x)"
   shows "abstract_model.current_published_history a n = publications_accepted a n"
 proof -
-  have won: "election_won x" using node_linkD(3)[OF assms(1,2)] assms(3) by simp
-  show ?thesis using node_linkD(10)[OF assms(1) won] assms(4) unfolding known_tip_def by auto
+  show ?thesis using node_linkD(10)[OF assms(1,2)] assms(3) unfolding known_tip_def by auto
 qed
 
 lemma linked_boot_versions:
@@ -350,7 +358,6 @@ definition node_frame :: "abstract_state \<Rightarrow> abstract_state \<Rightarr
     current_term_of before node = current_term_of after node
     \<and> publications_accepted before node = publications_accepted after node
     \<and> last_committed_configuration_of before node = last_committed_configuration_of after node
-    \<and> (node \<in> started_join_since_reboot before) = (node \<in> started_join_since_reboot after)
     \<and> abstract_model.active_leader before node = abstract_model.active_leader after node
     \<and> abstract_model.current_published_history before node = abstract_model.current_published_history after node"
 
@@ -373,9 +380,16 @@ lemma node_link_frame:
 proof -
   from f have eqs: "current_term_of b n = current_term_of a n" "publications_accepted b n = publications_accepted a n"
     "last_committed_configuration_of b n = last_committed_configuration_of a n"
-    "(n \<in> started_join_since_reboot b) = (n \<in> started_join_since_reboot a)"
     "abstract_model.active_leader b n = abstract_model.active_leader a n"
-    unfolding node_frame_def by simp_all
+    "abstract_model.current_published_history b n = abstract_model.current_published_history a n"
+    unfolding node_frame_def by metis+
+  have committed: "publications_committed a \<subseteq> publications_committed b" using g unfolding grows_def by blast
+  have effective: "election_won x \<Longrightarrow> node_role x = Master_Eligible \<Longrightarrow> abstract_model.effective_config
+                                                                        initial_configuration
+                                                                        (publications_committed b)
+                                                                        (abstract_model.current_published_history b n)
+                                                                        (last_committed_configuration_of b n)"
+    using abstract_model.effective_config_mono[OF node_linkD(14)[OF node] committed] eqs by auto
   have fresh: "abstract_model.fresh_votes
                    b
                    n
@@ -386,7 +400,16 @@ proof -
     unfolding node_frame_def by simp
   have known: "election_won x \<Longrightarrow> known_tip initial_configuration b n x"
     using known_tip_frame[OF node_linkD(10)[OF node] g f] by blast
-  show ?thesis using node known fresh unfolding node_link_defs by (simp add: eqs)
+  show ?thesis using node known fresh effective unfolding node_link_defs by (simp add: eqs)
+qed
+
+lemma node_link_quorum_commits:
+  assumes "node_link initial_configuration a n x" "publications_committed a \<subseteq> K"
+  shows "node_link initial_configuration (a\<lparr>publications_committed := K\<rparr>) n x"
+proof (rule node_link_frame[OF assms(1)])
+  show "grows a (a\<lparr>publications_committed := K\<rparr>)" using assms(2) unfolding grows_def by simp
+  show "node_frame a (a\<lparr>publications_committed := K\<rparr>) n"
+    unfolding node_frame_def abstract_model.active_leader_def by simp
 qed
 
 lemma link_update:
@@ -629,8 +652,15 @@ proof -
     by (simp_all add: Let_def)
   have empty: "publications_accepted a n = []" "last_committed_configuration ?x = {}"
     using node_linkD(5)[OF node[of n] cfg] by auto
-  have "node_link initial_configuration a n ?x'" using node[of n] boot cfg off empty
-    unfolding node_link_defs by (simp add: stale_config_def)
+  have "node_link initial_configuration a n ?x'"
+  proof -
+    have n: "node_link initial_configuration a n ?x" by (rule node)
+    have "transient_link initial_configuration a n ?x'"
+      using n off unfolding node_link_def transient_link_def by simp
+    moreover have "persisted_link initial_configuration a n ?x'"
+      using n boot cfg empty unfolding node_link_def persisted_link_def by (simp add: stale_config_def)
+    ultimately show ?thesis unfolding node_link_def by blast
+  qed
   from link_node_update[OF link grows_refl this _ master _ _ _] master votes
   show ?thesis by simp
 qed
@@ -639,22 +669,22 @@ text \<open>
   A restart reloads the in-memory state, or empties it for a coordinating-only node, and keeps the
   state on disk, except that where the persisted term of a coordinating-only node is zero the node
   has no durable history and its state is replaced by an empty one. None of this changes the
-  abstract state, except that the node's transient state is dropped.
+  abstract state: the node's transient state is dropped, and with it any election it has won, but the
+  abstract model never needed to record that, so a restart is a stutter step.
 \<close>
 
 lemma simulate_restart_node:
-  "\<exists>b. abstract_model.transition initial_configuration a b
+  "\<exists>b. (b = a \<or> abstract_model.transition initial_configuration a b)
        \<and> linked
              initial_configuration
              (execute initial_configuration initial_value s (Restart_Node n r))
              b"
 proof -
   let ?x = "nodes_at s n"
-  let ?b = "a\<lparr>started_join_since_reboot := started_join_since_reboot a - {n}\<rparr>"
+  let ?b = a
   let ?d = "restarted_disk initial_value r ?x"
   let ?m = "restarted_memory initial_value r ?x"
-  have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.reboot)
-  have grow: "grows a ?b" by (rule transition_grows[OF step])
+  have grow: "grows a ?b" by (rule grows_refl)
   have nl: "node_link initial_configuration a n ?x" by (rule node)
   have p: "abstract_model.publications_ok initial_configuration a" and j: "abstract_model.messages_ok initial_configuration a" using abstract_model.dynamic_invariants[OF reach] by auto
   have disk: "node_link initial_configuration ?b n ?d"
@@ -741,7 +771,7 @@ proof -
     by (rule link_update_memory[OF link grow disk frame _ mem_link _ _ _ _ linkedD(4)[OF link] anc])
        (use role_d role_m replies in \<open>auto simp: restarted_memory_def restarted_disk_def empty_node_def
          loaded_node_def reset_transient_def\<close>)
-  with step show ?thesis by (intro exI[of _ ?b]) (simp add: put_node_def)
+  then show ?thesis by (intro exI[of _ ?b]) (simp add: put_node_def)
 qed
 
 text \<open>
@@ -760,9 +790,8 @@ lemma simulate_handle_start_join:
 proof (cases "node_role (nodes_at s n) = Master_Eligible")
   case True
   let ?b = "a\<lparr>
-    current_term_of           := (current_term_of a)(n := t),
-    joins_sent                := insert (n,c,t,position_of_tip_of (publications_accepted a n)) (joins_sent a),
-    started_join_since_reboot := insert n (started_join_since_reboot a)
+    current_term_of := (current_term_of a)(n := t),
+    joins_sent      := insert (n,c,t,position_of_tip_of (publications_accepted a n)) (joins_sent a)
   \<rparr>"
   let ?x = "nodes_at s n"
   let ?y = "(reset_transient ?x)\<lparr>current_term := t, started_join_since_last_reboot := True\<rparr>"
@@ -773,9 +802,22 @@ proof (cases "node_role (nodes_at s n) = Master_Eligible")
   have inc: "current_term_of a n < t"
     using enable node_linkD(1)[OF node[of n]] True by (simp add: memory_state_def)
   have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.start_join[OF inc])
-  have nl: "node_link initial_configuration ?b n ?y" using node[of n] certificate_future[OF reach inc] True
-    unfolding node_link_defs reset_transient_def abstract_model.active_leader_def abstract_model.fresh_votes_def
-    by (auto split: if_splits)
+  have nl: "node_link initial_configuration ?b n ?y"
+  proof -
+    have n: "node_link initial_configuration a n ?x" by (rule node)
+    have pos: "0 < t" using inc by simp
+    have "persisted_link initial_configuration ?b n ?y"
+      using n unfolding node_link_def persisted_link_def reset_transient_def by (auto split: if_splits)
+    moreover have "transient_link initial_configuration ?b n ?y"
+    proof -
+      have inactive: "\<not> abstract_model.active_leader ?b n"
+        using certificate_future[OF reach inc] unfolding abstract_model.active_leader_def by simp
+      show ?thesis
+        using inactive pos True
+        unfolding transient_link_def reset_transient_def abstract_model.fresh_votes_def by simp
+    qed
+    ultimately show ?thesis unfolding node_link_def by blast
+  qed
   have frame: "i \<noteq> n \<Longrightarrow> node_frame a ?b i" for i
     unfolding node_frame_def abstract_model.active_leader_def by auto
   have add: "wire_link ?b ?msg" using node_linkD(4)[OF node[of n]] by simp
@@ -851,7 +893,8 @@ proof -
   have c: "node_link initial_configuration a c ?x" by (rule node)
   from enable have role: "node_role ?x = Master_Eligible" by (simp add: Let_def)
   from enable have sent: "Join_Msg n nr c t r \<in> messages s" and term_match: "t = current_term_of a c"
-    and fresh: "r \<le> last_accepted_position ?x" and started: "c \<in> started_join_since_reboot a"
+    and fresh: "r \<le> last_accepted_position ?x" and started_flag: "started_join_since_last_reboot ?x"
+    and started: "0 < current_term_of a c"
     and acfg: "last_accepted_configuration ?x \<noteq> {}"
     using node_linkD(1)[OF c] node_linkD(2)[OF c role] by (auto simp: Let_def)
   have r: "normalized r \<le> position_of_tip_of (publications_accepted a c)"
@@ -913,7 +956,7 @@ proof -
       last_published_version := position_version (last_accepted_position ?x)
     \<rparr>"
     have none: "elections_won a (c,current_term_of a c) = None"
-      using node_linkD(3)[OF c role] started off unfolding abstract_model.active_leader_def by auto
+      using node_linkD(15)[OF c role started_flag] off unfolding abstract_model.active_leader_def by auto
     have q: "quorum (last_committed_configuration_of a c) ?Q" "quorum (config_of_tip_of initial_configuration (publications_accepted a c)) ?Q"
     proof -
       have won': "quorum (last_committed_configuration ?x) ?Q" "quorum (last_accepted_configuration ?x) ?Q"
@@ -930,7 +973,7 @@ proof -
     have base: "term_of_tip_of (publications_accepted a c) < current_term_of a c"
     proof -
       have j: "abstract_model.messages_ok initial_configuration a" and l: "abstract_model.leadership_ok initial_configuration a" using abstract_model.dynamic_invariants[OF reach] by auto
-      show ?thesis by (rule abstract_model.new_election_base[OF j l none abstract_model.messagesD(8)[OF j started] q(2) votes])
+      show ?thesis by (rule abstract_model.new_election_base[OF j l none started q(2) votes])
     qed
     have empty: "abstract_model.published_by a c (current_term_of a c) = {}"
       using abstract_model.leadershipD(8)[OF abstract_model.dynamic_invariants[THEN conjunct2, THEN conjunct2, OF reach]] none
@@ -943,9 +986,35 @@ proof -
       \<rparr>"] by simp
     have tips_other: "abstract_model.last_published_history_of ?b (i, current_term_of a i) = abstract_model.last_published_history_of a (i, current_term_of a i)" if "i \<noteq> c" for i
       using abstract_model.last_published_history_win_other[of "(i, current_term_of a i)" c "current_term_of a c" a] that by simp
-    have nl: "node_link initial_configuration ?b c ?y" using c votes won base started role node_linkD(1)[OF c]
-      unfolding node_link_defs known_tip_def abstract_model.fresh_votes_def abstract_model.active_leader_def is_election_quorum_def
-      by (auto split: if_splits simp: tip_b)
+    have active_b: "abstract_model.active_leader ?b c" unfolding abstract_model.active_leader_def by simp
+    have j: "abstract_model.messages_ok initial_configuration a" using abstract_model.dynamic_invariants[OF reach] by auto
+    have eff: "abstract_model.effective_config
+                   initial_configuration
+                   (publications_committed ?b)
+                   (abstract_model.current_published_history ?b c)
+                   (last_committed_configuration_of ?b c)"
+      using abstract_model.messagesD(3)[OF j, of c] tip_b by simp
+    have nl: "node_link initial_configuration ?b c ?y"
+    proof -
+      have pl: "persisted_link initial_configuration ?b c ?y"
+        using c[unfolded node_link_def, THEN conjunct1] unfolding persisted_link_def by (auto split: if_splits)
+      have tl: "transient_link initial_configuration ?b c ?y"
+      proof -
+        have kt: "known_tip initial_configuration ?b c ?y"
+          using base tip_b node_linkD(1)[OF c] unfolding known_tip_def by simp
+        have iq: "is_election_quorum ?y (join_votes ?y)"
+          using won unfolding is_election_quorum_def by simp
+        have fv: "abstract_model.fresh_votes ?b c
+                                                    (current_term_of ?b c)
+                                                    (publications_accepted ?b c)
+                                                    (join_votes ?y)"
+          using votes unfolding abstract_model.fresh_votes_def by simp
+        show ?thesis
+          using started started_flag active_b eff kt iq fv role
+          unfolding transient_link_def by simp
+      qed
+      show ?thesis using pl tl unfolding node_link_def by blast
+    qed
     have frame: "i \<noteq> c \<Longrightarrow> node_frame a ?b i" for i
       unfolding node_frame_def abstract_model.active_leader_def using tips_other[of i] by auto
     have replies: "publish_votes ?x = {}"
@@ -1034,7 +1103,7 @@ proof -
     using node_linkD(1)[OF nl] by (simp_all add: Let_def)
   have master: "node_role ?x = Master_Eligible" by (rule node_linkD(11)[OF nl won])
   have active: "abstract_model.active_leader a n" using won node_linkD(3)[OF nl master] by simp
-  have tip: "abstract_model.current_published_history a n = ?hist" by (rule linked_position_equal[OF nl master active ver])
+  have tip: "abstract_model.current_published_history a n = ?hist" by (rule linked_position_equal[OF nl won ver])
   have E: "quorum (last_committed_configuration ?x) (join_votes ?x)" and A: "quorum (last_accepted_configuration ?x) (join_votes ?x)"
     using node_linkD(9)[OF nl won] unfolding is_election_quorum_def by auto
   have ac: "last_accepted_configuration ?x = config_of_tip_of initial_configuration ?hist"
@@ -1077,8 +1146,30 @@ proof -
     using won t node_linkD(1)[OF nl] E proposed inc ver
     unfolding known_tip_def by (simp add: tip_b tip_bn)
   have new_link: "node_link initial_configuration ?b n ?x'"
-    using nl new_tip active unfolding node_link_defs abstract_model.active_leader_def abstract_model.fresh_votes_def is_election_quorum_def
-    by (auto split: if_splits simp: tip_b tip_bn t)
+  proof -
+    have started: "started_join_since_last_reboot ?x" by (rule node_linkD(16)[OF nl master won])
+    have pos: "0 < current_term_of a n" by (rule node_linkD(2)[OF nl master started])
+    have active_b: "abstract_model.active_leader ?b n" using active unfolding abstract_model.active_leader_def by simp
+    have eff: "abstract_model.effective_config
+                   initial_configuration
+                   (publications_committed ?b)
+                   (abstract_model.current_published_history ?b n)
+                   (last_committed_configuration_of ?b n)"
+      using tip_bn t cc by (simp add: abstract_model.effective_config_def)
+    have iq: "is_election_quorum ?x' (join_votes ?x')"
+      using node_linkD(9)[OF nl won] unfolding is_election_quorum_def by simp
+    have fv: "abstract_model.fresh_votes ?b n
+                                                (current_term_of ?b n)
+                                                (publications_accepted ?b n)
+                                                (join_votes ?x')"
+      using node_linkD(8)[OF nl] unfolding abstract_model.fresh_votes_def by simp
+    have pl: "persisted_link initial_configuration ?b n ?x'"
+      using nl[unfolded node_link_def, THEN conjunct1] unfolding persisted_link_def by (auto split: if_splits)
+    have tl: "transient_link initial_configuration ?b n ?x'"
+      using started pos active_b eff iq fv new_tip won master
+      unfolding transient_link_def by simp
+    show ?thesis using pl tl unfolding node_link_def by blast
+  qed
   have frame: "i \<noteq> n \<Longrightarrow> node_frame a ?b i" for i
     unfolding node_frame_def abstract_model.active_leader_def using tips_other[of i] by auto
   have wires: "wire_link ?b m" if "m \<in> ?M" "m \<notin> messages s" for m
@@ -1173,8 +1264,30 @@ proof (cases "node_role (nodes_at s n) = Master_Eligible")
     with at_tip[OF won] term_match node_linkD(1)[OF nl] pub
     show ?thesis unfolding known_tip_def is_election_quorum_def by auto
   qed
-  have new_link: "node_link initial_configuration ?b n ?x'" using nl pos cfg voted leader master
-    unfolding node_link_defs abstract_model.active_leader_def by (auto simp: normalized_def split: if_splits)
+  have new_link: "node_link initial_configuration ?b n ?x'"
+  proof -
+    have pl: "persisted_link initial_configuration ?b n ?x'"
+      using nl pos cfg unfolding node_link_def persisted_link_def by (auto simp: normalized_def split: if_splits)
+    have act_b: "abstract_model.active_leader ?b n = abstract_model.active_leader a n"
+      unfolding abstract_model.active_leader_def by simp
+    have started_eq: "started_join_since_last_reboot ?x \<Longrightarrow> election_won ?x = abstract_model.active_leader a n"
+      by (rule node_linkD(15)[OF nl master])
+    have eff: "election_won ?x \<Longrightarrow> abstract_model.effective_config
+                                     initial_configuration
+                                     (publications_committed ?b)
+                                     (abstract_model.current_published_history ?b n)
+                                     (last_committed_configuration_of ?b n)"
+    proof -
+      assume won: "election_won ?x"
+      have "abstract_model.current_published_history ?b n = ?h"
+        using at_tip[OF won] by (simp add: abstract_model.last_published_history_of_update_publications_accepted)
+      then show ?thesis by (simp add: abstract_model.effective_config_def)
+    qed
+    have tl: "transient_link initial_configuration ?b n ?x'"
+      using node_linkD(2)[OF nl master] node_linkD(16)[OF nl master] started_eq act_b eff voted leader master
+      unfolding transient_link_def by simp
+    show ?thesis using pl tl unfolding node_link_def by blast
+  qed
   have frame: "i \<noteq> n \<Longrightarrow> node_frame a ?b i" for i
     unfolding node_frame_def abstract_model.active_leader_def by auto
   have fresh: "wire_link ?b ?msg" using pub by (auto intro!: bexI[of _ ?h])
@@ -1345,11 +1458,12 @@ proof -
                                       \<and> quorum (config_of_tip_of initial_configuration ?h) Q
                                       \<and> (\<forall>p\<in>Q. (p,?h) \<in> publish_responses_sent a)"
         unfolding is_publish_quorum_def by (intro exI[of _ ?Q]) auto
-      with abstract_model.first_commit_quorums_agree[OF reach active refl cur False]
+      with abstract_model.first_commit_quorums_agree[OF reach node_linkD(14)[OF nl master won] False]
       show ?thesis by simp
     qed
     have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.commit[OF active refl tip(1) cur tip(3) joint])
-    have nl': "node_link initial_configuration ?b c ?y" using nl master by simp
+    have nl': "node_link initial_configuration ?b c ?y"
+      using node_link_quorum_commits[OF nl subset_insertI] master by simp
     have frame: "i \<noteq> c \<Longrightarrow> node_frame a ?b i" for i
       unfolding node_frame_def abstract_model.active_leader_def by simp
     have new: "wire_link ?b m" if "m \<in> ?M" "m \<notin> messages s" for m
@@ -1403,17 +1517,41 @@ proof (cases "node_role (nodes_at s n) = Master_Eligible")
     have same: "?h = h" by (rule abstract_model.dynamic_unique_publication[OF reach mem pub]) (simp add: hk match)
     have ack: "?h \<in> publications_committed a" using same committed by simp
     have cur: "term_of_tip_of ?h = current_term_of a n" using match t by simp
-    have own: "abstract_model.active_leader a n \<longrightarrow> ?h = abstract_model.current_published_history a n"
-      using guard k node_linkD(3)[OF nl master] linked_position_equal[OF nl master] by auto
-    have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.apply_commit[OF ack cur own])
+    have own: "election_won ?x \<Longrightarrow> ?h = abstract_model.current_published_history a n"
+      using guard k linked_position_equal[OF nl] by auto
+    have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.apply_commit[OF ack cur])
     have nonempty: "last_accepted_configuration ?x \<noteq> {}"
       using node_linkD(5)[OF nl] mem abstract_model.publicationsD(2)[OF p] by auto
     have cfg: "last_accepted_configuration ?x = config_of_tip_of initial_configuration ?h" by (rule node_linkD(6)[OF nl nonempty real])
     have known: "election_won ?x \<Longrightarrow> known_tip initial_configuration ?b n ?y"
       using node_linkD(10)[OF nl] unfolding known_tip_def by simp
-    have nl': "node_link initial_configuration ?b n ?y" using nl nonempty cfg master real known
-      unfolding node_link_defs is_election_quorum_def abstract_model.fresh_votes_def abstract_model.active_leader_def
-      by simp
+    have nl': "node_link initial_configuration ?b n ?y"
+    proof -
+      have pl: "persisted_link initial_configuration ?b n ?y"
+        using nl[unfolded node_link_def, THEN conjunct1] nonempty cfg real
+        unfolding persisted_link_def by (auto split: if_splits)
+      have act_b: "abstract_model.active_leader ?b n = abstract_model.active_leader a n"
+        unfolding abstract_model.active_leader_def by simp
+      have cp: "abstract_model.current_published_history ?b n = abstract_model.current_published_history a n" by simp
+      have eff: "election_won ?x \<Longrightarrow> abstract_model.effective_config
+                                       initial_configuration
+                                       (publications_committed ?b)
+                                       (abstract_model.current_published_history ?b n)
+                                       (last_committed_configuration_of ?b n)"
+        using own ack by (simp add: abstract_model.effective_config_def)
+      have fv: "abstract_model.fresh_votes ?b n
+                                                  (current_term_of ?b n)
+                                                  (publications_accepted ?b n)
+                                                  (join_votes ?y)"
+        using node_linkD(8)[OF nl] unfolding abstract_model.fresh_votes_def by simp
+      have iq: "election_won ?x \<Longrightarrow> is_election_quorum ?y (join_votes ?y)"
+        using node_linkD(9)[OF nl] unfolding is_election_quorum_def by simp
+      have tl: "transient_link initial_configuration ?b n ?y"
+        using node_linkD(2)[OF nl master] node_linkD(15)[OF nl master] node_linkD(16)[OF nl master]
+          act_b eff fv iq known master
+        unfolding transient_link_def by simp
+      show ?thesis using pl tl unfolding node_link_def by blast
+    qed
     have frame: "i \<noteq> n \<Longrightarrow> node_frame a ?b i" for i
       unfolding node_frame_def abstract_model.active_leader_def by simp
     have "linked initial_configuration (put_node s n ?y) ?b"
@@ -1492,9 +1630,8 @@ proof -
   let ?x' = "?x\<lparr>current_term := ?t\<rparr>"
   let ?m' = "?m\<lparr>term_queued := False\<rparr>"
   let ?b = "a\<lparr>
-    current_term_of           := (current_term_of a)(n := ?t),
-    joins_sent                := insert (n,n,?t,position_of_tip_of (publications_accepted a n)) (joins_sent a),
-    started_join_since_reboot := insert n (started_join_since_reboot a)
+    current_term_of := (current_term_of a)(n := ?t),
+    joins_sent      := insert (n,n,?t,position_of_tip_of (publications_accepted a n)) (joins_sent a)
   \<rparr>"
   from enabled have data: "node_role ?x = Data_Only" and lt: "current_term ?x < ?t"
     by (simp_all add: Let_def)
@@ -1508,8 +1645,14 @@ proof -
   have step: "abstract_model.transition initial_configuration a ?b" by (rule abstract_model.transition.start_join[OF inc])
   have grow: "grows a ?b" by (rule transition_grows[OF step])
   have new_link: "node_link initial_configuration ?b n ?x'"
-    using nl not_won no_votes data certificate_future[OF reach inc]
-    unfolding node_link_defs abstract_model.active_leader_def abstract_model.fresh_votes_def by (auto split: if_splits)
+  proof -
+    have pl: "persisted_link initial_configuration ?b n ?x'"
+      using nl[unfolded node_link_def, THEN conjunct1] unfolding persisted_link_def by (auto split: if_splits)
+    have tl: "transient_link initial_configuration ?b n ?x'"
+      using not_won no_votes no_publish_votes data
+      unfolding transient_link_def abstract_model.fresh_votes_def by simp
+    show ?thesis using pl tl unfolding node_link_def by blast
+  qed
   have frame: "i \<noteq> n \<Longrightarrow> node_frame a ?b i" for i
     unfolding node_frame_def abstract_model.active_leader_def by auto
   have role': "node_role ?m' = node_role ?x'" using role by simp

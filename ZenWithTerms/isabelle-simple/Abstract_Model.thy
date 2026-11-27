@@ -24,8 +24,6 @@ text \<open>
 
   The fields of \<open>abstract_state\<close>:
   \<^item> \<open>current_term_of n\<close>: the current term of node \<open>n\<close> (\<open>CoordinationState.getCurrentTerm\<close>).
-  \<^item> \<open>started_join_since_reboot\<close>: the nodes that have started a join since their last reboot, so they
-    may become candidates (\<open>startedJoinSinceLastReboot\<close>).
   \<^item> \<open>joins_sent (voter, candidate, term, position)\<close>: \<open>voter\<close> sent a \<open>Join\<close> to \<open>candidate\<close> for \<open>term\<close>,
     carrying \<open>voter\<close>'s last accepted position (the tip of its accepted history).
   \<^item> \<open>elections_won (candidate, term)\<close>: the election that \<open>candidate\<close> won in \<open>term\<close>, if any. Its
@@ -45,7 +43,8 @@ text \<open>
 
   The actions of \<open>transition\<close>, with the node that performs each one:
   \<^item> \<open>start_join\<close>: \<open>voter\<close> raises its term to \<open>new_term\<close> and sends a join to \<open>candidate\<close>.
-  \<^item> \<open>win_election\<close>: \<open>candidate\<close> wins its current term with a quorum of \<open>voters\<close>.
+  \<^item> \<open>win_election\<close>: \<open>candidate\<close> wins its current term, which must have started, with a quorum of
+    \<open>voters\<close>.
   \<^item> \<open>publish\<close>: \<open>leader\<close> publishes a new history at its current term and \<open>version\<close>, with configuration
     \<open>new_config\<close>. The cluster state that is published is not modelled, only its voting configuration. A
     \<^emph>\<open>configuration change\<close> is a publication whose \<open>new_config\<close> differs from the configuration at the tip
@@ -56,7 +55,6 @@ text \<open>
   \<^item> \<open>receive\<close>: \<open>node\<close> accepts \<open>publication_history\<close> and sends a publish response for it.
   \<^item> \<open>commit\<close>: \<open>leader\<close> commits \<open>publication_history\<close> once a joint quorum has acknowledged it.
   \<^item> \<open>apply_commit\<close>: \<open>node\<close> applies a commit of its accepted history.
-  \<^item> \<open>reboot\<close>: \<open>node\<close> restarts, so it is no longer marked as having started a join.
 \<close>
 
 record election =
@@ -66,8 +64,6 @@ record election =
 
 record abstract_state =
   current_term_of :: "node \<Rightarrow> nat"
-  (* TODO started_join_since_reboot matches the Java impl but abstractly it'd be nicer to track the current leaders :: "node set"  *)
-  started_join_since_reboot :: "node set"
   joins_sent :: "(node \<times> node \<times> nat \<times> position) set"
   elections_won :: "(node \<times> nat) \<Rightarrow> election option"
   publications_sent :: "publication_history set"
@@ -91,7 +87,6 @@ abbreviation previous_config_of_tip_of :: "publication_history \<Rightarrow> con
 definition bootstrapped :: "abstract_state" where
   "bootstrapped = \<lparr>
     current_term_of                 = (\<lambda>_. 0),
-    started_join_since_reboot       = {},
     joins_sent                      = {},
     elections_won                   = (\<lambda>_. None),
     publications_sent               = {},
@@ -192,10 +187,6 @@ lemma last_published_history_of_update_joins_sent[simp]:
   "last_published_history_of (abstract_state\<lparr>joins_sent := x\<rparr>) key = last_published_history_of abstract_state key"
   by (rule last_published_history_cong) simp_all
 
-lemma last_published_history_of_update_started_join_since_reboot[simp]:
-  "last_published_history_of (abstract_state\<lparr>started_join_since_reboot := x\<rparr>) key = last_published_history_of abstract_state key"
-  by (rule last_published_history_cong) simp_all
-
 lemma last_published_history_of_update_publications_accepted[simp]:
   "last_published_history_of (abstract_state\<lparr>publications_accepted := x\<rparr>) key = last_published_history_of abstract_state key"
   by (rule last_published_history_cong) simp_all
@@ -238,10 +229,17 @@ lemma fresh_votes_voted:
   shows "voted abstract_state candidate term voters"
   using assms unfolding voted_def fresh_votes_def by blast
 
+text \<open>
+  \<open>active_leader s node\<close>: \<open>node\<close> has won the election for its current term. The abstract model does not
+  record restarts. A node that restarts after winning loses its election in the implementation, but
+  it stays an active leader here, so everything that is claimed of active leaders must hold of it
+  too. This is why \<open>apply_commit\<close> is not restricted for leaders, and why the configuration that a
+  leader has committed is related to its current published history only in the refinement.
+\<close>
+
 definition active_leader :: "abstract_state \<Rightarrow> node \<Rightarrow> bool" where
   "active_leader abstract_state node \<longleftrightarrow>
-    node \<in> started_join_since_reboot abstract_state
-    \<and> elections_won abstract_state (node, current_term_of abstract_state node) \<noteq> None"
+    elections_won abstract_state (node, current_term_of abstract_state node) \<noteq> None"
 
 text \<open>
   \<open>acknowledged_by_joint_quorum s h\<close>: a single set of nodes that is a quorum of both the configuration
@@ -275,13 +273,12 @@ inductive transition :: "abstract_state \<Rightarrow> abstract_state \<Rightarro
     transition 
         abstract_state
         (abstract_state\<lparr>
-          current_term_of           := (current_term_of abstract_state)(voter := new_term),
-          joins_sent                := insert (voter, candidate, new_term, position_of_tip_of (publications_accepted abstract_state voter))
-                           (joins_sent abstract_state),
-          started_join_since_reboot := insert voter (started_join_since_reboot abstract_state)
+          current_term_of := (current_term_of abstract_state)(voter := new_term),
+          joins_sent      := insert (voter, candidate, new_term, position_of_tip_of (publications_accepted abstract_state voter))
+                 (joins_sent abstract_state)
         \<rparr>)"
 | win_election: "\<lbrakk>
-      candidate \<in> started_join_since_reboot abstract_state;
+      0 < current_term_of abstract_state candidate;
       elections_won abstract_state (candidate, current_term_of abstract_state candidate) = None;
       quorum (last_committed_configuration_of abstract_state candidate) voters;
       quorum (config_of_tip_of (publications_accepted abstract_state candidate)) voters;
@@ -354,17 +351,12 @@ inductive transition :: "abstract_state \<Rightarrow> abstract_state \<Rightarro
         (abstract_state\<lparr>publications_committed := insert publication_history (publications_committed abstract_state)\<rparr>)"
 | apply_commit: "\<lbrakk>
       publications_accepted abstract_state node \<in> publications_committed abstract_state;
-      term_of_tip_of (publications_accepted abstract_state node) = current_term_of abstract_state node;
-      active_leader abstract_state node \<longrightarrow>
-        publications_accepted abstract_state node = last_published_history_of abstract_state (node, current_term_of abstract_state node)
+      term_of_tip_of (publications_accepted abstract_state node) = current_term_of abstract_state node
     \<rbrakk> \<Longrightarrow>
     transition 
       abstract_state
       (abstract_state\<lparr>last_committed_configuration_of := (last_committed_configuration_of abstract_state)
         (node := config_of_tip_of (publications_accepted abstract_state node))\<rparr>)"
-| reboot: "transition 
-               abstract_state
-               (abstract_state\<lparr>started_join_since_reboot := started_join_since_reboot abstract_state - {node}\<rparr>)"
 
 inductive dynamic_reachable :: "abstract_state \<Rightarrow> bool" where
   boot: "initial_configuration \<noteq> {} \<Longrightarrow> dynamic_reachable bootstrapped"
@@ -404,6 +396,11 @@ lemma effective_config_insert:
     effective_config (insert commit commits) publication_history configuration"
   by (simp only: effective_config_def insert_iff) blast
 
+lemma effective_config_mono:
+  "effective_config commits publication_history configuration \<Longrightarrow> commits \<subseteq> commits' \<Longrightarrow>
+    effective_config commits' publication_history configuration"
+  unfolding effective_config_def by blast
+
 definition valid_edge :: "publication_history set \<Rightarrow> publication_history \<Rightarrow> publication \<Rightarrow> bool" where
   "valid_edge commits parent request \<longleftrightarrow>
     term_of_tip_of parent \<le> position_term (publication_position request)
@@ -438,7 +435,7 @@ definition messages_ok :: "abstract_state \<Rightarrow> bool" where
     \<and> (\<forall>voter candidate candidate' term position position'.
         (voter, candidate, term, position) \<in> joins_sent abstract_state
         \<and> (voter, candidate', term, position') \<in> joins_sent abstract_state \<longrightarrow> candidate = candidate')
-    \<and> (\<forall>node\<in>started_join_since_reboot abstract_state. 0 < current_term_of abstract_state node)"
+    \<and> (\<forall>node term. elections_won abstract_state (node, term) \<noteq> None \<longrightarrow> 0 < current_term_of abstract_state node)"
 
 definition publications_ok :: "abstract_state \<Rightarrow> bool" where
   "publications_ok abstract_state \<longleftrightarrow>
@@ -641,10 +638,39 @@ lemma messagesD:
     "(node,candidate,vote_term,join_position) \<in> joins_sent abstract_state \<Longrightarrow> (node,publication_history) \<in> publish_responses_sent abstract_state \<Longrightarrow>
       term_of_tip_of publication_history < vote_term \<Longrightarrow> position_of_tip_of publication_history \<le> join_position"
     "(node,candidate,vote_term,join_position) \<in> joins_sent abstract_state \<Longrightarrow> (node,other_candidate,vote_term,other_join_position) \<in> joins_sent abstract_state \<Longrightarrow> candidate = other_candidate"
-    "node \<in> started_join_since_reboot abstract_state \<Longrightarrow> 0 < current_term_of abstract_state node"
   using assms unfolding messages_ok_def
   apply (auto simp del: split_paired_All split_paired_Ex)
   by blast
+
+lemma messages_won_positive:
+  assumes "messages_ok abstract_state" "elections_won abstract_state (node,vote_term) \<noteq> None"
+  shows "0 < current_term_of abstract_state node"
+  using assms unfolding messages_ok_def by (elim conjE) blast
+
+lemma messages_win:
+  assumes ok: "messages_ok abstract_state"
+  assumes positive: "0 < current_term_of abstract_state candidate"
+  shows "messages_ok (abstract_state\<lparr>
+    elections_won := (elections_won abstract_state)((candidate, election_term) := Some election)
+  \<rparr>)"
+proof -
+  have old: "elections_won abstract_state (node, t) \<noteq> None \<Longrightarrow> 0 < current_term_of abstract_state node" for node t
+    by (rule messages_won_positive[OF ok])
+  have new: "0 < current_term_of abstract_state node"
+    if "elections_won (abstract_state\<lparr>elections_won := (elections_won abstract_state)((candidate, election_term) := Some election)\<rparr>) (node, t) \<noteq> None" for node t
+  proof (cases "(node, t) = (candidate, election_term)")
+    case True
+    then show ?thesis using positive by simp
+  next
+    case False
+    then have "elections_won abstract_state (node, t) \<noteq> None" using that by (auto split: if_splits)
+    then show ?thesis by (rule old)
+  qed
+  have new': "\<forall>node t. elections_won (abstract_state\<lparr>elections_won := (elections_won abstract_state)((candidate, election_term) := Some election)\<rparr>) (node, t) \<noteq> None
+      \<longrightarrow> 0 < current_term_of abstract_state node"
+    using new by blast
+  show ?thesis using ok new' unfolding messages_ok_def by (elim conjE) (intro conjI, simp_all)
+qed
 
 lemma publicationsD:
   assumes "publications_ok abstract_state"
@@ -774,9 +800,8 @@ lemma messages_start_join:
   assumes ok: "messages_ok abstract_state"
   assumes newer: "current_term_of abstract_state node < vote_term"
   shows "messages_ok (abstract_state\<lparr>
-    current_term_of           := (current_term_of abstract_state)(node := vote_term),
-    joins_sent                := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state),
-    started_join_since_reboot := insert node (started_join_since_reboot abstract_state)
+    current_term_of := (current_term_of abstract_state)(node := vote_term),
+    joins_sent      := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state)
   \<rparr>)"
 proof -
   have mono: "current_term_of abstract_state other_node \<le> ((current_term_of abstract_state)(node := vote_term)) other_node" for other_node using newer by auto
@@ -786,8 +811,8 @@ proof -
     by (rule order_trans[OF messagesD(5)[OF ok, of other_node other_candidate other_join_position join_position] mono])
   have no_prior_vote: "(node,other_candidate,vote_term,join_position) \<notin> joins_sent abstract_state" for other_candidate join_position
     using newer messagesD(5)[OF ok, of node other_candidate vote_term join_position] by auto
-  have positive: "0 < ((current_term_of abstract_state)(node := vote_term)) other_node" if "other_node \<in> started_join_since_reboot abstract_state" for other_node
-    using messagesD(8)[OF ok that] mono[of other_node] by linarith
+  have positive: "0 < ((current_term_of abstract_state)(node := vote_term)) other_node" if "elections_won abstract_state (other_node, t) \<noteq> None" for other_node t
+    using messages_won_positive[OF ok that] mono[of other_node] by linarith
   show ?thesis
     using ok newer accepted_bound join_bound no_prior_vote positive messagesD(4,7)[OF ok]
     unfolding messages_ok_def
@@ -851,9 +876,9 @@ proof -
     publication_config          = new_configuration,
     publication_previous_config = last_committed_configuration_of abstract_state candidate
   \<rparr>"
-  have "candidate \<in> started_join_since_reboot abstract_state" using active unfolding active_leader_def by simp
+  have "0 < current_term_of abstract_state candidate" using active messages_won_positive[OF messages_ok_fact] unfolding active_leader_def by blast
   have "valid_edge (publications_committed abstract_state) (publications_accepted abstract_state candidate) ?publication"
-    using messagesD(2,3)[OF messages_ok_fact, of candidate] messagesD(8)[OF messages_ok_fact \<open>candidate \<in> started_join_since_reboot abstract_state\<close>] inc guard
+    using messagesD(2,3)[OF messages_ok_fact, of candidate] \<open>0 < current_term_of abstract_state candidate\<close> inc guard
     unfolding valid_edge_def by simp
   from this messagesD(1)[OF messages_ok_fact, of candidate] ok
   show ?thesis
@@ -888,15 +913,13 @@ lemma publications_certify:
 lemma leadership_start_join:
   assumes ok: "leadership_ok abstract_state"
   shows "leadership_ok (abstract_state\<lparr>
-    current_term_of           := (current_term_of abstract_state)(node := vote_term),
-    joins_sent                := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state),
-    started_join_since_reboot := insert node (started_join_since_reboot abstract_state)
+    current_term_of := (current_term_of abstract_state)(node := vote_term),
+    joins_sent      := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state)
   \<rparr>)"
 proof -
   let ?next_abstract_state = "abstract_state\<lparr>
-    current_term_of           := (current_term_of abstract_state)(node := vote_term),
-    joins_sent                := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state),
-    started_join_since_reboot := insert node (started_join_since_reboot abstract_state)
+    current_term_of := (current_term_of abstract_state)(node := vote_term),
+    joins_sent      := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state)
   \<rparr>"
   have fresh: "fresh_votes
                    abstract_state
@@ -918,7 +941,7 @@ qed
 lemma leadership_win:
   assumes messages: "messages_ok abstract_state"
   assumes ok: "leadership_ok abstract_state"
-  assumes started: "candidate \<in> started_join_since_reboot abstract_state"
+  assumes started: "0 < current_term_of abstract_state candidate"
   assumes none: "elections_won abstract_state (candidate,current_term_of abstract_state candidate) = None"
   assumes quorum: "quorum (last_committed_configuration_of abstract_state candidate) voters" "quorum (config_of_tip_of (publications_accepted abstract_state candidate)) voters"
   assumes vote: "fresh_votes
@@ -937,7 +960,7 @@ lemma leadership_win:
          \<rparr>)"
 proof -
   have base: "term_of_tip_of (publications_accepted abstract_state candidate) < current_term_of abstract_state candidate"
-    by (rule new_election_base[OF messages ok none messagesD(8)[OF messages started] quorum(2) vote])
+    by (rule new_election_base[OF messages ok none started quorum(2) vote])
   have other: "publication_history \<in> publications_sent abstract_state \<Longrightarrow> (owner_of_tip_of publication_history,term_of_tip_of publication_history) \<noteq> (candidate,current_term_of abstract_state candidate)" for publication_history
     using leadershipD(8)[OF ok, of publication_history] none by auto
   show ?thesis
@@ -1029,7 +1052,7 @@ next
     case win_election
     with messages_ok_fact publications_ok_fact leadership_ok_fact
     show ?thesis
-      by (simp add: leadership_win messages_ok_def publications_ok_def acknowledged_by_joint_quorum_def)
+      by (simp add: leadership_win messages_win publications_ok_def acknowledged_by_joint_quorum_def)
   next
     case publish
     then show ?thesis
@@ -1051,11 +1074,6 @@ next
     case apply_commit
     with messages_ok_fact publications_ok_fact leadership_ok_fact
     show ?thesis by (simp add: messages_apply publications_ok_def acknowledged_by_joint_quorum_def
-        leadership_ok_def fresh_votes_def voted_def)
-  next
-    case reboot
-    with messages_ok_fact publications_ok_fact leadership_ok_fact
-    show ?thesis by (auto simp: messages_ok_def publications_ok_def acknowledged_by_joint_quorum_def
         leadership_ok_def fresh_votes_def voted_def)
   qed
 qed
@@ -1446,19 +1464,14 @@ definition current_published_history_ok :: "abstract_state \<Rightarrow> bool" w
               \<and> term_of_tip_of (current_published_history abstract_state node) = current_term_of abstract_state node \<longrightarrow>
         current_published_history abstract_state node \<in> publications_sent abstract_state
         \<and> (publications_accepted abstract_state node = current_published_history abstract_state node
-           \<or> publications_accepted abstract_state node = butlast (current_published_history abstract_state node))
-        \<and> effective_config
-              (publications_committed abstract_state)
-              (current_published_history abstract_state node)
-              (last_committed_configuration_of abstract_state node))"
+           \<or> publications_accepted abstract_state node = butlast (current_published_history abstract_state node)))"
 
 lemma current_published_history_start_join:
   assumes ok: "current_published_history_ok abstract_state"
   assumes inc: "current_term_of abstract_state node < vote_term"
   shows "current_published_history_ok (abstract_state\<lparr>
-    current_term_of           := (current_term_of abstract_state)(node := vote_term),
-    joins_sent                := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state),
-    started_join_since_reboot := insert node (started_join_since_reboot abstract_state)
+    current_term_of := (current_term_of abstract_state)(node := vote_term),
+    joins_sent      := insert (node,candidate,vote_term,position_of_tip_of (publications_accepted abstract_state node)) (joins_sent abstract_state)
   \<rparr>)"
 proof -
   have old_term: "other_join_position \<le> current_term_of abstract_state other_node" if "elections_won abstract_state (other_node,other_join_position) \<noteq> None" for other_node other_join_position
@@ -1510,11 +1523,7 @@ proof -
                  \<and> term_of_tip_of (current_published_history ?next node) = current_term_of ?next node"
     show "current_published_history ?next node \<in> publications_sent ?next
           \<and> (publications_accepted ?next node = current_published_history ?next node
-             \<or> publications_accepted ?next node = butlast (current_published_history ?next node))
-          \<and> effective_config
-                (publications_committed ?next)
-                (current_published_history ?next node)
-                (last_committed_configuration_of ?next node)"
+             \<or> publications_accepted ?next node = butlast (current_published_history ?next node))"
     proof (cases "node = candidate")
       case True
       with act same base hist have False by simp
@@ -1569,11 +1578,6 @@ proof -
       using that meta unfolding published_by_def by auto
     show ?thesis by (rule last_published_history_cong_key) (simp_all add: same)
   qed
-  have good: "effective_config
-                  (publications_committed abstract_state)
-                  publication_history
-                  (last_committed_configuration_of abstract_state candidate)"
-    by (simp add: new effective_config_def)
   have parent: "butlast publication_history = publications_accepted abstract_state candidate" by (simp add: new)
   show ?thesis
     unfolding current_published_history_ok_def
@@ -1587,18 +1591,14 @@ proof -
                  \<and> term_of_tip_of (current_published_history ?next node) = current_term_of ?next node"
     show "current_published_history ?next node \<in> publications_sent ?next
           \<and> (publications_accepted ?next node = current_published_history ?next node
-             \<or> publications_accepted ?next node = butlast (current_published_history ?next node))
-          \<and> effective_config
-                (publications_committed ?next)
-                (current_published_history ?next node)
-                (last_committed_configuration_of ?next node)"
+             \<or> publications_accepted ?next node = butlast (current_published_history ?next node))"
     proof (cases "node = candidate")
       case True
-      then show ?thesis using same good parent by (simp add: effective_config_def)
+      then show ?thesis using same parent by simp
     next
       case False
       then have "current_published_history ?next node = current_published_history abstract_state node" using other by simp
-      then show ?thesis using act False ok unfolding current_published_history_ok_def active_leader_def by (auto simp: effective_config_def)
+      then show ?thesis using act False ok unfolding current_published_history_ok_def active_leader_def by auto
     qed
   qed
 qed
@@ -1649,11 +1649,7 @@ lemma current_published_history_receive:
 proof -
   have eq: "active_leader abstract_state node \<Longrightarrow> term_of_tip_of (current_published_history abstract_state node) = current_term_of abstract_state node \<Longrightarrow> publication_history = current_published_history abstract_state node"
     by (rule receive_at_current_published_history[OF reach ok _ _ pub vote_term_fact position])
-  have cfg: "effective_config
-                 (publications_committed abstract_state)
-                 publication_history
-                 (previous_config_of_tip_of publication_history)" by (simp add: effective_config_def)
-  show ?thesis using ok eq pub cfg
+  show ?thesis using ok eq pub
     unfolding current_published_history_ok_def active_leader_def by auto
 qed
 
@@ -1674,7 +1670,7 @@ next
   next
     case (win_election candidate voters)
     have base: "term_of_tip_of (publications_accepted abstract_state candidate) < current_term_of abstract_state candidate"
-      by (rule new_election_base[OF messages_ok_fact leadership_ok_fact win_election(3) messagesD(8)[OF messages_ok_fact win_election(2)] win_election(5) win_election(6)])
+      by (rule new_election_base[OF messages_ok_fact leadership_ok_fact win_election(3) win_election(2) win_election(5) win_election(6)])
     show ?thesis using win_election(1) current_published_history_win[OF advance.IH leadership_ok_fact win_election(3) base] by simp
   next
     case publish
@@ -1686,34 +1682,27 @@ next
   next
     case commit
     with advance.IH show ?thesis
-      by (auto simp: current_published_history_ok_def active_leader_def intro: effective_config_insert)
+      by (auto simp: current_published_history_ok_def active_leader_def)
   next
     case apply_commit
     with advance.IH show ?thesis
-      by (auto simp: current_published_history_ok_def active_leader_def effective_config_def)
-  next
-    case reboot
-    with advance.IH show ?thesis by (auto simp: current_published_history_ok_def active_leader_def)
+      by (auto simp: current_published_history_ok_def active_leader_def)
   qed
 qed
 
 theorem first_commit_quorums_agree:
   assumes reach: "dynamic_reachable abstract_state"
-  assumes active: "active_leader abstract_state candidate"
-  assumes tip: "publication_history = current_published_history abstract_state candidate"
-  assumes current: "term_of_tip_of publication_history = current_term_of abstract_state candidate"
+  assumes effective: "effective_config
+                          (publications_committed abstract_state)
+                          publication_history
+                          (last_committed_configuration_of abstract_state candidate)"
   assumes uncommitted: "publication_history \<notin> publications_committed abstract_state"
   shows "acknowledged_by_joint_quorum abstract_state publication_history \<longleftrightarrow>
     (\<exists>voters. quorum (last_committed_configuration_of abstract_state candidate) voters
               \<and> quorum (config_of_tip_of publication_history) voters
               \<and> (\<forall>node\<in>voters. (node,publication_history) \<in> publish_responses_sent abstract_state))"
 proof -
-  have "effective_config
-            (publications_committed abstract_state)
-            publication_history
-            (last_committed_configuration_of abstract_state candidate)"
-    using reachable_current_published_history_ok[OF reach] active tip current unfolding current_published_history_ok_def by blast
-  then have "last_committed_configuration_of abstract_state candidate = previous_config_of_tip_of publication_history"
+  from effective have "last_committed_configuration_of abstract_state candidate = previous_config_of_tip_of publication_history"
     using uncommitted unfolding effective_config_def by simp
   then show ?thesis unfolding acknowledged_by_joint_quorum_def by simp
 qed
@@ -1722,7 +1711,6 @@ end
 
 declare abstract_model.last_published_history_of_update_current_term_of [simp]
 declare abstract_model.last_published_history_of_update_joins_sent [simp]
-declare abstract_model.last_published_history_of_update_started_join_since_reboot [simp]
 declare abstract_model.last_published_history_of_update_publications_accepted [simp]
 declare abstract_model.last_published_history_of_update_last_committed_configuration_of [simp]
 declare abstract_model.last_published_history_of_update_publish_responses_sent [simp]
